@@ -3,10 +3,10 @@
 MorphMesh (40 B): render vertex count, index count, position count, unk, unk, morph (animation) count,
 render vertices* {u16 position index, u16 normal/aux index, f32 u, f32 v}, indices* (u16), unk, morphs*.
 Morph (64 B): offset xyz, 0, scale xyz, 0, name*, frame count, times* (f32), frames*, 4 x unk.
-Each frame = positions (position count x u32, packed x:11 | y:10 | z:11 bits, x in the low bits;
-position = offset + scale * quantised) followed by normals (normal count x 3 u8 in z, y, x order,
-(b - 127.5) / 127.5), padded to 4 bytes. Triangles are wound the opposite way to shs/bsh/ssk: as stored they
-face inwards in a right-handed reading, so after the z mirror for glTF they need no extra flip. A render vertex picks its position and its normal by index ({u16 position, u16 normal, uv}).
+Each frame = positions (position count x u32, packed (x << 21) | (y << 11) | z, i.e. x:11 bits high, y:10,
+z:11 low; position = offset + scale * quantised) followed by normals (normal count x 3 u8 x, y, z,
+(b - 127.5) / 127.5), padded to 4 bytes. Triangles are wound like shs/bsh/ssk. A render vertex picks its
+position and its normal by index ({u16 position, u16 normal, uv}).
 """
 from __future__ import annotations
 
@@ -77,13 +77,10 @@ class MorphMesh:
 
 def _unpack(raw: np.ndarray, off, scale) -> np.ndarray:
     raw = raw.astype(np.uint32)
-    q = np.stack([raw & 0x7FF, (raw >> 11) & 0x3FF, raw >> 21], -1).astype(np.float32)
-    # the morph's offset and scale triples are stored z, y, x relative to the packed fields: with them read as
-    # x, y, z a walking guest's hips come out 0.67 m deep and 0.08 m wide (x/z ranges differ a lot while walking);
-    # swapped, the waist is the same 0.23 m in every animation
-    off = np.asarray(off, np.float32)[[2, 1, 0]]
-    scale = np.asarray(scale, np.float32)[[2, 1, 0]]
-    return (off + scale * q).astype(np.float32)
+    # packed (x << 21) | (y << 11) | z: x in the HIGH 11 bits, z in the low 11. Read the other way round, a walking
+    # guest's hips come out 0.67 m deep and 0.08 m wide, and the body faces 90 degrees away from its skinned head.
+    q = np.stack([raw >> 21, (raw >> 11) & 0x3FF, raw & 0x7FF], -1).astype(np.float32)
+    return (np.asarray(off, np.float32) + np.asarray(scale, np.float32) * q).astype(np.float32)
 
 
 def load_morph(ovl: Ovl, ref: LoaderRef, max_anims: int | None = None) -> MorphMesh:
@@ -107,7 +104,6 @@ def load_morph(ovl: Ovl, ref: LoaderRef, max_anims: int | None = None) -> MorphM
         n = max(tc, 1)
         blob = np.frombuffer(o.read(dp, fsize * n), np.uint8).reshape(n, fsize)
         raw = blob[:, :4 * npos].copy().view('<u4')
-        # normal bytes are stored z, y, x (like BGR colour); checked against the outward face normals
-        nrm = (blob[:, 4 * npos:4 * npos + 3 * nnrm].reshape(n, nnrm, 3)[..., ::-1].astype(np.float32) - 127.5) / 127.5
+        nrm = (blob[:, 4 * npos:4 * npos + 3 * nnrm].reshape(n, nnrm, 3).astype(np.float32) - 127.5) / 127.5
         mm.anims.append(MorphAnim(o.str_field(mp + 64 * a + 32, f'anim{a}'), times, _unpack(raw, off, scale), nrm))
     return mm

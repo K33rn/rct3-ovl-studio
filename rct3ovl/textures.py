@@ -145,10 +145,13 @@ class TextureSet:
         return self.ovl.u32(ref.data + 28) if ref.loader.tag == 'ftx' else 1
 
     def image(self, ref: LoaderRef, colors=None, frame: int = 0) -> Image.Image | None:
-        """colors: up to 3 (r, g, b) tuples to preview recolourable FlexiTextures."""
+        """Upright image. colors: up to 3 (r, g, b) tuples to preview recolourable FlexiTextures.
+        RCT3 stores pixel rows bottom-up (logos, icons and lettering only read correctly flipped vertically), and
+        model UVs use the matching bottom-up v, so glTF writers use v' = 1 - v with these upright images."""
+        img = None
         if ref.loader.tag == 'tex':
             bm = self.tex_bitmap(ref)
-            return bm.to_image() if bm else None
-        if ref.loader.tag == 'ftx':
-            return self.ftx_image(ref, frame, colors)
-        return None
+            img = bm.to_image() if bm else None
+        elif ref.loader.tag == 'ftx':
+            img = self.ftx_image(ref, frame, colors)
+        return img.transpose(Image.Transpose.FLIP_TOP_BOTTOM) if img is not None else None

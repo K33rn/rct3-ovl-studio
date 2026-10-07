@@ -79,3 +79,16 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - The winding/normal fixes from earlier still hold on top (tests/mms_outward.py: normals point away from each
   piece's centre; tests/winding.py 0.89-1.00).
 - Lesson: check that proportions stay the same across animations, not just within one frame.
+
+## 2026-10-07: heads sideways, icons/logos upside down (user report)
+- Morph positions are packed (x << 21) | (y << 11) | z: x in the HIGH bits. The previous "fix" (offset/scale
+  stored z,y,x) gave the right proportions but mirrored every body across the x=z diagonal, so bodies faced 90
+  degrees away from their skinned heads. That mirror is also why the earlier normal-byte-order (z,y,x) and winding
+  ("no flip") findings were needed. With the true packing all three are natural: offset/scale x,y,z; normal bytes
+  x,y,z; winding like shs/bsh/ssk ([0,2,1] after the z mirror). Head and body now face the same way (rendered from 4 sides).
+- All RCT3 textures store pixel rows bottom-up (FrontEndLogo, icon atlases; "JAN 30" only reads correctly flipped
+  vertically, not rotated). TextureSet.image() now returns upright images and every glTF writer uses v' = 1 - v
+  (gltf.gl_uv). GUI icon rects are top-down on the upright image (Guest_Stats_Calendar = [360,0,400,40]), so icon
+  crops are now the right icons; before they cut the wrong cells from the upside-down atlas.
+- Checks: tests/facing.py, tests/mms_outward.py, tests/winding.py, renders. mesh_all/tex_all and the Characters/Animals
+  extraction pass.

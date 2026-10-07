@@ -17,6 +17,13 @@ from .meshes import Shape
 _S = np.diag([1.0, 1.0, -1.0, 1.0])
 
 
+def gl_uv(uvs: np.ndarray) -> np.ndarray:
+    """RCT3 v counts from the bottom row (images are stored bottom-up); textures are exported upright, so v' = 1 - v."""
+    out = np.array(uvs, np.float32, copy=True)
+    out[:, 1] = 1.0 - out[:, 1]
+    return np.ascontiguousarray(out)
+
+
 def _conv_matrix(m: np.ndarray) -> np.ndarray:
     return _S @ m.T.astype(np.float64) @ _S
 
@@ -173,7 +180,7 @@ def shape_to_glb(shape: Shape, texture_lookup, animations=None) -> bytes:
         tri = sm.indices.reshape(-1, 3)[:, [0, 2, 1]].astype(np.uint32).reshape(-1)
         attrs = {'POSITION': b.accessor(np.ascontiguousarray(pos, np.float32), 5126, 'VEC3', 34962, minmax=True),
                  'NORMAL': b.accessor(np.ascontiguousarray(nrm, np.float32), 5126, 'VEC3', 34962),
-                 'TEXCOORD_0': b.accessor(np.ascontiguousarray(sm.uvs, np.float32), 5126, 'VEC2', 34962)}
+                 'TEXCOORD_0': b.accessor(gl_uv(sm.uvs), 5126, 'VEC2', 34962)}
         if sm.joints is not None and shape.bones:
             attrs['JOINTS_0'] = b.accessor(np.ascontiguousarray(sm.joints, np.uint8), 5121, 'VEC4', 34962)
             attrs['WEIGHTS_0'] = b.accessor(np.ascontiguousarray(sm.weights, np.float32), 5126, 'VEC4', 34962)

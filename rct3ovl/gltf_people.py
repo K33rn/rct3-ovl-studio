@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .gltf import _Builder, _png, _quat_from_matrix
+from .gltf import _Builder, _png, _quat_from_matrix, gl_uv
 from .morph import MorphMesh
 from .people import SimpleClip, SimpleSkin
 
@@ -51,7 +51,7 @@ def _add_morph(b: _Builder, root: dict, mm: MorphMesh, img, anim_names, anims: d
     a0 = mm.anims.index(sel[0])
     base = mm.positions(a0, 0) * _Z
     nbase = mm.normals(a0, 0)
-    tri = mm.indices.astype(np.uint32)      # morph meshes: the z mirror alone gives outward faces (see morph.py)
+    tri = mm.indices.reshape(-1, 3)[:, [0, 2, 1]].reshape(-1).astype(np.uint32)
     targets, hots = [], {}
     for a in sel:
         hots[a.name] = []
@@ -60,7 +60,7 @@ def _add_morph(b: _Builder, root: dict, mm: MorphMesh, img, anim_names, anims: d
             targets.append({'POSITION': b.accessor(np.ascontiguousarray(d), 5126, 'VEC3', 34962, minmax=True)})
             hots[a.name].append(len(targets) - 1)
     attrs = {'POSITION': b.accessor(np.ascontiguousarray(base, np.float32), 5126, 'VEC3', 34962, minmax=True),
-             'TEXCOORD_0': b.accessor(np.ascontiguousarray(mm.uvs, np.float32), 5126, 'VEC2', 34962)}
+             'TEXCOORD_0': b.accessor(gl_uv(mm.uvs), 5126, 'VEC2', 34962)}
     if nbase is not None:
         attrs['NORMAL'] = b.accessor(np.ascontiguousarray(nbase * _Z, np.float32), 5126, 'VEC3', 34962)
     prim = {'attributes': attrs, 'indices': b.accessor(tri, 5125, 'SCALAR', 34963),
@@ -109,7 +109,7 @@ def _add_skin(b: _Builder, root: dict, skin: SimpleSkin, clips: dict, img, anims
     weights = np.zeros((len(pos), 4), np.float32); weights[:, 0] = 1
     prim = {'attributes': {'POSITION': b.accessor(np.ascontiguousarray(pos * _Z, np.float32), 5126, 'VEC3', 34962, minmax=True),
                            'NORMAL': b.accessor(np.ascontiguousarray(nrm * _Z, np.float32), 5126, 'VEC3', 34962),
-                           'TEXCOORD_0': b.accessor(np.ascontiguousarray(skin.uvs, np.float32), 5126, 'VEC2', 34962),
+                           'TEXCOORD_0': b.accessor(gl_uv(skin.uvs), 5126, 'VEC2', 34962),
                            'JOINTS_0': b.accessor(joints, 5121, 'VEC4', 34962),
                            'WEIGHTS_0': b.accessor(weights, 5126, 'VEC4', 34962)},
             'indices': b.accessor(tri, 5125, 'SCALAR', 34963), 'material': _material(b, skin.name, img)}

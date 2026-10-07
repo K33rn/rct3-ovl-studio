@@ -17,6 +17,22 @@ rct3ovl:
 - resolves the shared common+unique address space, relocations and cross-file symbol names;
 - decodes the content instead of dumping bytes.
 
+## Setting up on a new PC
+
+1. Unzip `rct3ovl.zip` anywhere, e.g. `Documents\rct3ovl`.
+2. Have RCT3's game data on that PC. You can point at your own install's data folder: the one containing
+   `Characters`, `Style`, `Animals`… For example, on Steam that's
+   `…\steamapps\common\RollerCoaster Tycoon 3 Complete Edition\RCT3`. Or you can copy over the
+   `RCT3 Files\New folder` folder.
+3. Double-click `rct3ovl-viewer.bat`. The first time:
+   - it asks for the game data folder and remembers it in `game_folder.txt` (delete that file to change it);
+   - it installs [uv](https://docs.astral.sh/uv/) if needed, which then fetches Python, numpy and pillow;
+   - it indexes the game (about a minute).
+4. The viewer opens in your browser.
+
+Nothing else is needed; there's no separate Python install. The command-line tools below work the same way from a
+terminal opened in the unzipped folder.
+
 ## Use
 
 Needs Python 3.10+ with `numpy` and `pillow` (or `uv`, which fetches them):

@@ -26,8 +26,8 @@ The counts are from a full install (base game + Soaked! + Wild!).
 | `bsh` | 3D model with a skeleton (ride cars, flat rides, animatronics) | `.glb` with animations |
 | `svd` | An object's look: models per detail level, and their animations | `.json` |
 | `ban` | Animation for a `bsh` (lap bar opening, ride motion) | inside the `.glb`, plus `.json` |
-| `mdl` | Wild!'s walking-animal model (the elephant ride's elephant) | `.glb` (standing pose) |
-| `modelanim`, `wad` | That model's animations (not decoded yet) | `.json` |
+| `mdl` | Wild!'s walking-animal model (the elephant ride's elephant) | `.glb` with skeleton and animations, one per detail level |
+| `modelanim`, `wad` | That model's animations (walk, run, stand, idles) and the list tying them together | inside the `.glb`, plus `.json` |
 | `mam` | Invisible stand-in shape for complex pieces | `.json` |
 | `tex` + `flic` + `btbl` | A picture and its pixels | `.png` |
 | `ftx` | 256-colour picture you can recolour in-game | `.png`, plus a recolour preview |
@@ -124,10 +124,17 @@ The counts are from a full install (base game + Soaked! + Wild!).
 - **In the game:** the elephant transport ride's elephant.
 - **Inside:** a bounding box, and two extra-data blocks:
   - a name list: bones such as `Bip01 Trunk1`, wheels, cameras, rider seats `Peep01`…, lights;
-  - the model itself: a skeleton (52 bones for the elephant), a material list, and four detail levels of meshes
-    (vertices with bone weights, triangles). Mesh *n* uses material *n*.
-- **You get:** `models/<name>.mdl.glb`, the textured model in its standing pose. Its animations (`modelanim`)
-  aren't decoded yet.
+  - the model itself:
+    - a skeleton: 52 bones for the elephant, each with a parent-relative position and rotation plus an inverse
+      bind matrix;
+    - a parent table and a material list;
+    - four detail levels of meshes: vertices with up to 4 bone weights, and triangles;
+    - after each level, a table saying which materials that level uses and which one each mesh takes. The
+      far-away elephant is painted from a small picture in a shared animal thumbnail sheet.
+- **You get:**
+  - `models/<name>.mdl.glb`: the textured, skinned model with all its animations (walk, run, stand, two idles);
+  - `<name>.lod1/2/3.mdl.glb`: the lower detail levels.
+- **Found in:** `Cars\TrackedRideCars\Elephant`.
 - **Found in:** `Cars\TrackedRideCars\Elephant`.
 
 ### `mam`: ManifoldMesh (35)
@@ -154,9 +161,11 @@ The counts are from a full install (base game + Soaked! + Wild!).
 - **In the game:** the elephant's walk, run, stand and two idles. `wad` lists which `modelanim` to play for each
   behaviour.
 - **Inside:**
-  - `modelanim`: a duration, a frame count and keyframe data;
+  - `modelanim`: a duration, a frame count (30 per second), and per frame a position for some bones and a
+    rotation (quaternion) for others. Which bone each track belongs to is in its extra-data name list;
   - `wad`: a list of animation links with blend timings.
-- **You get:** `data/modelanim/*.fields.json`, `data/wad/*.fields.json`.
+- **You get:** the animations built into the `mdl` model's `.glb` (pick them in the viewer's animation menu),
+  plus `data/modelanim/*.json` with the keys and `data/wad/*.fields.json`.
 - **Found in:** `Cars\TrackedRideCars\Elephant`.
 
 ## Pictures

@@ -12,7 +12,13 @@ from .gltf import shape_to_glb, texture_note
 from .gltf_people import people_to_glb
 from .library import Library
 from .media import sound_info, sound_wav, text
-from .mdl import load_mdl
+from .mdl import animations_for_mdl, load_mdl, load_modelanim
+
+
+def _short(anim_name: str, model_name: str) -> str:
+    """'ElephantTransportWalk:modelanim' for 'ElephantTransport:mdl' -> 'Walk'."""
+    a, m = anim_name.split(':')[0], model_name.split(':')[0]
+    return a[len(m):] if a.lower().startswith(m.lower()) and len(a) > len(m) else a
 from .meshes import load_shape
 from .morph import load_morph
 from .people import load_phd, load_ppg, load_prt, load_sal, load_san, load_ssk
@@ -121,11 +127,24 @@ def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morp
             files.append(('icons', f'{base}.png', _png(img)))
     elif tag == 'mdl':
         s = load_mdl(o, r)
-        files.append(('models', f'{base}.mdl.glb', shape_to_glb(s, lambda n: lib.texture_image(n, prefer=o))))
-        info.update({'textures': sorted({m.texture for m in s.meshes if m.texture}), 'bones': getattr(s, 'bone_names', []),
-                     'note': 'Wild! model; shown in its standing pose (its walk/run animations are not decoded yet)'})
+        an = animations_for_mdl(lib, r)
+        if anims is not None:
+            an = [a for a in an if a.name.split(':')[0] in anims or _short(a.name, r.name) in anims]
+        for a in an:                                   # ElephantTransportWalk:modelanim -> Walk
+            a.name = _short(a.name, r.name)
+        lookup = lambda n: lib.texture_image(n, prefer=o)
+        files.append(('models', f'{base}.mdl.glb', shape_to_glb(s, lookup, an)))
+        for lv in range(1, getattr(s, 'levels', 1)):   # lower detail levels as their own files
+            files.append(('models', f'{base}.lod{lv}.mdl.glb', shape_to_glb(load_mdl(o, r, lv), lookup, an)))
+        info.update({'textures': sorted({m.texture for m in s.meshes if m.texture}), 'bones': [b.name for b in s.bones],
+                     'animations': [a.name for a in an], 'levels_of_detail': getattr(s, 'levels', 1)})
         info['missing_textures'] = {t: n for t in info['textures']
                                     if (n := texture_note(t, t.lower() in lib.index['names']))}
+    elif tag == 'modelanim':
+        a = load_modelanim(o, r)
+        files.append(('data/modelanim', f'{base}.json', _js({'name': a.name, 'duration': a.duration, 'frames_per_second': 30,
+            'bones': [{'name': b.name, 'translations': b.translations, 'rotations_axis_angle': b.rotations} for b in a.bones]})))
+        info.update({'duration': round(a.duration, 3), 'bones': len(a.bones)})
     elif tag in ('shs', 'bsh'):
         s = load_shape(o, r)
         an = lib.animations_for(o, s) if tag == 'bsh' else []

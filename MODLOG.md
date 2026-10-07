@@ -127,3 +127,15 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   parent table, material name list (mesh n -> material n), 4 detail levels of meshes with 32 B headers (0x1305),
   44 B vertices {pos, normal, 4 bone idx, 4 weights /255, colour, uv}, u16 indices. Exported static (bind pose);
   modelanim not decoded.
+
+## 2026-10-07: elephant (mdl + modelanim) fully decoded
+- Bones 96 B {local pos xyz, 1, quaternion xyzw, inverse bind 4x4}; row-vector local rotation = quat matrix
+  transposed. Parent table entry i = (parent of bone i | 0xFFFF, i+1 | 0xFFFF). Chaining the locals reproduces all
+  52 inverse bind matrices exactly (tests/mdl_bones.py).
+- Levels: vertex data starts 16-byte aligned after the 32 B mesh headers. AFTER each level's data: nmat x 16 B
+  {u16 material, u16 used} then per mesh {u16 slot into the used-material list, u16 1}. Level 3 uses the shared
+  animal thumbnail sheet (Normal/Alpha) for the body. (Colour-matching heuristics picked wrong; the table is exact.)
+- modelanim: f32 duration, u32 frames (30 fps), 0,0,0,0, u32 position tracks, u32 rotation tracks, 0,0,
+  ptr positions [frame][track] xyz, ptr rotations [frame][track] xyzw; track bone names in extra data (positions
+  first). Frame-major verified by smoothness (1.9 deg/frame vs 108 track-major), loops close (0.1 deg).
+- Export: ElephantTransport.mdl.glb (skinned, Walk/Run/Stand/Idle1/Idle2) + lod1..3; data/modelanim/*.json.

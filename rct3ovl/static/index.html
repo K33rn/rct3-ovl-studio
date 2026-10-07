@@ -387,7 +387,7 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
     const start = clips.find(c => c.name === wanted) || clips.find(c => /^walk$/i.test(c.name)) || clips.find(c => /walk|idle/i.test(c.name)) || clips[0];
     if (start) { sel.value = start.name; play(start.name); }
     frame(current);
-    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (standing pose)', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person' }[tag] || tag]];
+    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (skinned, animated)', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person' }[tag] || tag]];
     let v = 0, t = 0; current.traverse(o => { if (o.isMesh) { v += o.geometry.attributes.position.count; t += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
     rows.push(['Vertices', v.toLocaleString()], ['Triangles', Math.round(t).toLocaleString()]);
     if (names.length) rows.push(['Animations', names.length + (clips.length < names.length ? ` (${clips.length} loaded, others load on pick)` : '')]);

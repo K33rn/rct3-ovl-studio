@@ -15,7 +15,7 @@ from PIL import Image
 
 from .container import LoaderRef, Ovl, OvlError
 
-FORMATS = {0x02: 'RGBA', 0x12: 'DXT1', 0x13: 'DXT3', 0x14: 'DXT5'}
+FORMATS = {0x01: 'frame list (animated texture)', 0x02: 'RGBA', 0x12: 'DXT1', 0x13: 'DXT3', 0x14: 'DXT5'}
 
 
 @dataclass
@@ -154,7 +154,9 @@ class TextureSet:
         img = None
         if ref.loader.tag == 'tex':
             bm = self.tex_bitmap(ref)
-            img = bm.to_image() if bm else None
+            # format 0x01 holds no pixels: WaterReflectionAnimatedBumpMap's data is a u32 list (9, 10, 11 … 22),
+            # the frame order of an animated texture made of the other water textures
+            img = bm.to_image() if bm and bm.format != 0x01 else None
         elif ref.loader.tag == 'ftx':
             img = self.ftx_image(ref, frame, colors)
         return img.transpose(Image.Transpose.FLIP_TOP_BOTTOM) if img is not None else None

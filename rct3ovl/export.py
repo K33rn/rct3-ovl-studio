@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 
 from .anims import load_ban, load_svd
 from .container import LoaderRef, Ovl
@@ -53,8 +54,10 @@ def head_clips(lib: Library, o: Ovl, skin_name: str) -> dict:
     return clips
 
 
-def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morph_anims: int = 12) -> tuple[list, dict]:
-    """-> ([(subfolder, filename, bytes)], info). anims: animation names to include (None = all / default)."""
+def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morph_anims: int = 12,
+                    variant: int | None = 0) -> tuple[list, dict]:
+    """-> ([(subfolder, filename, bytes)], info). anims: animation names to include (None = all / default).
+    variant: colour variant tile for people/animal textures (0 = top-left; None = as stored)."""
     tag, base = r.loader.tag, safe(r.name.split(':')[0] or hex(r.data))
     files, info = [], {}
     if tag in ('tex', 'ftx'):
@@ -79,6 +82,8 @@ def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morp
                      'animations': [a.name for a in an], 'attach_points': [e[0] for e in s.effects]})
     elif tag == 'mms':
         mm = load_morph(o, r)
+        info['variants'] = mm.variant_count()
+        mm = mm.with_variant(variant)
         names = [a.name for a in mm.anims]
         sel = [n for n in names if anims is None or n in anims] or names[:1]
         if anims is None:
@@ -88,6 +93,11 @@ def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morp
             for e in load_prt(o, p):
                 if e.mesh == r.name:
                     tex = e.texture
+        if tex is None:
+            # animals (duck, seagull, fish…) have no person part: their texture sits in the same OVL
+            cands = [x.name for x in o.by_tag('tex')] or [x.name for x in o.by_tag('ftx')]
+            stem = os.path.basename(o.name).split('.')[0].lower()
+            tex = next((c for c in cands if c.split(':')[0].lower() == stem), cands[0] if cands else None)
         img = lib.texture_image(tex, prefer=o) if tex else None
         files.append(('morphs', f'{base}.mms.glb', people_to_glb([(mm, img)], (), sel, base)))
         info.update({'animations': names, 'exported_animations': sel, 'texture': tex or ''})

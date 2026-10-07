@@ -136,7 +136,7 @@ def variants(lib: Library, scope: str | None = None) -> dict[str, list[str]]:
 
 
 def build_person(lib: Library, variant: str, anim_names: list[str] | None, all_variants=None, lod: int = 0,
-                 expression: str = ''):
+                 expression: str = '', outfit: int | None = 0):
     """-> (glb bytes, info) for a whole person, or None. Head-only variants (AF03) wear their family's base
     outfit (AF01 body + legs); animation names are matched loosely (Idle -> Idle1)."""
     from .gltf_people import people_to_glb
@@ -156,5 +156,8 @@ def build_person(lib: Library, variant: str, anim_names: list[str] | None, all_v
     use = resolve_anims(m, anim_names)
     if use != anim_names:
         m, s, info = assemble(lib, main, lod, use, expression)
-    info.update({'groups': main, 'animations': animation_names(m), 'exported_animations': use})
+    # outfit: colour-variant tile of each part's texture (0 = top-left); parts with fewer tiles wrap around
+    info.update({'groups': main, 'animations': animation_names(m), 'exported_animations': use,
+                 'outfits': max((mm.variant_count() for mm, _ in m), default=1)})
+    m = [(mm.with_variant(outfit), img) for mm, img in m]
     return people_to_glb(m, s, use, variant.upper()), info

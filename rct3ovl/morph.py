@@ -45,6 +45,34 @@ class MorphMesh:
         n = a.normals[frame][self.nremap]
         return n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-6)
 
+    # colour variants: people and animal textures are grids of variants (AF01's outfit texture is 4 x 4 outfits,
+    # the duck's is 2 x 2: mallard drake / plain duck ...). The UVs as stored point into one tile (usually the
+    # bottom-left); the game shifts them to pick the variant for each individual.
+    def variant_grid(self) -> tuple[int, int, int, int]:
+        """-> (columns, rows, stored column, stored row) of the tile grid the UVs live in."""
+        if not len(self.uvs):
+            return 1, 1, 0, 0
+        out = []
+        for c in (0, 1):
+            x = np.clip(self.uvs[:, c], 0, 1 - 1e-6)
+            k = next((k for k in (8, 4, 2) if np.ptp(np.floor(x * k)) == 0), 1)
+            out += [k, int(np.floor(x[0] * k))]
+        return out[0], out[2], out[1], out[3]
+
+    def variant_count(self) -> int:
+        cols, rows, _, _ = self.variant_grid()
+        return cols * rows
+
+    def with_variant(self, variant: int | None) -> 'MorphMesh':
+        """Copy with UVs moved to tile `variant` (0 = top-left, row by row). None keeps the stored tile."""
+        if variant is None:
+            return self
+        cols, rows, c0, r0 = self.variant_grid()
+        v = variant % (cols * rows)
+        c, r = v % cols, v // cols
+        uvs = self.uvs + np.array([(c - c0) / cols, (r - r0) / rows], np.float32)
+        return MorphMesh(self.name, self.texture, uvs, self.remap, self.indices, self.nremap, self.anims)
+
 
 def _unpack(raw: np.ndarray, off, scale) -> np.ndarray:
     raw = raw.astype(np.uint32)

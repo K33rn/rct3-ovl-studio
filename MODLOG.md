@@ -49,3 +49,11 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   - Head animations: head_<variant>_l<n>_<anim>:san in Characters/<X>/Shared; staff keep them next to the ssk (SS_ prefix).
   - PowerShell Get-Content/Set-Content round trips corrupt UTF-8 (mojibake) - edit files with the Edit tool.
 - Open: trr/ric/rit/anr/sta/cid etc. are field dumps only (no named fields yet).
+
+## 2026-10-07: animals / colour variants
+- User saw a broken duck and seagull in the viewer. Causes: (1) animal OVLs have no prt, so there was no texture; now
+  the texture comes from the same OVL. (2) People/animal textures are grids of colour variants (AF01 4x4 outfits,
+  duck/seagull 2x2); the stored UVs point at one tile (often bottom-left = plain tan duck / black gull). Added
+  MorphMesh.variant_grid/with_variant, `--variant`/`--outfit` (default 0 = top-left) and a viewer Variant menu.
+- The decode itself was verified: 11/10/11 is the smoothest split for every duck animation; shark and ray look right.
+  The duck is just 80 triangles.

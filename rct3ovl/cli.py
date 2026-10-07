@@ -38,7 +38,8 @@ def cmd_list(a):
         print(f'{r.loader.tag:6s} {r.name or "(unnamed)":48s} 0x{r.data:08X} {r.part:6s} extra={len(r.extra)}')
 
 
-def extract_pair(lib: Library, base: str, out: str, types: set[str] | None, raw: bool, anims=None) -> dict:
+def extract_pair(lib: Library, base: str, out: str, types: set[str] | None, raw: bool, anims=None,
+                 variant: int | None = 0) -> dict:
     o, ts = lib.open(base)
     rel = os.path.relpath(pair_paths(base)[0], lib.root)[:-len('.common.ovl')] if base.startswith(lib.root) \
         else o.name
@@ -54,7 +55,7 @@ def extract_pair(lib: Library, base: str, out: str, types: set[str] | None, raw:
             continue
         entry = {'name': r.name, 'tag': tag, 'loader': r.loader.name, 'address': r.data, 'part': r.part}
         try:
-            files, info = export_resource(lib, o, ts, r, anims)
+            files, info = export_resource(lib, o, ts, r, anims, variant=variant)
             if tag == 'txt':
                 texts[r.name.split(':')[0]] = info.pop('text', '')
             entry.update(info)
@@ -79,14 +80,14 @@ def extract_pair(lib: Library, base: str, out: str, types: set[str] | None, raw:
     return stats
 
 
-def export_people(lib: Library, out: str, anims, scope: str | None = None) -> int:
+def export_people(lib: Library, out: str, anims, scope: str | None = None, outfit: int | None = 0) -> int:
     """Whole characters (body + legs + head groups) per variant, e.g. people/AF01.glb."""
     from .characters import build_person, variants
     vs = variants(lib)
     count = 0
     for v in sorted(variants(lib, scope)):
         try:
-            res = build_person(lib, v, anims, vs)
+            res = build_person(lib, v, anims, vs, outfit=outfit)
             if res is None:
                 continue
             p = os.path.join(out, 'people', f'{v.upper()}.glb')
@@ -103,16 +104,17 @@ def cmd_extract(a):
     bases = find_pairs(src) if os.path.isdir(src) else [pair_paths(src)[0]]
     types = set(a.type.split(',')) if a.type else None
     anims = a.anims.split(',') if a.anims else None
+    variant = None if a.variant < 0 else a.variant
     from collections import Counter
     t0 = time.time(); tot = Counter(); nfiles = 0; errors = []
     for i, b in enumerate(bases, 1):
-        s = extract_pair(lib, b, a.out, types, a.raw, anims)
+        s = extract_pair(lib, b, a.out, types, a.raw, anims, variant)
         tot.update(s['kinds']); nfiles += s['files']
         errors += s['errors']
         if len(bases) > 1 and (i % 200 == 0 or i == len(bases)):
             print(f'  {i}/{len(bases)} OVLs  {nfiles} files', flush=True)
     if not a.no_people and (types is None or 'ppg' in types):
-        n = export_people(lib, a.out, a.person_anims.split(','), src if os.path.isdir(src) else None)
+        n = export_people(lib, a.out, a.person_anims.split(','), src if os.path.isdir(src) else None, variant)
         tot['people'] += n
     print(f'done in {time.time() - t0:.1f}s, {len(errors)} errors -> {os.path.abspath(a.out)}')
     print('  ' + ', '.join(f'{k}: {v}' for k, v in sorted(tot.items())))
@@ -137,13 +139,15 @@ def cmd_person(a):
     names = sorted(variants(lib)) if a.variant.lower() == 'list' else [a.variant.lower()]
     if a.variant.lower() == 'list':
         print(' '.join(v.upper() for v in names)); return
-    res = build_person(lib, names[0], a.anims.split(','), lod=a.lod, expression=a.expression)
+    res = build_person(lib, names[0], a.anims.split(','), lod=a.lod, expression=a.expression,
+                       outfit=None if a.outfit < 0 else a.outfit)
     if res is None:
         sys.exit(f'no person parts found for {a.variant}')
     out = a.out or f'{names[0].upper()}.glb'
     open(out, 'wb').write(res[0])
     print(f'{out}: parts {", ".join(res[1]["parts"])}; head {res[1]["head"]}; '
-          f'animations {", ".join(res[1]["exported_animations"] or [])} (of {len(res[1]["animations"])})')
+          f'animations {", ".join(res[1]["exported_animations"] or [])} (of {len(res[1]["animations"])}); '
+          f'outfit {a.outfit} of {res[1]["outfits"]}')
 
 
 def cmd_recolour(a):
@@ -171,6 +175,7 @@ def main(argv=None):
     s.add_argument('root'); s.add_argument('variant', help='e.g. AF01, LG01, PANDA, or list')
     s.add_argument('--anims', default='Walk,Idle', help='comma separated animation names'); s.add_argument('-o', '--out')
     s.add_argument('--lod', type=int, default=0); s.add_argument('--expression', default='', help='Angry, Happy, Sad, Scared, Sick')
+    s.add_argument('--outfit', type=int, default=0, help='colour variant (0 = first; -1 = as stored in the file)')
     s.set_defaults(f=cmd_person)
     s = sp.add_parser('recolour', help='preview a recolourable FlexiTexture with your own colours')
     s.add_argument('ovl'); s.add_argument('name'); s.add_argument('--colors', default='c81e1e,1e5adc,f0f0f0',
@@ -185,6 +190,8 @@ def main(argv=None):
     s.add_argument('--anims', help='only these animation names in models/morphs/heads (default: all bone animations, first 12 morph animations)')
     s.add_argument('--person-anims', default='Walk,Idle,Applause,Converse', help='animations for whole-person exports')
     s.add_argument('--no-people', action='store_true', help='skip assembling whole people')
+    s.add_argument('--variant', type=int, default=0, help='colour variant for people/animal textures '
+                                                         '(0 = first; -1 = as stored in the file)')
     s.set_defaults(f=cmd_extract)
     s = sp.add_parser('index', help='rebuild the name index of a game folder'); s.add_argument('root'); s.set_defaults(f=cmd_index)
     s = sp.add_parser('view', help='open the browser-based viewer'); s.add_argument('root')

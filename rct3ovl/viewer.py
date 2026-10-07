@@ -91,7 +91,7 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                             img = ts.image(r, colors=cols)
                             b = io.BytesIO(); img.save(b, 'PNG')
                             return self.send(200, b.getvalue(), 'image/png', {'X-Info': json.dumps({'size': list(img.size)})})
-                        files, info = export_resource(lib, o, ts, r, anims)
+                        files, info = export_resource(lib, o, ts, r, anims, variant=int(q.get('outfit', 0)))
                     main = next((f for f in files if not f[0].startswith('data')), None)
                     data = [json.loads(f[2]) for f in files if f[0].startswith('data') or f[1].endswith('.json')]
                     hdr = {'X-Info': json.dumps(info, default=str)[:60000]}
@@ -114,7 +114,8 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 if u.path == '/api/person':
                     anims = q['anims'].split(',') if q.get('anims') else ['Walk']
                     with lock:
-                        res = build_person(lib, q['variant'], anims, None, int(q.get('lod', 0)), q.get('expression', ''))
+                        res = build_person(lib, q['variant'], anims, None, int(q.get('lod', 0)), q.get('expression', ''),
+                                           int(q.get('outfit', 0)))
                     if res is None:
                         return self.js({'error': 'no parts found'}, 404)
                     return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)[:60000]})

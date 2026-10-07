@@ -42,6 +42,7 @@ Options for `extract`:
 | `--anims Walk` | Only these animations in models, parts and heads |
 | `--person-anims` | Animations for the whole-people exports (default `Walk,Idle,Applause,Converse`) |
 | `--no-people` | Skip the whole-people exports |
+| `--variant N` | Colour variant for people and animals (default 0 = the first tile; `-1` = the tile the file points at) |
 | `--raw` | Also dump extra-data blobs |
 
 `--language German` (before the command) picks the language for names and text. The choices are English (the
@@ -57,6 +58,7 @@ index.
 - **3D view:**
   - orbit, wireframe, skeleton, grid and spin;
   - an **animation picker** with play/pause, for ride bars, animatronics, guest walk/dance/vomit and so on;
+  - a **Variant** menu for the colour variants of people and animals;
   - animations that aren't in the current file load when you pick them.
 - **Texture view** with **recolour pickers** for recolourable FlexiTextures.
 - **Sound player.**
@@ -89,7 +91,7 @@ you.
 | `btbl` | BmpTbl (158) | A bitmap table: many `flic` images packed together, with each `flic` holding only an index into it | Merged into the texture PNGs |
 | `ftx` | FlexiTexture (1,358) | An 8-bit paletted texture. Used for the textures players can recolour (palette ranges 1–85, 86–170 and 171–255 are the three recolour channels, drawn in placeholder blue, magenta and yellow) and for animated textures (several frames) | `textures/*.ftx.png` in the placeholder colours; recolour with the viewer or the `recolour` command |
 | `gsi` | GUISkinItem (3,833) | An icon or UI element: a rectangle cut out of a texture atlas. Scenery icons, ride icons, buttons | `icons/*.png` (the cut-out) |
-| `mms` | MorphMesh (798) | A *person part* (body, legs, skin, hat, handbag…). Instead of bones, every animation frame stores all vertex positions (packed 11+10+11 bits) and normals. All parts of one character share the same set of about 190 animations (walk, applause, vomit, dance…) | `morphs/*.mms.glb`: one glTF morph target per frame and a weights animation per clip (the first 12 clips, or `--anims`) |
+| `mms` | MorphMesh (798) | A *person part* (body, legs, skin, hat, handbag…) or a small *animal* (duck, seagull, fish, shark, ray). Instead of bones, every animation frame stores all vertex positions (packed 11+10+11 bits) and normals. All parts of one character share the same set of about 190 animations (walk, applause, vomit, dance…). The textures are grids of **colour variants**: AF01's outfit texture holds 4×4 outfits, and the duck's holds 2×2. The mesh's UVs point at one tile and the game shifts them to vary each individual | `morphs/*.mms.glb`: one glTF morph target per frame and a weights animation per clip (the first 12 clips, or `--anims`). The colour variant is chosen with `--variant` or the viewer's Variant menu |
 | `ssk` | SimpleSkin (1,014) | A detailed *head* for people: a small rigid-skinned mesh (Neck, Head, Ponytail and Glasses bones). Each guest head comes in two detail levels and six moods (normal, Angry, Happy, Sad, Scared, Sick) | `heads/*.ssk.glb` with its animations |
 | `san` | SimpleAnim (3,010) | An animation for an `ssk` head: per bone, a position and a compressed rotation (two int16 matrix rows) per key. Guest heads have one per body animation (`head_af01_l1_walk`) | Built into heads and people; also `data/san/*.json` |
 | `sal` | SimpleAnimList (27) | The bone list and animation index for a family of heads | `data/sal/*.json` |

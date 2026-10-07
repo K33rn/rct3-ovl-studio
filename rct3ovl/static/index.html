@@ -85,6 +85,7 @@
     <div id="toolbar">
       <span class="title" id="vtitle">Pick anything in an OVL</span>
       <span class="grp" id="g-anim"><select id="anim" title="Animation"></select><button id="b-play" class="on" title="Play / pause">Play</button></span>
+      <span class="grp" id="g-outfit" title="Colour variant: the texture holds several (outfits, mallard / plain duck, ...)"><select id="outfit"></select></span>
       <span class="grp" id="g-recol" title="Recolour preview (the three in-game colour choices)"><input type="color" id="c0" value="#c81e1e"><input type="color" id="c1" value="#1e5adc"><input type="color" id="c2" value="#f0f0f0"><button id="b-recol">Recolour</button><button id="b-orig">Original</button></span>
       <span class="grp" id="g-3d" style="display:flex">
       <button id="b-wire" title="Wireframe">Wireframe</button>
@@ -149,7 +150,7 @@ function mode(m) {   // '3d' | 'img' | 'doc'
   renderer.domElement.style.visibility = m === '3d' ? 'visible' : 'hidden';
   $('img').style.display = m === 'img' ? 'flex' : 'none';
   $('doc').style.display = m === 'doc' ? 'block' : 'none';
-  grp('g-3d', m === '3d'); if (m !== '3d') { grp('g-anim', false); clearModel(); }
+  grp('g-3d', m === '3d'); if (m !== '3d') { grp('g-anim', false); grp('g-outfit', false); clearModel(); }
   if (m !== 'img') grp('g-recol', false);
 }
 function setDownload(blob, name) { if (dlUrl) URL.revokeObjectURL(dlUrl); dlUrl = blob ? URL.createObjectURL(blob) : null; dlName = name; }
@@ -183,7 +184,7 @@ let tf; $('treefilter').oninput = e => { clearTimeout(tf); tf = setTimeout(() =>
 // ---- resources -------------------------------------------------------------------------------------------
 let resources = [], selRes = null, texts = 0;
 const ORDER = ['shs', 'bsh', 'mms', 'ssk', 'tex', 'ftx', 'gsi', 'snd', 'txt', 'svd', 'ban', 'san', 'sid', 'spl'];
-const LABEL = { shs: 'Static models', bsh: 'Skinned models', mms: 'Person parts (morph meshes)', ssk: 'Person heads (simple skins)',
+const LABEL = { shs: 'Static models', bsh: 'Skinned models', mms: 'Morph meshes (people parts, animals)', ssk: 'Person heads (simple skins)',
   tex: 'Textures', ftx: 'Flexi textures', gsi: 'Icons', snd: 'Sounds', txt: 'Text', svd: 'Scenery visuals', ban: 'Bone animations',
   san: 'Head animations', sid: 'Scenery items', spl: 'Splines', ppg: 'Person part groups', prt: 'Person parts', ric: 'Ride cars',
   rit: 'Ride trains', trr: 'Tracked rides', ced: 'Carried item extras', cid: 'Carried items', sta: 'Stalls', ptd: 'Path types',
@@ -229,6 +230,7 @@ $('b-people').onclick = async () => {
 // ---- view ------------------------------------------------------------------------------------------------
 const loader = new GLTFLoader();
 let animSrc = null;   // { kind: 'res'|'person', base url } for reloading with another animation
+let outfit = 0;       // colour-variant tile, kept while browsing
 async function show(r, opts = {}) {
   const my = ++seq; selRes = r; renderRes(); $('vtitle').textContent = r.name; info(null);
   if (r.texts) return showTexts();
@@ -236,6 +238,7 @@ async function show(r, opts = {}) {
   let q = `/api/res?path=${encodeURIComponent(selOvl)}&name=${encodeURIComponent(r.name)}`;
   if (opts.anims) q += '&anims=' + encodeURIComponent(opts.anims);
   if (opts.colors) q += '&colors=' + opts.colors;
+  if (r.tag === 'mms') q += '&outfit=' + outfit;
   msg('Loading…');
   const resp = await fetch(q);
   if (my !== seq) return;
@@ -289,7 +292,7 @@ async function showPerson(v, anims) {
   $('vtitle').textContent = v.toUpperCase(); info(null); msg('Assembling ' + v.toUpperCase() + '…');
   history.replaceState(null, '', '#person=' + v);
   const url = `/api/person?variant=${v}`;
-  const resp = await fetch(url + '&anims=' + encodeURIComponent(anims || 'Walk'));
+  const resp = await fetch(url + '&outfit=' + outfit + '&anims=' + encodeURIComponent(anims || 'Walk'));
   if (my !== seq) return;
   if (!resp.ok) { msg((await resp.json()).error, true); return; }
   animSrc = { url, name: v };
@@ -311,10 +314,13 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
     const names = [...new Set([...clips.map(c => c.name), ...all])];
     const sel = $('anim'); sel.innerHTML = names.map(n => `<option${clips.some(c => c.name === n) ? '' : ' class="reload"'}>${esc(n)}</option>`).join('');
     grp('g-anim', names.length > 0);
+    const nv = meta.variants || meta.outfits || 1;
+    $('outfit').innerHTML = Array.from({ length: nv }, (_, i) => `<option value="${i}">Variant ${i + 1} of ${nv}</option>`).join('');
+    $('outfit').value = outfit % nv; grp('g-outfit', nv > 1);
     const start = clips.find(c => c.name === wanted) || clips.find(c => /^walk$/i.test(c.name)) || clips.find(c => /walk|idle/i.test(c.name)) || clips[0];
     if (start) { sel.value = start.name; play(start.name); }
     frame(current);
-    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mms: 'Person part (vertex-animated)', ssk: 'Person head (skinned)', person: 'Whole person' }[tag] || tag]];
+    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person' }[tag] || tag]];
     let v = 0, t = 0; current.traverse(o => { if (o.isMesh) { v += o.geometry.attributes.position.count; t += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
     rows.push(['Vertices', v.toLocaleString()], ['Triangles', Math.round(t).toLocaleString()]);
     if (names.length) rows.push(['Animations', names.length + (clips.length < names.length ? ` (${clips.length} loaded, others load on pick)` : '')]);
@@ -334,6 +340,11 @@ $('anim').onchange = e => {
   const n = e.target.value;
   if (clips.some(c => c.name === n)) return play(n);
   // not in the file yet: fetch again with this animation
+  if (animSrc.url.startsWith('/api/person')) return showPerson(animSrc.name, n);
+  const r = resources.find(x => x.name === animSrc.name); if (r) show(r, { anims: n });
+};
+$('outfit').onchange = e => {
+  outfit = +e.target.value; const n = $('anim').value;
   if (animSrc.url.startsWith('/api/person')) return showPerson(animSrc.name, n);
   const r = resources.find(x => x.name === animSrc.name); if (r) show(r, { anims: n });
 };

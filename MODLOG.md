@@ -171,3 +171,12 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - rides.track_sets: trr lists its tks by (shared) name; some trr hold a path string ('../Track1/Track1'), the rest are
   matched to the TrackNN OVL containing all their pieces (Stormrunner needs two). 121 rides; viewer tree shows a
   'track pieces' entry in each ride folder (/api/tracksets, /api/trackset, openOvl('trackset:<trr>')).
+
+## 2026-10-07: held items into the palm; track pieces resolved per track folder
+- Hand frame: the attachment triangle's vertex ORDER differs between peeps (AM01 vs AF01), so the frame flipped and
+  items sank into the fist on some. Now: long edge + apex define X/Y, and X is flipped per animation so Z points away
+  from the peep's own hand vertices (SkinBody/Body within 9 cm). Item models sit on +Z (can z = +0.02..+0.11).
+- cid numbers +0x34/+0x38 are hunger/thirst effects, not holding offsets.
+- Track pieces: TrackNN.common.ovl holds the tks + sid; each piece's svd/shs are in <Piece>_data OVLs in the SAME
+  folder, and names repeat across track styles, so the global index picked e.g. Track11's model for Bobsleigh
+  (Track2). Library.find_near: this OVL, then the folder's OVLs, then global. 6,086/6,086 pieces now resolve in-folder.

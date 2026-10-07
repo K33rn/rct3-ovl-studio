@@ -202,22 +202,23 @@ def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morp
         sid = next((n for n in imps if n.lower().endswith(':sid')), None)
         splines = list(dict.fromkeys(n for n in imps if n.lower().endswith(':spl')))
         model = None
-        h = lib.find(sid) if sid else None
+        # names repeat across track styles (every coaster has a Medcurve): resolve in this OVL first, as the game does
+        h = lib.find_near(sid, o) if sid else None
         if h:
             for vis in load_sid(h[0], h[1])['visuals']:
-                hv = lib.find(vis) if vis else None
+                hv = lib.find_near(vis, h[0]) if vis else None
                 if hv:
                     lods = [l for l in load_svd(hv[0], hv[1]).lods if l.model.lower().endswith((':shs', ':bsh'))]
                     if lods:
                         model = lods[0].model; break
-        hm = lib.find(model) if model else None
+        hm = lib.find_near(model, hv[0] if hv else o) if model else None
         if hm:
             s = load_shape(hm[0], hm[1])
             files.append(('models', f'{base}.tks.glb', shape_to_glb(s, lambda n: lib.texture_image(n, prefer=hm[0]))))
             info['textures'] = sorted({m.texture for m in s.meshes if m.texture})
         curves = []
         for sp in splines:
-            hs = lib.find(sp)
+            hs = lib.find_near(sp, o)
             if hs:
                 d = load_spline(hs[0], hs[1]); d['points'] = spline_points(d); curves.append(d)
         files.append(('data/tks', f'{base}.json', _js({'name': r.name, 'scenery_item': sid, 'model': model,

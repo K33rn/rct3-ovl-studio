@@ -104,6 +104,36 @@ class Library:
                 return o, r, ts
         return None
 
+    def find_near(self, name: str, ovl: Ovl):
+        """Like find(), but looks in `ovl`, then in the other OVLs of the same folder, before the whole game.
+        Track styles reuse names (every coaster has a Medcurve): tracks\\coasters\\Track2 keeps each piece's
+        visual and model in its own Medcurve_data OVL next to Track2.common.ovl, and the game resolves there."""
+        hit = self.find(name, prefer=ovl)
+        if hit and hit[0] is ovl:
+            return hit
+        folder = os.path.dirname(os.path.relpath(ovl.files[0].path, self.root)).lower()
+        cache = self.__dict__.setdefault('_folder_names', {})
+        names = cache.get(folder)
+        if names is None:
+            names = {}
+            for ov in self.index['ovls']:
+                if os.path.dirname(ov['path']).lower() == folder and not ov.get('error'):
+                    try:
+                        o, _ = self.open(ov['path'])
+                    except Exception:
+                        continue
+                    for r in o.resources:
+                        if r.name:
+                            names.setdefault(r.name.lower(), ov['path'])
+            cache[folder] = names
+        rel = names.get(name.lower())
+        if rel:
+            o, ts = self.open(rel)
+            for r in o.resources:
+                if r.name.lower() == name.lower():
+                    return o, r, ts
+        return hit
+
     def animations_for(self, ovl: Ovl, shape) -> list:
         """Bone animations that drive a bone shape: listed by any scenery visual (svd) LOD that uses the shape,
         else every ban in the same OVL whose bones overlap the shape's bones."""

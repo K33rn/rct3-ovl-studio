@@ -155,25 +155,57 @@ def _hand_side(name: str) -> str | None:
     return 'R' if n.startswith('attachmentr_') else 'L' if n.startswith('attachmentl_') else None
 
 
-def _hand_frame(P: np.ndarray) -> np.ndarray:
-    """4x4 (column vectors) from the 3 attachment-triangle points (already in glTF space): origin at the centroid,
-    X = p0 - p1, Y = from p2 up to the p0-p1 edge, Z = X x Y. In the rest 'holding' pose the triangle lies across the
-    hand with p2 below, so an item's own up (+Y) points out of the fist."""
+def _tri_order(P: np.ndarray) -> tuple[int, int, int]:
+    """(a, b, apex): the attachment triangle's long edge a-b and the corner opposite it. The vertex ORDER differs
+    between peeps (AM01 vs AF01), so the frame is built from the shape, not the order."""
+    best = max(((0, 1, 2), (1, 2, 0), (0, 2, 1)), key=lambda t: np.linalg.norm(P[t[0]] - P[t[1]]))
+    return best
+
+
+def _hand_frame(P: np.ndarray, order, flip: bool) -> np.ndarray:
+    """4x4 (column vectors) from the 3 attachment-triangle points (glTF space): origin at the centroid, Y from the
+    apex to the middle of the long edge (an item's up), X along the long edge, Z = X x Y. `flip` reverses X so that
+    Z points out of the palm: carried-item models sit on their +Z side (a soda can spans z = +0.02…+0.11)."""
+    a, b, c = order
     o = P.mean(0)
-    x = P[0] - P[1]; x /= max(np.linalg.norm(x), 1e-9)
-    y = (P[0] + P[1]) / 2 - P[2]; y -= x * np.dot(x, y); y /= max(np.linalg.norm(y), 1e-9)
+    x = P[a] - P[b]; x /= max(np.linalg.norm(x), 1e-9)
+    if flip:
+        x = -x
+    y = (P[a] + P[b]) / 2 - P[c]; y -= x * np.dot(x, y); y /= max(np.linalg.norm(y), 1e-9)
     M = np.eye(4); M[:3, 0] = x; M[:3, 1] = y; M[:3, 2] = np.cross(x, y); M[:3, 3] = o
     return M
 
 
-def _add_hand(b: _Builder, root: dict, mm: MorphMesh, side: str, anim_names, anims: dict):
+def _palm_flip(frames: np.ndarray, body_frames, order) -> bool:
+    """True if the unflipped frame's Z points INTO the hand (towards the peep's own hand/arm vertices) in most
+    frames of this animation."""
+    if body_frames is None:
+        return False
+    votes = 0
+    for f in range(len(frames)):
+        P = frames[f][:3].astype(np.float64) * _Z
+        Z = _hand_frame(P, order, False)[:3, 2]
+        B = body_frames[min(f, len(body_frames) - 1)].astype(np.float64) * _Z
+        near = B[np.linalg.norm(B - P.mean(0), axis=1) < 0.09]
+        if len(near):
+            votes += 1 if np.dot(Z, P.mean(0) - near.mean(0)) < 0 else -1
+    return votes > 0
+
+
+def _add_hand(b: _Builder, root: dict, mm: MorphMesh, side: str, anim_names, anims: dict, body: MorphMesh | None = None):
     """An empty node 'hand_R' / 'hand_L' that follows the hand attachment triangle in every exported animation, so
     a viewer can parent a carried item (burger, drink, balloon…) to it."""
     g = b.g
     if not mm.anims or mm.anims[0].frames.shape[1] < 3:
         return
     sel = [a for a in mm.anims if anim_names is None or a.name in anim_names] or mm.anims[:1]
-    M0 = _hand_frame(sel[0].frames[0][:3].astype(np.float64) * _Z)
+    order = _tri_order(sel[0].frames[0][:3])
+    body_anims = {a.name: a for a in body.anims} if body is not None else {}
+
+    def flip_for(a):
+        ba = body_anims.get(a.name)
+        return _palm_flip(a.frames, ba.frames[:, body.remap] if ba is not None else None, order)
+    M0 = _hand_frame(sel[0].frames[0][:3].astype(np.float64) * _Z, order, flip_for(sel[0]))
     node = {'name': 'hand_' + side, 'translation': [float(v) for v in M0[:3, 3]],
             'rotation': [float(v) for v in _quat_from_matrix(M0[:3, :3])]}
     g['nodes'].append(node)
@@ -184,8 +216,9 @@ def _add_hand(b: _Builder, root: dict, mm: MorphMesh, side: str, anim_names, ani
         t = _times(a.times, len(a.frames))
         ti = b.accessor(t, 5126, 'SCALAR', minmax=True)
         tr, qs, prev = [], [], None
+        flip = flip_for(a)
         for f in range(len(a.frames)):
-            M = _hand_frame(a.frames[f][:3].astype(np.float64) * _Z)
+            M = _hand_frame(a.frames[f][:3].astype(np.float64) * _Z, order, flip)
             q = _quat_from_matrix(M[:3, :3])
             if prev is not None and np.dot(q, prev) < 0:
                 q = -q
@@ -202,11 +235,14 @@ def people_to_glb(morphs: list[tuple[MorphMesh, object]], skins: list[tuple[Simp
     root = {'name': name}
     g['nodes'].append(root); g['scenes'][0]['nodes'].append(0)
     anims: dict[str, dict] = {}
+    # the arms are in the skin part (SkinBody_*) for most peeps, else in the body part
+    body = next((mm for mm, _ in morphs if mm.name.lower().startswith('skinbody_')), None) or \
+        next((mm for mm, _ in morphs if mm.name.lower().startswith('body_')), None)
     for mm, img in morphs:
         _add_morph(b, root, mm, img, anim_names, anims)
         side = _hand_side(mm.name)
         if side:
-            _add_hand(b, root, mm, side, anim_names, anims)
+            _add_hand(b, root, mm, side, anim_names, anims, body)
     for sk, clips, img in skins:
         sel = {k: v for k, v in clips.items() if anim_names is None or k in anim_names}
         _add_skin(b, root, sk, sel or dict(list(clips.items())[:1]), img, anims)

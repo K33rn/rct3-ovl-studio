@@ -5,7 +5,8 @@ then shs: effect count, effect matrices*, effect names**; bsh: bone count, bones
 Sub-mesh record (40 B, all versions): support, ftx import, txs import, transparency, texture flags, sides,
 vertex count, index count, vertices*, indices*.
 Vertices: shs 36 B {pos3, normal3, BGRA colour, uv}; bsh 44 B {pos3, normal3, bone[4] int8, weight[4] u8, colour, uv}.
-Indices: shs u32 (v1) or u16; bsh u16. The width is detected (max index must be < vertex count).
+Indices: u16 or u32 (not tied to the OVL version: Soaked! carried items use u32). The width is detected: the
+max index must be < vertex count, and among fitting widths the one with fewest degenerate triangles wins.
 Texture names are symbol imports at the record's ftx/txs fields, resolved by name (often in another OVL).
 """
 from __future__ import annotations
@@ -66,14 +67,22 @@ def _imports(ovl: Ovl) -> dict[int, str]:
 
 
 def _indices(ovl: Ovl, ptr: int, count: int, vcount: int, prefer32: bool) -> np.ndarray:
+    """u16 or u32 index list. Both can be 'in range': u32 data read as u16 interleaves zeros (fans to vertex 0),
+    so among the widths that fit, the one with the fewest degenerate triangles wins (ties: prefer32 order)."""
     data, _ = ovl.block_bytes(ptr)
     cands = [4, 2] if prefer32 else [2, 4]
-    for w in cands:
+    best = None
+    for rank, w in enumerate(cands):
         if len(data) >= w * count:
             a = np.frombuffer(data[:w * count], '<u4' if w == 4 else '<u2').astype(np.uint32)
             if count == 0 or a.max() < vcount:
-                return a
-    raise OvlError(f'indices at 0x{ptr:X} do not fit {vcount} vertices')
+                t = a[:count - count % 3].reshape(-1, 3)
+                degenerate = int(((t[:, 0] == t[:, 1]) | (t[:, 1] == t[:, 2]) | (t[:, 0] == t[:, 2])).sum())
+                if best is None or (degenerate, rank) < best[0]:
+                    best = ((degenerate, rank), a)
+    if best is None:
+        raise OvlError(f'indices at 0x{ptr:X} do not fit {vcount} vertices')
+    return best[1]
 
 
 def _matrix(ovl: Ovl, ptr: int) -> np.ndarray:

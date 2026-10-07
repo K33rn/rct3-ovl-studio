@@ -72,7 +72,8 @@ Unzip `rct3ovl.zip` somewhere easy to find, e.g. `Documents\rct3ovl`. Keep the f
 | Everything else | The decoded record |
 
 The buttons at the top:
-- **People** lists every guest, staff member and entertainer as a whole, animated character.
+- **Peeps** lists every guest, staff member and entertainer as a whole, animated character.
+- **Thrill Rides** lists the flat rides (Pirate Ship, Top Spin, Ferris Wheel, Soaked! and Wild! rides, themed rides…) with their ride animations: Static, Start, Loop and Stop. Each ride opens playing its loop.
 - **File types** opens the guide to every file type.
 - **Download** saves what you're looking at: `.glb`, `.png`, `.wav` or `.json`.
 

@@ -150,3 +150,9 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - tks (3,805 track pieces): name, sid (-> svd -> model), L/R rail splines. Exported as models/<piece>.tks.glb +
   data/tks json. New tags wai (animal toys), pty (pool style): field dumps; guide entries added.
 - A first, interrupted copy of the folder had 68 half pairs; textures now return None instead of raising.
+
+## 2026-10-07: Peeps + Thrill Rides tabs
+- People button renamed Peeps. New Thrill Rides button (rides.py, /api/rides, /api/ride, #ride=<anr>): anr ->
+  sid -> svd (fallback: <sid name>:svd for the standard rides, whose sid lists no visuals) -> LOD0 model + its ban
+  animations (names shortened: pirateshiploop -> Loop); opens on the Loop animation. 86 of 89 anr resolve; the
+  2 observation towers are track-built (base tks + car) and the hall of mirrors has no matching model.

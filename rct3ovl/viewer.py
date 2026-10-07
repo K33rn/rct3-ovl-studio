@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from .characters import build_person, describe_variant, variants
+from .rides import build_ride, list_rides
 from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
@@ -114,6 +115,15 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                         vs = variants(lib)
                         out = [describe_variant(lib, v, gs) for v, gs in sorted(vs.items())]
                     return self.js(out)
+                if u.path == '/api/rides':
+                    with lock:
+                        return self.js([{k: r[k] for k in ('name', 'title', 'group')} for r in list_rides(lib)])
+                if u.path == '/api/ride':
+                    with lock:
+                        res = build_ride(lib, q['name'])
+                    if res is None:
+                        return self.js({'error': 'no model found for this ride'}, 404)
+                    return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)[:60000]})
                 if u.path == '/api/person':
                     anims = q['anims'].split(',') if q.get('anims') else ['Walk']
                     with lock:

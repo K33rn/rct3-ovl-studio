@@ -94,7 +94,7 @@
 <body>
 <div id="app">
   <div class="col">
-    <div class="head"><h1>RCT3 OVL Viewer <button id="b-types" title="What every file type is and does">File types</button><button id="b-people" title="Whole guests, staff and entertainers">People</button></h1><div class="sub">by K3rn</div><div class="sub" id="rootinfo">loading…</div>
+    <div class="head"><h1>RCT3 OVL Viewer <button id="b-types" title="What every file type is and does">File types</button><button id="b-people" title="Whole guests, staff and entertainers">Peeps</button><button id="b-rides" title="Flat rides with their ride animations">Thrill Rides</button></h1><div class="sub">by K3rn</div><div class="sub" id="rootinfo">loading…</div>
       <input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="margin-top:8px"></div>
     <div class="scroll tree" id="tree"></div>
   </div>
@@ -282,12 +282,12 @@ function renderRes() {
   }).join('')).join('');
 }
 $('resfilter').oninput = renderRes;
-$('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return showTypes(hp.dataset.type); const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
+$('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return showTypes(hp.dataset.type); const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.ride ? showRide(d.dataset.ride) : d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
 
 // people list
 $('b-people').onclick = async () => {
   selOvl = null; document.querySelectorAll('.ovl.sel').forEach(d => d.classList.remove('sel'));
-  $('ovltitle').textContent = 'People'; $('ovlsub').textContent = 'whole guests, staff and entertainers, assembled from their parts';
+  $('ovltitle').textContent = 'Peeps'; $('ovlsub').textContent = 'whole guests, staff and entertainers, assembled from their parts';
   // [{variant, group, label}]: categories come from the game's Characters\<folder> (VF01/VM01 are in VM = vendors)
   const vs = await (await fetch('/api/people')).json(); resources = [];
   const order = ['Guests', 'Staff', 'Entertainers', 'VIPs & celebrities', 'Other'], by = {};
@@ -297,6 +297,37 @@ $('b-people').onclick = async () => {
     by[g].sort((a, b) => a.label.localeCompare(b.label) || a.variant.localeCompare(b.variant)).map(p =>
       `<div class="res" data-v="${esc(p.variant)}">${esc(p.variant.toUpperCase())} <span style="color:var(--dim)">· ${esc(p.label)}</span></div>`).join('')).join('');
 };
+
+// thrill rides list: flat rides grouped by where they come from (standard, Soaked!, Wild!, themed packs)
+$('b-rides').onclick = async () => {
+  selOvl = null; document.querySelectorAll('.ovl.sel').forEach(d => d.classList.remove('sel'));
+  $('ovltitle').textContent = 'Thrill Rides'; $('ovlsub').textContent = 'flat rides with their ride animations (start, loop, stop)';
+  $('res').innerHTML = '<div class="res dim">loading…</div>';
+  const rs = await (await fetch('/api/rides')).json(); resources = [];
+  const order = ['Standard', 'Soaked!', 'Wild!'], by = {};
+  for (const r of rs) (by[r.group] ??= []).push(r);
+  $('res').innerHTML = Object.keys(by).sort((a, b) => ((order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)) || a.localeCompare(b)).map(g =>
+    `<div class="group">${esc(g)} <small>${by[g].length}</small></div>` +
+    by[g].sort((a, b) => a.title.localeCompare(b.title)).map(r =>
+      `<div class="res" data-ride="${esc(r.name)}" title="${esc(r.name)}">${esc(r.title)}</div>`).join('')).join('');
+};
+
+async function showRide(name, anim) {
+  const my = ++seq; selRes = null; document.querySelectorAll('.res').forEach(d => d.classList.toggle('sel', d.dataset.ride === name));
+  const title = document.querySelector(`.res[data-ride="${CSS.escape(name)}"]`)?.textContent || name;
+  $('vtitle').textContent = title; info(null); msg('Loading ' + title + '…');
+  history.replaceState(null, '', '#ride=' + encodeURIComponent(name));
+  const url = '/api/ride?name=' + encodeURIComponent(name);
+  const resp = await fetch(url);
+  if (my !== seq) return;
+  if (!resp.ok) { msg((await resp.json()).error, true); return; }
+  animSrc = { url, name };
+  const meta = JSON.parse(resp.headers.get('X-Info') || '{}');
+  const buf = await resp.arrayBuffer(); if (my !== seq) return; msg('');
+  // start on the ride's running loop, not the static pose
+  const loop = (meta.animations || []).find(a => /loop|^\d*loop/i.test(a)) || (meta.animations || []).find(a => /start/i.test(a));
+  return loadGlb(buf, name.split(':')[0] + '.glb', meta, 'ride', anim || loop, my);
+}
 
 // ---- view ------------------------------------------------------------------------------------------------
 const loader = new GLTFLoader();
@@ -388,7 +419,8 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
     const start = clips.find(c => c.name === wanted) || clips.find(c => /^walk$/i.test(c.name)) || clips.find(c => /walk|idle/i.test(c.name)) || clips[0];
     if (start) { sel.value = start.name; play(start.name); }
     frame(current);
-    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (skinned, animated)', tks: 'Track piece', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person' }[tag] || tag]];
+    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (skinned, animated)', tks: 'Track piece', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person', ride: 'Thrill ride' }[tag] || tag]];
+    if (tag === 'ride' && meta.model) rows.push(['Model', esc(meta.model)]);
     let v = 0, t = 0; current.traverse(o => { if (o.isMesh) { v += o.geometry.attributes.position.count; t += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
     rows.push(['Vertices', v.toLocaleString()], ['Triangles', Math.round(t).toLocaleString()]);
     if (names.length) rows.push(['Animations', names.length + (clips.length < names.length ? ` (${clips.length} loaded, others load on pick)` : '')]);
@@ -413,6 +445,7 @@ $('anim').onchange = e => {
   if (clips.some(c => c.name === n)) return play(n);
   // not in the file yet: fetch again with this animation
   if (animSrc.url.startsWith('/api/person')) return showPerson(animSrc.name, n);
+  if (animSrc.url.startsWith('/api/ride')) return;          // rides carry all their animations already
   const r = resources.find(x => x.name === animSrc.name); if (r) show(r, { anims: n });
 };
 $('outfit').onchange = e => {
@@ -471,6 +504,7 @@ async function fromHash() {
   const h = new URLSearchParams(location.hash.slice(1));
   if (h.has('types')) return showTypes(h.get('types') || '');
   if (h.get('person')) { $('b-people').click(); return showPerson(h.get('person'), h.get('anim')); }
+  if (h.get('ride')) { await $('b-rides').onclick(); return showRide(h.get('ride'), h.get('anim')); }
   if (!h.get('ovl')) return;
   await openOvl(h.get('ovl'), false);
   if (h.get('texts')) return show(resources.find(x => x.texts));

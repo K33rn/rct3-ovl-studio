@@ -76,6 +76,8 @@ The buttons at the top:
 - **Thrill Rides** lists the flat rides (Pirate Ship, Top Spin, Ferris Wheel, Soaked! and Wild! rides, themed rides…) with their ride animations: Static, Start, Loop and Stop. Each ride opens playing its loop.
 - **Ride Designs** lists the game's 208 premade coasters and tracked rides (the `Coaster Designs` folder), grouped by ride type. Each is built from its track pieces into one 3D model, with its stats: excitement/intensity/nausea, top speed, length, drops, inversions and cost.
 - **File types** opens the guide to every file type.
+- The four tabs (File types, Peeps, Thrill Rides, Ride Designs) sit under the title; the one in use is highlighted.
+- Drag the thin divider on the right edge of either list column to make it wider or narrower (double-click a divider to reset it). Widths are remembered.
 - **Download** saves what you're looking at: `.glb`, `.png`, `.wav` or `.json`.
 
 **After updating the program:** close the launcher window and start `rct3ovl-viewer.bat` again.

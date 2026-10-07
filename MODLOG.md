@@ -202,3 +202,9 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   designs.py now shifts the ride by whole tiles + half a tile to the origin (tile edges on multiples of 4 m, lowest
   point at y=0) and the viewer draws a 4 m tile grid sized to the ride for designs. Info shows the footprint in tiles.
 - tests/design_closure.py (closure over all designs), tests/design_trace.py (per-piece rotation/tile vs stored).
+
+## 2026-10-07: tab bar + resizable columns
+- Header: title + "by K3rn" on one line; the 4 tabs in a segmented bar (2x2 below 330 px column width via a container
+  query, 1x4 above), active tab highlighted (setTab; cleared when an OVL is opened from the tree).
+- Column dividers (.resizer on each list column's right edge): pointer drag sets --c1/--c2 on #app, min 180 px,
+  keeps >= 360 px for the 3D view, saved in localStorage, double-click resets. tests/ui_layout.py checks it.

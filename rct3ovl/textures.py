@@ -103,7 +103,7 @@ class TextureSet:
         flic = o.ptr(flicpp)
         return self.flic_bitmaps.get(flic)
 
-    def ftx_image(self, ref: LoaderRef, frame: int = 0) -> Image.Image | None:
+    def ftx_image(self, ref: LoaderRef, frame: int = 0, colors=None) -> Image.Image | None:
         """FlexiTextureInfoStruct {scale, w, h, fps, recol, offsetCount, offset*, frameCount, frames*};
         frame = FlexiTextureStruct {scale, w, h, recol, palette*, texture*, alpha*}; palette 256 x BGRA."""
         o = self.ovl
@@ -115,7 +115,20 @@ class TextureSet:
         _scale, w, h, _recol, pal_p, tex_p, alpha_p = struct.unpack('<IIIIIII', o.read(fr, 28))
         if not (0 < w <= 4096 and 0 < h <= 4096) or not tex_p:
             return None
-        pal = np.frombuffer(o.read(pal_p, 1024), np.uint8).reshape(256, 4)
+        pal = np.frombuffer(o.read(pal_p, 1024), np.uint8).reshape(256, 4).copy()
+        recol = o.u32(ref.data + 16)
+        if colors and recol:
+            # recolourable FlexiTexture: palette 1-85 / 86-170 / 171-255 hold shades of the 1st / 2nd / 3rd
+            # recolour channel (placeholders blue / magenta / yellow), from tinted white through the pure colour
+            # to black. Each entry = k * placeholder + wh * white; recolour keeps k and wh with the new colour.
+            for ch in range(3):
+                if recol & (1 << ch) and ch < len(colors) and colors[ch] is not None:
+                    c = np.array(colors[ch][:3], np.float32)
+                    for i in range(1 + 85 * ch, 86 + 85 * ch):
+                        e = pal[i, 0:3].astype(np.float32)              # BGR
+                        wh = float(e.min()); k = (float(e.max()) - wh) / 255.0
+                        rgb = np.clip(c * k + wh, 0, 255)
+                        pal[i, 0:3] = rgb[::-1].astype(np.uint8)
         idx = np.frombuffer(o.read(tex_p, w * h), np.uint8).reshape(h, w)
         rgba = np.empty((h, w, 4), np.uint8)
         rgba[..., 0:3] = pal[idx][..., [2, 1, 0]]
@@ -128,10 +141,14 @@ class TextureSet:
     def recolorable(self, ref: LoaderRef) -> int:
         return self.ovl.u32(ref.data + 16)
 
-    def image(self, ref: LoaderRef) -> Image.Image | None:
+    def frame_count(self, ref: LoaderRef) -> int:
+        return self.ovl.u32(ref.data + 28) if ref.loader.tag == 'ftx' else 1
+
+    def image(self, ref: LoaderRef, colors=None, frame: int = 0) -> Image.Image | None:
+        """colors: up to 3 (r, g, b) tuples to preview recolourable FlexiTextures."""
         if ref.loader.tag == 'tex':
             bm = self.tex_bitmap(ref)
             return bm.to_image() if bm else None
         if ref.loader.tag == 'ftx':
-            return self.ftx_image(ref)
+            return self.ftx_image(ref, frame, colors)
         return None

@@ -1,4 +1,4 @@
-﻿"""Local web viewer: python -m rct3ovl view <game folder>. Serves a small JSON API + a three.js page."""
+"""Local web viewer: python -m rct3ovl view <game folder>. Serves a small JSON API + a three.js page."""
 from __future__ import annotations
 
 import io
@@ -10,8 +10,11 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from .characters import build_person, variants
+from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
+from .media import text
 from .meshes import load_shape
 
 STATIC = os.path.join(os.path.dirname(__file__), 'static')
@@ -76,6 +79,45 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     fn = r.name.split(':')[0] + '.glb'
                     return self.send(200, glb, 'model/gltf-binary',
                                      {'X-Info': json.dumps(info), 'Content-Disposition': f'inline; filename="{fn}"'})
+                if u.path == '/api/res':
+                    # any resource: model/morph/head -> GLB, texture/icon -> PNG, sound -> WAV, else JSON
+                    anims = q['anims'].split(',') if q.get('anims') else None
+                    with lock:
+                        o, ts = lib.open(q['path'])
+                        r = next(r for r in o.resources if r.name == q['name'])
+                        if r.loader.tag == 'ftx' and q.get('colors'):
+                            cols = [tuple(int(c[i:i + 2], 16) for i in (0, 2, 4)) if c else None
+                                    for c in q['colors'].split(',')]
+                            img = ts.image(r, colors=cols)
+                            b = io.BytesIO(); img.save(b, 'PNG')
+                            return self.send(200, b.getvalue(), 'image/png', {'X-Info': json.dumps({'size': list(img.size)})})
+                        files, info = export_resource(lib, o, ts, r, anims)
+                    main = next((f for f in files if not f[0].startswith('data')), None)
+                    data = [json.loads(f[2]) for f in files if f[0].startswith('data') or f[1].endswith('.json')]
+                    hdr = {'X-Info': json.dumps(info, default=str)[:60000]}
+                    if main and main[1].endswith('.glb'):
+                        return self.send(200, main[2], 'model/gltf-binary', hdr)
+                    if main and main[1].endswith('.png'):
+                        return self.send(200, main[2], 'image/png', hdr)
+                    if main and main[1].endswith('.wav'):
+                        return self.send(200, main[2], 'audio/wav', hdr)
+                    return self.js({'info': info, 'data': data})
+                if u.path == '/api/texts':
+                    with lock:
+                        o, _ = lib.open(q['path'])
+                        return self.js([{'name': r.name.split(':')[0], 'text': text(o, r)} for r in o.resources
+                                        if r.loader.tag == 'txt'])
+                if u.path == '/api/people':
+                    with lock:
+                        vs = variants(lib)
+                    return self.js(sorted(vs))
+                if u.path == '/api/person':
+                    anims = q['anims'].split(',') if q.get('anims') else ['Walk']
+                    with lock:
+                        res = build_person(lib, q['variant'], anims, None, int(q.get('lod', 0)), q.get('expression', ''))
+                    if res is None:
+                        return self.js({'error': 'no parts found'}, 404)
+                    return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)[:60000]})
                 if u.path == '/api/search':
                     term = q.get('q', '').lower()
                     hits = [{'name': n, 'path': p} for n, p in lib.index['names'].items() if term in n][:300]

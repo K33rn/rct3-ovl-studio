@@ -226,6 +226,16 @@ class Ovl:
     def is_pointer(self, vaddr: int) -> bool:
         return vaddr in self.relocations
 
+    def str_field(self, field_vaddr: int, default: str = '') -> str:
+        """String pointed to by the pointer field at field_vaddr. Offset 0 is a valid string address (start of the
+        string table), so null is decided by the relocation table, not by the value."""
+        if not self.is_pointer(field_vaddr):
+            return default
+        try:
+            return self.cstr(self.u32(field_vaddr))
+        except OvlError:
+            return default
+
     def cstr(self, vaddr: int, maxlen: int = 4096) -> str:
         f, b, off = self.locate(vaddr)
         lim = min(b.file_offset + b.size, off + maxlen)

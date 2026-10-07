@@ -116,11 +116,11 @@ def load_shape(ovl: Ovl, ref: LoaderRef) -> Shape:
         nb, bones_p, m1_p, m2_p = struct.unpack('<4I', o.read(ref.data + 44, 16))
         for b in range(nb):
             name_p, parent = struct.unpack('<Ii', o.read(bones_p + 8 * b, 8))
-            shape.bones.append(Bone(o.cstr(name_p) if name_p else f'bone{b}', parent,
+            shape.bones.append(Bone(o.str_field(bones_p + 8 * b, f'bone{b}'), parent,
                                     _matrix(o, m1_p + 64 * b), _matrix(o, m2_p + 64 * b) if m2_p else None))
     else:
         ne, mats_p, names_p = struct.unpack('<3I', o.read(ref.data + 44, 12))
         for e in range(ne):
-            nm = o.cstr(o.ptr(names_p + 4 * e)) if names_p else f'effect{e}'
+            nm = o.str_field(names_p + 4 * e, f'effect{e}') if names_p else f'effect{e}'
             shape.effects.append((nm, _matrix(o, mats_p + 64 * e)))
     return shape

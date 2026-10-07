@@ -33,3 +33,19 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   bone matrix1 = local bind (row-major D3D), matrix2 = world bind; glTF conversion negates z + flips winding.
 - Viewer: python -m rct3ovl view "<folder>" (port 8765). Test UI headless: msedge --headless=new --use-angle=swiftshader --screenshot.
 - Next: ban/san animations, mms morph meshes, people parts, snd -> wav, txt strings, recolour preview for ftx.
+
+## Status 2026-10-07 (v2: everything decoded)
+- New: ban (bone anims, linked to models through svd LODs), svd, mms morph meshes (people parts, per-frame vertex
+  positions 11/10/11 bits + u8 normals; frame size = (4*npos + 3*nnrm + 3)//4*4), prt/ppg/phd, ssk heads, san/sal,
+  snd -> WAV, txt, spl splines, gsi icons, sid scenery items (named fields), generic *.fields.json dump for the rest,
+  ftx recolour, whole-people assembly (57 variants), CLI person/recolour/--language, viewer integration.
+- Full extract: 3011 pairs, ~50k files, 0 errors, ~6-13 min, 2.4 GB.
+- Gotchas:
+  - ssk +0x0C is the TRIANGLE count (indices = 3*tc u16 triangle list), not an index count / strip.
+  - Name offset 0 in the string table is valid; decide null by is_pointer (Ovl.str_field).
+  - Recolour palette ranges are 1-85 / 86-170 / 171-255 (index 0 is not part of channel 1).
+  - gui/<Language>.common.ovl all define the same txt names; the index prefers RCT3OVL_LANGUAGE (default English).
+  - Head-only guest variants (AF03) wear the family's base outfit; mascots have no ssk head (keep the mms head).
+  - Head animations: head_<variant>_l<n>_<anim>:san in Characters/<X>/Shared; staff keep them next to the ssk (SS_ prefix).
+  - PowerShell Get-Content/Set-Content round trips corrupt UTF-8 (mojibake) - edit files with the Edit tool.
+- Open: trr/ric/rit/anr/sta/cid etc. are field dumps only (no named fields yet).

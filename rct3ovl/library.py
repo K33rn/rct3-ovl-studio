@@ -8,7 +8,7 @@ from collections import OrderedDict
 from .container import Ovl, pair_paths
 from .textures import TextureSet
 
-INDEX_VERSION = 2
+INDEX_VERSION = 3
 
 
 def find_pairs(root: str) -> list[str]:
@@ -37,7 +37,8 @@ class Library:
         if os.path.exists(p):
             try:
                 idx = json.load(open(p))
-                if idx.get('version') == INDEX_VERSION and idx.get('root') == self.root:
+                if idx.get('version') == INDEX_VERSION and idx.get('root') == self.root and \
+                        idx.get('language') == os.environ.get('RCT3OVL_LANGUAGE', 'English').lower():
                     return idx
             except Exception:
                 pass
@@ -45,7 +46,15 @@ class Library:
 
     def rebuild_index(self) -> dict:
         ovls, names = [], {}
-        for base in find_pairs(self.root):
+        # gui\<Language>.common.ovl all define the same text names: index the chosen language first so that
+        # names resolve to it (other languages stay listed and openable)
+        lang = os.environ.get('RCT3OVL_LANGUAGE', 'English').lower()
+
+        def order(p):
+            rel = os.path.relpath(p, self.root).lower()
+            is_lang = rel.startswith('gui' + os.sep) and rel.count(os.sep) == 1
+            return (is_lang and not os.path.basename(rel).startswith(lang), p)
+        for base in sorted(find_pairs(self.root), key=order):
             rel = os.path.relpath(base, self.root)
             try:
                 o = Ovl(base)
@@ -58,7 +67,7 @@ class Library:
                 if r.name:
                     names.setdefault(r.name.lower(), rel)
             ovls.append({'path': rel, 'version': o.version, 'counts': counts})
-        idx = {'version': INDEX_VERSION, 'root': self.root, 'ovls': ovls, 'names': names}
+        idx = {'version': INDEX_VERSION, 'root': self.root, 'language': lang, 'ovls': ovls, 'names': names}
         json.dump(idx, open(self._index_path(), 'w'))
         return idx
 
@@ -94,6 +103,40 @@ class Library:
             if r.name.lower() == lname:
                 return o, r, ts
         return None
+
+    def animations_for(self, ovl: Ovl, shape) -> list:
+        """Bone animations that drive a bone shape: listed by any scenery visual (svd) LOD that uses the shape,
+        else every ban in the same OVL whose bones overlap the shape's bones."""
+        from .anims import load_ban, load_svd
+        from .gltf import _norm_bone
+        names = []
+        for r in ovl.resources:
+            if r.loader.tag == 'svd':
+                try:
+                    sv = load_svd(ovl, r)
+                except Exception:
+                    continue
+                for lod in sv.lods:
+                    if lod.model.lower() == shape.name.lower():
+                        names += [a for a in lod.animations if a not in names]
+        out = []
+        for n in names:
+            hit = self.find(n, prefer=ovl)
+            if hit:
+                try:
+                    out.append(load_ban(hit[0], hit[1]))
+                except Exception:
+                    pass
+        if not out:
+            bones = {_norm_bone(b.name) for b in shape.bones}
+            for r in ovl.by_tag('ban'):
+                try:
+                    a = load_ban(ovl, r)
+                except Exception:
+                    continue
+                if bones & {_norm_bone(t.name) for t in a.bones}:
+                    out.append(a)
+        return out
 
     def texture_image(self, name: str, prefer: Ovl | None = None):
         hit = self.find(name, prefer)

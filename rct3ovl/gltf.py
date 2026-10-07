@@ -48,7 +48,7 @@ class _Builder:
         if normalized:
             a['normalized'] = True
         if minmax and len(arr):
-            a['min'] = [float(x) for x in arr.min(0)]; a['max'] = [float(x) for x in arr.max(0)]
+            a['min'] = [float(x) for x in np.atleast_1d(arr.min(0))]; a['max'] = [float(x) for x in np.atleast_1d(arr.max(0))]
         self.g['accessors'].append(a)
         return len(self.g['accessors']) - 1
 
@@ -63,8 +63,67 @@ class _Builder:
                 struct.pack('<II', len(self.bin), 0x004E4942) + bytes(self.bin))
 
 
-def shape_to_glb(shape: Shape, texture_lookup) -> bytes:
-    """texture_lookup(name) -> PIL image or None."""
+def _norm_bone(n: str) -> str:
+    import re
+    n = n.lower().lstrip('!').strip()
+    return re.sub(r'0+(\d)', r'\1', n)
+
+
+def _quat_from_matrix(R: np.ndarray) -> np.ndarray:
+    """3x3 rotation -> quaternion (x, y, z, w)."""
+    t = np.trace(R)
+    if t > 0:
+        s = np.sqrt(t + 1.0) * 2; w = 0.25 * s
+        x = (R[2, 1] - R[1, 2]) / s; y = (R[0, 2] - R[2, 0]) / s; z = (R[1, 0] - R[0, 1]) / s
+    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2; w = (R[2, 1] - R[1, 2]) / s
+        x = 0.25 * s; y = (R[0, 1] + R[1, 0]) / s; z = (R[0, 2] + R[2, 0]) / s
+    elif R[1, 1] > R[2, 2]:
+        s = np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2; w = (R[0, 2] - R[2, 0]) / s
+        x = (R[0, 1] + R[1, 0]) / s; y = 0.25 * s; z = (R[1, 2] + R[2, 1]) / s
+    else:
+        s = np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2; w = (R[1, 0] - R[0, 1]) / s
+        x = (R[0, 2] + R[2, 0]) / s; y = (R[1, 2] + R[2, 1]) / s; z = 0.25 * s
+    q = np.array([x, y, z, w]); return q / np.linalg.norm(q)
+
+
+def _add_animations(b: '_Builder', animations, joint_nodes: dict, bind: dict):
+    """animations: list of BoneAnimation; joint_nodes: normalised bone name -> node index;
+    bind: node index -> (translation, quaternion) of the bind pose (glTF space)."""
+    from .anims import axis_angle_to_matrix
+    S3 = np.diag([1.0, 1.0, -1.0])
+    out = []
+    for anim in animations:
+        samplers, channels = [], []
+        for tr in anim.bones:
+            node = joint_nodes.get(_norm_bone(tr.name))
+            if node is None:
+                continue
+            if len(tr.translations):
+                t = np.ascontiguousarray(tr.translations[:, 0], np.float32)
+                v = np.ascontiguousarray(tr.translations[:, 1:] * np.array([1, 1, -1], np.float32), np.float32)
+                samplers.append({'input': b.accessor(t, 5126, 'SCALAR', minmax=True), 'output': b.accessor(v, 5126, 'VEC3'),
+                                 'interpolation': 'LINEAR'})
+                channels.append({'sampler': len(samplers) - 1, 'target': {'node': node, 'path': 'translation'}})
+            if len(tr.rotations):
+                t = np.ascontiguousarray(tr.rotations[:, 0], np.float32)
+                qs, prev = [], None
+                for v in tr.rotations[:, 1:].astype(np.float64):
+                    q = _quat_from_matrix(S3 @ axis_angle_to_matrix(v) @ S3)
+                    if prev is not None and np.dot(q, prev) < 0:
+                        q = -q                              # keep the shortest path for slerp
+                    qs.append(q); prev = q
+                samplers.append({'input': b.accessor(t, 5126, 'SCALAR', minmax=True),
+                                 'output': b.accessor(np.array(qs, np.float32), 5126, 'VEC4'), 'interpolation': 'LINEAR'})
+                channels.append({'sampler': len(samplers) - 1, 'target': {'node': node, 'path': 'rotation'}})
+        if channels:
+            out.append({'name': anim.name.split(':')[0], 'samplers': samplers, 'channels': channels})
+    if out:
+        b.g['animations'] = out
+
+
+def shape_to_glb(shape: Shape, texture_lookup, animations=None) -> bytes:
+    """texture_lookup(name) -> PIL image or None. animations: BoneAnimation list for bone shapes."""
     b = _Builder(); g = b.g
     materials, mat_index, tex_cache = [], {}, {}
 
@@ -140,6 +199,20 @@ def shape_to_glb(shape: Shape, texture_lookup) -> bytes:
         g['skins'] = [{'joints': list(range(base, base + len(shape.bones))),
                        'inverseBindMatrices': b.accessor(ibm.reshape(len(shape.bones), 16), 5126, 'MAT4')}]
         root['skin'] = 0
+        if animations:
+            # animated joints need TRS instead of a matrix
+            for i, bn in enumerate(shape.bones):
+                n = g['nodes'][base + i]
+                M = _conv_matrix(bn.matrix)
+                n.pop('matrix', None)
+                n['translation'] = [float(x) for x in M[:3, 3]]
+                A = M[:3, :3]; sc = np.linalg.norm(A, axis=0)
+                if np.linalg.det(A) < 0:
+                    sc[0] = -sc[0]                          # mirrored bone: negative scale, proper rotation
+                n['rotation'] = [float(x) for x in _quat_from_matrix(A / sc)]
+                if not np.allclose(sc, 1, atol=1e-4):
+                    n['scale'] = [float(x) for x in sc]
+            _add_animations(b, animations, {_norm_bone(bn.name): base + i for i, bn in enumerate(shape.bones)}, {})
     for name, m in shape.effects:
         g['nodes'].append({'name': f'effect:{name}', 'matrix': [float(x) for x in _conv_matrix(m).T.reshape(-1)]})
         g['scenes'][0]['nodes'].append(len(g['nodes']) - 1)

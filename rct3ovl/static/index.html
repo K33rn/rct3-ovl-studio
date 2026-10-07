@@ -15,7 +15,8 @@
   #app { display: grid; grid-template-columns: 300px 320px 1fr; height: 100vh; }
   .col { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--panel); }
   .head { padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--panel2); }
-  .head h1 { margin: 0 0 6px; font-size: 14px; color: var(--accent); letter-spacing: .3px; }
+  .head h1 { margin: 0 0 6px; font-size: 14px; color: var(--accent); letter-spacing: .3px; display: flex; align-items: center; gap: 8px; }
+  .head h1 button { margin-left: auto; font-size: 12px; }
   .head .sub { color: var(--dim); font-size: 12px; }
   input[type=search] { width: 100%; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line);
     background: var(--bg); color: var(--text); outline: none; }
@@ -28,23 +29,35 @@
   .tree .ovl:hover, .res:hover { background: var(--panel2); }
   .tree .ovl.sel, .res.sel { background: var(--sel); }
   .badge { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 8px; margin-left: 4px; background: #333a48; color: var(--dim); }
-  .b-shs, .b-bsh { background: #2b4a3a; color: #9fe0b8; } .b-tex, .b-ftx { background: #4a3b2b; color: #f2c58a; }
+  .b-shs { background: #2b4a3a; color: #9fe0b8; } .b-tex { background: #4a3b2b; color: #f2c58a; } .b-snd { background: #2b3b4a; color: #9fc8f0; }
   .group { padding: 8px 12px 2px; color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .group small { color: var(--dim); text-transform: none; letter-spacing: 0; }
   .res { padding: 3px 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .res.dim { color: var(--dim); cursor: default; }
   #view { position: relative; display: flex; flex-direction: column; min-width: 0; }
   #toolbar { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--panel2); flex-wrap: wrap; }
   #toolbar .title { font-weight: 600; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #toolbar .grp { display: none; gap: 6px; align-items: center; }
   button, select { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; cursor: pointer; font: inherit; }
+  select { max-width: 220px; }
   button:hover { border-color: var(--accent); } button.on { background: var(--sel); border-color: var(--accent); }
+  input[type=color] { width: 30px; height: 26px; padding: 0 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
   #stage { position: relative; flex: 1; min-height: 0; }
   #stage canvas { display: block; width: 100%; height: 100%; }
   #img { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; overflow: auto;
     background: repeating-conic-gradient(#2a2d35 0 25%, #20232a 0 50%) 50% / 20px 20px; }
-  #img img { image-rendering: pixelated; max-width: 95%; max-height: 95%; box-shadow: 0 0 0 1px #000a; }
+  #img img { image-rendering: pixelated; max-width: 95%; max-height: 95%; min-width: 64px; box-shadow: 0 0 0 1px #000a; }
+  #doc { position: absolute; inset: 0; display: none; overflow: auto; padding: 16px 20px; background: var(--bg); }
+  #doc pre { font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-word; color: #c9d1dc; margin: 0; }
+  #doc table.t { border-collapse: collapse; width: 100%; }
+  #doc table.t td { border-bottom: 1px solid var(--line); padding: 4px 8px; vertical-align: top; }
+  #doc table.t td:first-child { color: var(--dim); white-space: nowrap; font-family: ui-monospace, Consolas, monospace; font-size: 12px; width: 1%; }
+  #doc audio { width: min(520px, 100%); margin: 12px 0; }
+  #doc h2 { font-size: 15px; margin: 0 0 10px; color: var(--accent); }
+  #doc .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
   #info { position: absolute; left: 10px; bottom: 10px; max-width: 46%; max-height: 45%; overflow: auto; font-size: 12px;
     background: #0e1014cc; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: none; }
-  #info table { border-collapse: collapse; } #info td { padding: 1px 8px 1px 0; color: var(--dim); } #info td:first-child { color: var(--text); }
+  #info table { border-collapse: collapse; } #info td { padding: 1px 8px 1px 0; color: var(--dim); } #info td:first-child { color: var(--text); white-space: nowrap; }
   #msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); pointer-events: none; text-align: center; padding: 20px; }
   .err { color: var(--err) !important; }
   @media (max-width: 900px) { #app { grid-template-columns: 1fr; grid-template-rows: 30vh 25vh 1fr; } .col { border-right: 0; border-bottom: 1px solid var(--line); } }
@@ -59,7 +72,7 @@
 <body>
 <div id="app">
   <div class="col">
-    <div class="head"><h1>RCT3 OVL Viewer</h1><div class="sub" id="rootinfo">loading…</div>
+    <div class="head"><h1>RCT3 OVL Viewer <button id="b-people" title="Whole guests, staff and entertainers">People</button></h1><div class="sub" id="rootinfo">loading…</div>
       <input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="margin-top:8px"></div>
     <div class="scroll tree" id="tree"></div>
   </div>
@@ -70,16 +83,19 @@
   </div>
   <div id="view">
     <div id="toolbar">
-      <span class="title" id="vtitle">Pick a model (shs / bsh) or texture (tex / ftx)</span>
+      <span class="title" id="vtitle">Pick anything in an OVL</span>
+      <span class="grp" id="g-anim"><select id="anim" title="Animation"></select><button id="b-play" class="on" title="Play / pause">Play</button></span>
+      <span class="grp" id="g-recol" title="Recolour preview (the three in-game colour choices)"><input type="color" id="c0" value="#c81e1e"><input type="color" id="c1" value="#1e5adc"><input type="color" id="c2" value="#f0f0f0"><button id="b-recol">Recolour</button><button id="b-orig">Original</button></span>
+      <span class="grp" id="g-3d" style="display:flex">
       <button id="b-wire" title="Wireframe">Wireframe</button>
       <button id="b-bones" title="Show skeleton">Bones</button>
       <button id="b-grid" class="on" title="Ground grid">Grid</button>
       <button id="b-spin" title="Auto rotate">Spin</button>
       <select id="bg" title="Background"><option value="#20232a">Dark</option><option value="#7a8494">Grey</option><option value="#cfd6e0">Light</option></select>
-      <button id="b-reset" title="Reset camera">Reset</button>
+      <button id="b-reset" title="Reset camera">Reset</button></span>
       <button id="b-dl" title="Download the current file">Download</button>
     </div>
-    <div id="stage"><div id="img"><img id="imgel" alt=""></div><div id="info"></div><div id="msg">Loading game index…</div></div>
+    <div id="stage"><div id="img"><img id="imgel" alt=""></div><div id="doc"></div><div id="info"></div><div id="msg">Loading game index…</div></div>
   </div>
 </div>
 <script type="module">
@@ -102,13 +118,15 @@ scene.add(new THREE.HemisphereLight(0xffffff, 0x445066, 1.6));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(3, 6, 4); scene.add(sun);
 let grid = new THREE.GridHelper(20, 20, 0x556070, 0x343a46); scene.add(grid);
 let current = null, skel = null, dlUrl = null, dlName = null, wire = false;
+let mixer = null, clips = [], action = null, playing = true;
+const clock = new THREE.Clock();
 
 function resize() { const r = stage.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(1, r.height); camera.updateProjectionMatrix(); }
 new ResizeObserver(resize).observe(stage); resize();
-renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+renderer.setAnimationLoop(() => { const dt = clock.getDelta(); if (mixer && playing) mixer.update(dt); controls.update(); renderer.render(scene, camera); });
 
 function frame(obj) {
-  const box = new THREE.Box3().setFromObject(obj);
+  const box = new THREE.Box3().setFromObject(obj, true);
   if (box.isEmpty()) return;
   const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
   const r = Math.max(size.length() / 2, 0.01);
@@ -118,17 +136,30 @@ function frame(obj) {
   scene.remove(grid); const step = Math.pow(10, Math.floor(Math.log10(r)));
   grid = new THREE.GridHelper(step * 20, 20, 0x556070, 0x343a46); grid.position.y = box.min.y; grid.visible = $('b-grid').classList.contains('on'); scene.add(grid);
 }
-function clearModel() { if (current) { scene.remove(current); current.traverse(o => { o.geometry?.dispose(); [].concat(o.material || []).forEach(m => { m.map?.dispose(); m.dispose(); }); }); } if (skel) scene.remove(skel); current = skel = null; }
+function clearModel() {
+  if (mixer) mixer.stopAllAction(); mixer = null; action = null; clips = [];
+  if (current) { scene.remove(current); current.traverse(o => { o.geometry?.dispose(); [].concat(o.material || []).forEach(m => { m.map?.dispose(); m.dispose(); }); }); }
+  if (skel) scene.remove(skel); current = skel = null;
+}
 function msg(t, err) { $('msg').textContent = t || ''; $('msg').className = err ? 'err' : ''; }
 function info(rows) { const el = $('info'); if (!rows) { el.style.display = 'none'; return; } el.innerHTML = '<table>' + rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('') + '</table>'; el.style.display = 'block'; }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const grp = (id, on) => $(id).style.display = on ? 'flex' : 'none';
+function mode(m) {   // '3d' | 'img' | 'doc'
+  renderer.domElement.style.visibility = m === '3d' ? 'visible' : 'hidden';
+  $('img').style.display = m === 'img' ? 'flex' : 'none';
+  $('doc').style.display = m === 'doc' ? 'block' : 'none';
+  grp('g-3d', m === '3d'); if (m !== '3d') { grp('g-anim', false); clearModel(); }
+  if (m !== 'img') grp('g-recol', false);
+}
+function setDownload(blob, name) { if (dlUrl) URL.revokeObjectURL(dlUrl); dlUrl = blob ? URL.createObjectURL(blob) : null; dlName = name; }
 
 // ---- tree ------------------------------------------------------------------------------------------------
 let ovls = [], selOvl = null;
 async function loadTree() {
   const t = await (await fetch('/api/tree')).json();
   ovls = t.ovls; $('rootinfo').textContent = `${ovls.length} OVL pairs · ${t.root}`;
-  renderTree(''); msg('Pick an OVL on the left');
+  renderTree(''); msg('Pick an OVL on the left, or People for whole characters');
 }
 function renderTree(filter) {
   const f = filter.toLowerCase(), root = {};
@@ -141,8 +172,8 @@ function renderTree(filter) {
   const html = (node, depth) => Object.keys(node).sort((a, b) => (b.endsWith('/') - a.endsWith('/')) || a.localeCompare(b)).map(k => {
     const v = node[k];
     if (k.endsWith('/')) return `<details${f || depth < 1 ? ' open' : ''}><summary>${esc(k.slice(0, -1))}</summary>${html(v, depth + 1)}</details>`;
-    const c = v.counts || {}, m = (c.shs || 0) + (c.bsh || 0), x = (c.tex || 0) + (c.ftx || 0);
-    return `<div class="ovl${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="${esc(v.path)} · v${v.version}">${esc(k)}${m ? `<span class="badge b-shs">${m}</span>` : ''}${x ? `<span class="badge b-tex">${x}</span>` : ''}${v.error ? '<span class="badge err">!</span>' : ''}</div>`;
+    const c = v.counts || {}, m = (c.shs || 0) + (c.bsh || 0) + (c.mms || 0) + (c.ssk || 0), x = (c.tex || 0) + (c.ftx || 0), s = c.snd || 0;
+    return `<div class="ovl${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="${esc(v.path)} · v${v.version}">${esc(k)}${m ? `<span class="badge b-shs">${m}</span>` : ''}${x ? `<span class="badge b-tex">${x}</span>` : ''}${s ? `<span class="badge b-snd">♪${s}</span>` : ''}${v.error ? '<span class="badge err">!</span>' : ''}</div>`;
   }).join('');
   $('tree').innerHTML = html(root, 0);
 }
@@ -150,64 +181,167 @@ $('tree').onclick = e => { const d = e.target.closest('.ovl'); if (d) openOvl(d.
 let tf; $('treefilter').oninput = e => { clearTimeout(tf); tf = setTimeout(() => renderTree(e.target.value), 150); };
 
 // ---- resources -------------------------------------------------------------------------------------------
-let resources = [], selRes = null;
-const ORDER = ['shs', 'bsh', 'tex', 'ftx'], LABEL = { shs: 'Static models', bsh: 'Skinned models', tex: 'Textures', ftx: 'Flexi textures' };
-async function openOvl(path) {
+let resources = [], selRes = null, texts = 0;
+const ORDER = ['shs', 'bsh', 'mms', 'ssk', 'tex', 'ftx', 'gsi', 'snd', 'txt', 'svd', 'ban', 'san', 'sid', 'spl'];
+const LABEL = { shs: 'Static models', bsh: 'Skinned models', mms: 'Person parts (morph meshes)', ssk: 'Person heads (simple skins)',
+  tex: 'Textures', ftx: 'Flexi textures', gsi: 'Icons', snd: 'Sounds', txt: 'Text', svd: 'Scenery visuals', ban: 'Bone animations',
+  san: 'Head animations', sid: 'Scenery items', spl: 'Splines', ppg: 'Person part groups', prt: 'Person parts', ric: 'Ride cars',
+  rit: 'Ride trains', trr: 'Tracked rides', ced: 'Carried item extras', cid: 'Carried items', sta: 'Stalls', ptd: 'Path types',
+  qtd: 'Queue types', anr: 'Animated rides', phd: 'Person heads (attachment frames)', sal: 'Head animation lists',
+  ter: 'Terrain types', rcg: 'Research categories', psi: 'Particle skins', mam: 'Manifold meshes', fct: 'Fonts',
+  ent: 'Entertainers', sat: 'Special attractions', flic: 'Texture pixel data', btbl: 'Bitmap tables' };
+let seq = 0;   // newest request wins; older responses are dropped
+async function openOvl(path, auto = true) {
   selOvl = path; document.querySelectorAll('.ovl').forEach(d => d.classList.toggle('sel', d.dataset.p === path));
   $('ovltitle').textContent = path.split(/[\\/]/).at(-1); $('ovlsub').textContent = 'loading…';
   const r = await (await fetch('/api/ovl?path=' + encodeURIComponent(path))).json();
   if (r.error) { $('ovlsub').innerHTML = `<span class="err">${esc(r.error)}</span>`; return; }
-  resources = r.resources;
-  $('ovlsub').textContent = `v${r.version} · ${r.files.join(' + ')} · ${r.resources.length} resources` + (r.texts ? ` · ${r.texts} text strings` : '');
+  resources = r.resources; texts = r.texts;
+  if (texts) resources.push({ name: `All ${texts} strings`, tag: 'txt', loader: 'Text', part: '', texts: true });
+  $('ovlsub').textContent = `v${r.version} · ${r.files.join(' + ')} · ${r.resources.length} resources`;
   renderRes();
-  const first = resources.find(x => x.tag === 'shs' || x.tag === 'bsh') || resources.find(x => x.tag === 'tex' || x.tag === 'ftx');
-  if (first) show(first);
+  const first = ['shs', 'bsh', 'mms', 'ssk', 'tex', 'ftx', 'snd', 'gsi', 'txt'].map(t => resources.find(x => x.tag === t && x.name)).find(Boolean) || resources.find(x => x.name);
+  if (first && auto) show(first);
 }
 function renderRes() {
   const f = $('resfilter').value.toLowerCase(), groups = {};
   for (const r of resources) if (!f || r.name.toLowerCase().includes(f) || r.tag.includes(f)) (groups[r.tag] ??= []).push(r);
   const tags = Object.keys(groups).sort((a, b) => ((ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99)) || a.localeCompare(b));
-  $('res').innerHTML = tags.map(t => `<div class="group">${LABEL[t] || t} (${groups[t].length})</div>` + groups[t].map(r => {
-    const ok = ORDER.includes(t) && r.name;
+  $('res').innerHTML = tags.map(t => `<div class="group">${LABEL[t] || t} <small>${t} · ${groups[t].length}</small></div>` + groups[t].map(r => {
+    const ok = !!r.name;
     return `<div class="res${ok ? '' : ' dim'}${selRes === r ? ' sel' : ''}" data-i="${resources.indexOf(r)}" title="${esc(r.loader)} · ${r.part}">${esc(r.name || '(unnamed ' + r.loader + ')')}</div>`;
   }).join('')).join('');
 }
 $('resfilter').oninput = renderRes;
-$('res').onclick = e => { const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) show(resources[+d.dataset.i]); };
+$('res').onclick = e => { const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
+
+// people list
+$('b-people').onclick = async () => {
+  selOvl = null; document.querySelectorAll('.ovl.sel').forEach(d => d.classList.remove('sel'));
+  $('ovltitle').textContent = 'People'; $('ovlsub').textContent = 'whole guests, staff and entertainers, assembled from their parts';
+  const vs = await (await fetch('/api/people')).json(); resources = [];
+  const fam = { af: 'Adult female', am: 'Adult male', cf: 'Child female', cm: 'Child male', tf: 'Teen female', tm: 'Teen male',
+    ef: 'Elderly female', em: 'Elderly male', vf: 'VIP female', vm: 'VIP male' };
+  const by = {}; for (const v of vs) { const k = v.replace(/\d+$/, ''); (by[fam[k] ? fam[k] : (/\d/.test(v) ? 'Staff & specials' : 'Entertainers & mascots')] ??= []).push(v); }
+  $('res').innerHTML = Object.entries(by).map(([g, l]) => `<div class="group">${g} <small>${l.length}</small></div>` + l.map(v => `<div class="res" data-v="${v}">${v.toUpperCase()}</div>`).join('')).join('');
+};
 
 // ---- view ------------------------------------------------------------------------------------------------
 const loader = new GLTFLoader();
-async function show(r) {
-  selRes = r; renderRes(); $('vtitle').textContent = r.name; info(null);
+let animSrc = null;   // { kind: 'res'|'person', base url } for reloading with another animation
+async function show(r, opts = {}) {
+  const my = ++seq; selRes = r; renderRes(); $('vtitle').textContent = r.name; info(null);
+  if (r.texts) return showTexts();
   history.replaceState(null, '', `#ovl=${encodeURIComponent(selOvl)}&res=${encodeURIComponent(r.name)}`);
-  const q = `?path=${encodeURIComponent(selOvl)}&name=${encodeURIComponent(r.name)}`;
-  if (dlUrl) URL.revokeObjectURL(dlUrl), dlUrl = null;
-  if (r.tag === 'tex' || r.tag === 'ftx') {
-    clearModel(); renderer.domElement.style.visibility = 'hidden'; msg('');
-    const resp = await fetch('/api/texture' + q);
-    if (!resp.ok) { $('img').style.display = 'none'; msg((await resp.json()).error, true); return; }
-    const blob = await resp.blob(); dlUrl = URL.createObjectURL(blob); dlName = r.name.split(':')[0] + '.png';
-    $('imgel').src = dlUrl; $('img').style.display = 'flex';
-    info([['Size', resp.headers.get('X-Size')], ['Type', r.tag === 'ftx' ? 'FlexiTexture (paletted, recolourable)' : 'Texture'], ['Stored in', r.part + '.ovl']]);
+  let q = `/api/res?path=${encodeURIComponent(selOvl)}&name=${encodeURIComponent(r.name)}`;
+  if (opts.anims) q += '&anims=' + encodeURIComponent(opts.anims);
+  if (opts.colors) q += '&colors=' + opts.colors;
+  msg('Loading…');
+  const resp = await fetch(q);
+  if (my !== seq) return;
+  if (!resp.ok) { mode('doc'); $('doc').innerHTML = ''; msg((await resp.json()).error, true); return; }
+  const ct = resp.headers.get('Content-Type') || '', meta = JSON.parse(resp.headers.get('X-Info') || '{}'), base = r.name.split(':')[0];
+  msg('');
+  if (ct.startsWith('model/')) {
+    animSrc = { url: q.replace(/&anims=[^&]*/, ''), name: r.name };
+    const buf = await resp.arrayBuffer(); if (my !== seq) return;
+    return loadGlb(buf, base + '.glb', meta, r.tag, opts.anims, my);
+  }
+  if (ct.startsWith('image/')) {
+    const blob = await resp.blob(); if (my !== seq) return; mode('img'); setDownload(blob, base + '.png'); $('imgel').src = dlUrl;
+    const img = await new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = dlUrl; });
+    const rows = [['Size', `${img.naturalWidth} × ${img.naturalHeight}`], ['Type', r.tag === 'ftx' ? 'FlexiTexture (paletted)' : r.tag === 'gsi' ? 'Icon (cut from ' + esc(meta.texture) + ')' : 'Texture']];
+    if (r.tag === 'ftx') {
+      const rc = meta.recolourable ?? (opts.colors ? 7 : 0);
+      if (meta.frames > 1) rows.push(['Frames', meta.frames]);
+      rows.push(['Recolourable', rc ? ['1st', '2nd', '3rd'].filter((_, i) => rc & (1 << i)).join(', ') + ' colour' : 'no']);
+      if (rc || opts.colors) { grp('g-recol', true); [0, 1, 2].forEach(i => $('c' + i).disabled = !(rc & (1 << i)) && !opts.colors); }
+    }
+    rows.push(['Stored in', r.part + '.ovl']); info(rows); return;
+  }
+  if (ct.startsWith('audio/')) {
+    const blob = await resp.blob(); if (my !== seq) return; mode('doc'); setDownload(blob, base + '.wav');
+    $('doc').innerHTML = `<h2>${esc(r.name)}</h2><div class="card"><audio controls autoplay src="${dlUrl}"></audio>
+      <table class="t"><tr><td>Format</td><td>${meta.channels === 1 ? 'mono' : meta.channels + ' channels'}, ${meta.bits}-bit PCM, ${meta.rate} Hz</td></tr>
+      <tr><td>Length</td><td>${(blob.size - 44) / (meta.bits / 8) / meta.channels / meta.rate > 0 ? ((blob.size - 44) / (meta.bits / 8) / meta.channels / meta.rate).toFixed(2) + ' s' : '?'}</td></tr>
+      <tr><td>Loops</td><td>${meta.loop ? 'yes' : 'no'}</td></tr></table></div>`;
     return;
   }
-  $('img').style.display = 'none'; renderer.domElement.style.visibility = 'visible'; msg('Loading model…');
-  const resp = await fetch('/api/model' + q);
+  const j = await resp.json(); if (my !== seq) return; mode('doc');
+  const txt = JSON.stringify(j.data.length === 1 ? j.data[0] : j.data, null, 1);
+  setDownload(new Blob([txt], { type: 'application/json' }), base + '.' + r.tag + '.json');
+  const infoRows = Object.entries(j.info || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</td></tr>`).join('');
+  $('doc').innerHTML = `<h2>${esc(r.name)} <span class="badge">${esc(r.loader)}</span></h2>${infoRows ? `<div class="card"><table class="t">${infoRows}</table></div>` : ''}
+    <div class="card"><pre>${esc(txt.length > 300000 ? txt.slice(0, 300000) + '\n… (truncated, use Download)' : txt)}</pre></div>`;
+}
+
+async function showTexts() {
+  mode('doc'); msg('Loading…');
+  const t = await (await fetch('/api/texts?path=' + encodeURIComponent(selOvl))).json(); msg('');
+  setDownload(new Blob([JSON.stringify(Object.fromEntries(t.map(x => [x.name, x.text])), null, 1)], { type: 'application/json' }), 'text.json');
+  $('doc').innerHTML = `<h2>${t.length} text strings</h2><input type="search" id="tfilter" placeholder="Filter text" style="margin-bottom:10px">
+    <div class="card"><table class="t" id="ttable">${t.map(x => `<tr><td>${esc(x.name)}</td><td>${esc(x.text)}</td></tr>`).join('')}</table></div>`;
+  $('tfilter').oninput = e => { const f = e.target.value.toLowerCase(); for (const tr of $('ttable').rows) tr.style.display = tr.textContent.toLowerCase().includes(f) ? '' : 'none'; };
+}
+
+async function showPerson(v, anims) {
+  const my = ++seq; selRes = null; document.querySelectorAll('.res').forEach(d => d.classList.toggle('sel', d.dataset.v === v));
+  $('vtitle').textContent = v.toUpperCase(); info(null); msg('Assembling ' + v.toUpperCase() + '…');
+  history.replaceState(null, '', '#person=' + v);
+  const url = `/api/person?variant=${v}`;
+  const resp = await fetch(url + '&anims=' + encodeURIComponent(anims || 'Walk'));
+  if (my !== seq) return;
   if (!resp.ok) { msg((await resp.json()).error, true); return; }
+  animSrc = { url, name: v };
   const meta = JSON.parse(resp.headers.get('X-Info') || '{}');
-  const buf = await resp.arrayBuffer(); dlUrl = URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' })); dlName = r.name.split(':')[0] + '.glb';
+  const buf = await resp.arrayBuffer(); if (my !== seq) return; msg('');
+  return loadGlb(buf, v.toUpperCase() + '.glb', meta, 'person', anims, my);
+}
+
+function loadGlb(buf, name, meta, tag, wanted, my) {
+  mode('3d'); setDownload(new Blob([buf], { type: 'model/gltf-binary' }), name);
   loader.parse(buf, '', g => {
+    if (my !== seq) return;
     clearModel(); current = g.scene; scene.add(current); msg('');
     current.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => m.wireframe = wire); });
     skel = new THREE.SkeletonHelper(current); skel.visible = $('b-bones').classList.contains('on'); scene.add(skel);
+    clips = g.animations; mixer = clips.length ? new THREE.AnimationMixer(current) : null;
+    // all animation names this thing has; morph parts / heads / people only carry a few in the file, others reload
+    const all = (meta.animations || []).map(a => String(a).split(':')[0]);
+    const names = [...new Set([...clips.map(c => c.name), ...all])];
+    const sel = $('anim'); sel.innerHTML = names.map(n => `<option${clips.some(c => c.name === n) ? '' : ' class="reload"'}>${esc(n)}</option>`).join('');
+    grp('g-anim', names.length > 0);
+    const start = clips.find(c => c.name === wanted) || clips.find(c => /^walk$/i.test(c.name)) || clips.find(c => /walk|idle/i.test(c.name)) || clips[0];
+    if (start) { sel.value = start.name; play(start.name); }
     frame(current);
-    const v = meta.meshes.reduce((s, m) => s + m.verts, 0), t = meta.meshes.reduce((s, m) => s + m.tris, 0);
-    info([['Type', r.tag === 'bsh' ? 'Skinned model (bone shape)' : 'Static model'], ['Sub-meshes', meta.meshes.length], ['Vertices', v.toLocaleString()], ['Triangles', t.toLocaleString()],
-      ...(meta.bones.length ? [['Bones', meta.bones.length + ': ' + meta.bones.map(b => esc(b.name)).slice(0, 12).join(', ') + (meta.bones.length > 12 ? '…' : '')]] : []),
-      ...(meta.effects.length ? [['Attach points', meta.effects.map(esc).join(', ')]] : []),
-      ...meta.meshes.map((m, i) => [`Mesh ${i + 1}`, `${esc(m.texture)} · ${m.tris} tris${m.sides === 1 ? ' · double-sided' : ''}`])]);
+    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mms: 'Person part (vertex-animated)', ssk: 'Person head (skinned)', person: 'Whole person' }[tag] || tag]];
+    let v = 0, t = 0; current.traverse(o => { if (o.isMesh) { v += o.geometry.attributes.position.count; t += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
+    rows.push(['Vertices', v.toLocaleString()], ['Triangles', Math.round(t).toLocaleString()]);
+    if (names.length) rows.push(['Animations', names.length + (clips.length < names.length ? ` (${clips.length} loaded, others load on pick)` : '')]);
+    if (meta.textures) rows.push(['Textures', meta.textures.map(esc).join(', ')]);
+    if (meta.texture) rows.push(['Texture', esc(meta.texture)]);
+    if (meta.bones) rows.push(['Bones', Array.isArray(meta.bones) ? meta.bones.map(esc).join(', ') : meta.bones]);
+    if (meta.attach_points?.length) rows.push(['Attach points', meta.attach_points.map(esc).join(', ')]);
+    if (meta.parts) rows.push(['Parts', meta.parts.map(esc).join(', ') + (meta.head ? ', ' + esc(meta.head) : '')]);
+    info(rows);
   }, err => msg('Could not display model: ' + err.message, true));
 }
+function play(n) {
+  const c = clips.find(c => c.name === n); if (!mixer || !c) return;
+  if (action) action.stop(); action = mixer.clipAction(c); action.reset().play();
+}
+$('anim').onchange = e => {
+  const n = e.target.value;
+  if (clips.some(c => c.name === n)) return play(n);
+  // not in the file yet: fetch again with this animation
+  if (animSrc.url.startsWith('/api/person')) return showPerson(animSrc.name, n);
+  const r = resources.find(x => x.name === animSrc.name); if (r) show(r, { anims: n });
+};
+$('b-play').onclick = () => { playing = !playing; $('b-play').classList.toggle('on', playing); $('b-play').textContent = playing ? 'Play' : 'Paused'; };
+const hex = id => $(id).disabled ? '' : $(id).value.slice(1);
+$('b-recol').onclick = () => selRes && show(selRes, { colors: [hex('c0'), hex('c1'), hex('c2')].join(',') });
+$('b-orig').onclick = () => selRes && show(selRes);
+['c0', 'c1', 'c2'].forEach(id => $(id).onchange = () => $('b-recol').click());
 
 const toggle = (id, fn) => $(id).onclick = () => { const on = $(id).classList.toggle('on'); fn(on); };
 toggle('b-wire', on => { wire = on; current?.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => m.wireframe = on); }); });
@@ -217,14 +351,15 @@ toggle('b-spin', on => controls.autoRotate = on);
 $('bg').onchange = e => scene.background = new THREE.Color(e.target.value);
 $('b-reset').onclick = () => current && frame(current);
 $('b-dl').onclick = () => { if (!dlUrl) return; const a = document.createElement('a'); a.href = dlUrl; a.download = dlName; a.click(); };
-// deep links: #ovl=<path>&res=<name>
+// deep links: #ovl=<path>&res=<name>[&anim=<name>]  or  #person=<variant>
 async function fromHash() {
   const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get('person')) { $('b-people').click(); return showPerson(h.get('person'), h.get('anim')); }
   if (!h.get('ovl')) return;
-  await openOvl(h.get('ovl'));
-  const r = resources.find(x => x.name === h.get('res')); if (r) await show(r);
+  await openOvl(h.get('ovl'), false);
+  if (h.get('texts')) return show(resources.find(x => x.texts));
+  const r = resources.find(x => x.name === h.get('res')); if (r) await show(r, { anims: h.get('anim') });
 }
-const _show = show;
 window.addEventListener('hashchange', fromHash);
 loadTree().then(fromHash).catch(e => msg('Could not load index: ' + e, true));
 </script>

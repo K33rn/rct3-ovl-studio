@@ -49,30 +49,51 @@ class MorphMesh:
     # colour variants: people and animal textures are grids of variants (AF01's outfit texture is 4 x 4 outfits,
     # the duck's is 2 x 2: mallard drake / plain duck ...). The UVs as stored point into one tile (usually the
     # bottom-left); the game shifts them to pick the variant for each individual.
-    def variant_grid(self) -> tuple[int, int, int, int]:
-        """-> (columns, rows, stored column, stored row) of the tile grid the UVs live in."""
+    def variant_grid(self, image=None) -> tuple[int, int, int, int]:
+        """-> (columns, rows, stored column, stored row) of the variant grid.
+        The UVs fit one cell; that cell can be smaller than a variant: the shared skin textures (TM01_Skin…) are
+        4 x 4 variants of 2 x 2 cells (face, hair, arm skin…), and the arms' UVs fill one 1/8 cell. With the texture
+        given, the cell is widened to the texture's real repeat (where its edge layout lines up when shifted)."""
         if not len(self.uvs):
             return 1, 1, 0, 0
         out = []
         for c in (0, 1):
             x = np.clip(self.uvs[:, c], 0, 1 - 1e-6)
             k = next((k for k in (8, 4, 2) if np.ptp(np.floor(x * k)) == 0), 1)
+            if image is not None and k > 1:
+                k = _layout_repeat(image, axis=c, cells=k)
             out += [k, int(np.floor(x[0] * k))]
         return out[0], out[2], out[1], out[3]
 
-    def variant_count(self) -> int:
-        cols, rows, _, _ = self.variant_grid()
+    def variant_count(self, image=None) -> int:
+        cols, rows, _, _ = self.variant_grid(image)
         return cols * rows
 
-    def with_variant(self, variant: int | None) -> 'MorphMesh':
-        """Copy with UVs moved to tile `variant` (0 = top-left, row by row). None keeps the stored tile."""
+    def with_variant(self, variant: int | None, image=None) -> 'MorphMesh':
+        """Copy with UVs moved to variant `variant` (0 = first, row by row). None keeps the stored one."""
         if variant is None:
             return self
-        cols, rows, c0, r0 = self.variant_grid()
+        cols, rows, c0, r0 = self.variant_grid(image)
         v = variant % (cols * rows)
         c, r = v % cols, v // cols
         uvs = self.uvs + np.array([(c - c0) / cols, (r - r0) / rows], np.float32)
         return MorphMesh(self.name, self.texture, uvs, self.remap, self.indices, self.nremap, self.anims)
+
+
+def _layout_repeat(image, axis: int, cells: int) -> int:
+    """Number of variants along an axis: the UVs' cell count `cells` (8, 4 or 2), reduced while the texture's edge
+    map does not line up when shifted by one cell. Colours differ between variants, shapes repeat: skin textures
+    correlate ~0.9 at a 1/4 shift but ~0.1 at 1/8. Designs that never repeat (AF01's 16 outfits) keep `cells`."""
+    g = np.asarray(image.convert('L').resize((256, 256)), np.float32)
+    e = np.abs(np.diff(g, axis=1, append=g[:, :1])) + np.abs(np.diff(g, axis=0, append=g[:1]))
+    e = (e - e.mean()) / (e.std() + 1e-6)
+    k = cells
+    while k > 1:
+        shift = 256 // k
+        if float((e * np.roll(e, shift, axis=1 - axis)).mean()) >= 0.6:
+            return k                                    # the layout repeats every 1/k: k variants
+        k //= 2
+    return cells
 
 
 def _unpack(raw: np.ndarray, off, scale) -> np.ndarray:

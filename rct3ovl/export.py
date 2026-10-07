@@ -82,8 +82,6 @@ def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morp
                      'animations': [a.name for a in an], 'attach_points': [e[0] for e in s.effects]})
     elif tag == 'mms':
         mm = load_morph(o, r)
-        info['variants'] = mm.variant_count()
-        mm = mm.with_variant(variant)
         names = [a.name for a in mm.anims]
         sel = [n for n in names if anims is None or n in anims] or names[:1]
         if anims is None:
@@ -99,6 +97,8 @@ def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morp
             stem = os.path.basename(o.name).split('.')[0].lower()
             tex = next((c for c in cands if c.split(':')[0].lower() == stem), cands[0] if cands else None)
         img = lib.texture_image(tex, prefer=o) if tex else None
+        info['variants'] = mm.variant_count(img)
+        mm = mm.with_variant(variant, img)
         files.append(('morphs', f'{base}.mms.glb', people_to_glb([(mm, img)], (), sel, base)))
         info.update({'animations': names, 'exported_animations': sel, 'texture': tex or ''})
     elif tag == 'ssk':

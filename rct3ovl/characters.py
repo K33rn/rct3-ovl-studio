@@ -7,6 +7,8 @@ and live in the character's Shared folder; the lowest level uses a morph-mesh he
 """
 from __future__ import annotations
 
+import re
+
 from .library import Library
 from .morph import load_morph
 from .people import load_ppg, load_prt, load_san, load_ssk
@@ -22,6 +24,7 @@ def assemble(lib: Library, groups: list[str], lod: int = 0, anim_names: list[str
     """Returns (morph parts, skins, info). groups: ppg names like 'af01_body:ppg'."""
     morphs, skins, info = [], [], {'parts': [], 'head': None}
     head_tex = None
+    head_morphs = []                                    # the group's own head, kept in case the skinned one doesn't fit
     head_group = next((g for g in groups if g.split(':')[0].endswith('_head')), None)
     sh = None
     if detailed_head and lod < 2 and head_group:
@@ -60,14 +63,16 @@ def assemble(lib: Library, groups: list[str], lod: int = 0, anim_names: list[str
             for e in load_prt(ph[0], ph[1]):
                 if not e.mesh.endswith(':mms'):
                     continue
-                if pn.lower().startswith('head_'):
+                is_head = pn.lower().startswith('head_')
+                if is_head:
                     head_tex = e.texture
-                    if sh:
-                        break                           # replaced by the skinned head below
                 mh = lib.find(e.mesh)
                 if mh:
-                    morphs.append((load_morph(mh[0], mh[1]), lib.texture_image(e.texture)))
-                    info['parts'].append(e.mesh)
+                    part = (load_morph(mh[0], mh[1]), lib.texture_image(e.texture))
+                    if is_head and sh:
+                        head_morphs.append((part, e.mesh))     # replaced by the skinned head if that fits
+                    else:
+                        morphs.append(part); info['parts'].append(e.mesh)
                 break
     if sh:
         if True:
@@ -97,8 +102,17 @@ def assemble(lib: Library, groups: list[str], lod: int = 0, anim_names: list[str
                 own = head_clips(lib, sh[0], skin.name) or head_clips(lib, sh[0], 'SS_' + skin.name)
                 want = [a.lower() for a in (anim_names or [])]
                 clips = {k: v for k, v in own.items() if not want or k.lower() in want} or dict(list(own.items())[:1])
-            skins.append((skin, clips, lib.texture_image(head_tex) if head_tex else None))
-            info['head'] = skin.name
+            # only use the skinned head if its animations belong to this body (guests: walk <-> walk, lifeguard:
+            # LifeGuardIdle01 on both). VF01 the vendor matches an unrelated SS_Head_VF01 with walk/swim clips, which
+            # would float off a serving body: keep the group's own head instead.
+            body = {a.lower() for a in animation_names(morphs)}
+            norm = lambda k: re.sub(r'^l\d_', '', k.lower())
+            if not head_morphs or any(norm(k) in body for k in clips):
+                skins.append((skin, clips, lib.texture_image(head_tex) if head_tex else None))
+                info['head'] = skin.name
+                head_morphs = []
+    for part, mesh in head_morphs:
+        morphs.append(part); info['parts'].append(mesh)
     return morphs, skins, info
 
 
@@ -147,6 +161,35 @@ def variants(lib: Library, scope: str | None = None) -> dict[str, list[str]]:
     return out
 
 
+# People list categories, from the game's own Characters\<folder> names
+_FOLDERS = {
+    'AF': ('Guests', 'Adult female'), 'AM': ('Guests', 'Adult male'), 'TF': ('Guests', 'Teen female'),
+    'TM': ('Guests', 'Teen male'), 'CF': ('Guests', 'Child female'), 'CM': ('Guests', 'Child male'),
+    'HM': ('Staff', 'Handyman'), 'Maintenance': ('Staff', 'Mechanic'), 'SecurityGuard': ('Staff', 'Security guard'),
+    'Lifeguard': ('Staff', 'Lifeguard'), 'AnimalKeeper': ('Staff', 'Animal keeper'), 'VM': ('Staff', 'Vendor'),
+    'MovieStar': ('VIPs & celebrities', 'Movie star'), 'PopStar': ('VIPs & celebrities', 'Pop star'),
+    'Politician': ('VIPs & celebrities', 'Politician'), 'PI': ('VIPs & celebrities', 'Park inspector'),
+    'JoeSlugger': ('VIPs & celebrities', 'Joe Slugger'), 'BobWaterman': ('VIPs & celebrities', 'Bob Waterman'),
+    'Smythe': ('VIPs & celebrities', 'Smythe'),
+}
+_GROUP_ORDER = ['Guests', 'Staff', 'Entertainers', 'VIPs & celebrities', 'Other']
+
+
+def describe_variant(lib: Library, variant: str, groups: list[str]) -> dict:
+    """{'variant', 'group', 'label'} from the folder the character's part groups live in, e.g. VF01 is in
+    Characters\\VM -> Staff / Vendor (female)."""
+    rel = next((lib.index['names'].get(g) for g in groups if lib.index['names'].get(g)), '') or ''
+    parts = rel.replace('/', '\\').split('\\')
+    folder = parts[1] if len(parts) > 2 and parts[0].lower() == 'characters' else ''
+    if folder.lower() == 'entertainers' and len(parts) > 3:
+        group, label = 'Entertainers', {'PumpkinHead': 'Pumpkin head'}.get(parts[2], parts[2])
+    else:
+        group, label = _FOLDERS.get(folder, ('Other', folder or variant.upper()))
+    if folder == 'VM':
+        label += ' (female)' if variant.lower().startswith('vf') else ' (male)'
+    return {'variant': variant, 'group': group, 'label': label}
+
+
 def build_person(lib: Library, variant: str, anim_names: list[str] | None, all_variants=None, lod: int = 0,
                  expression: str = '', outfit: int | None = 0):
     """-> (glb bytes, info) for a whole person, or None. Head-only variants (AF03) wear their family's base
@@ -170,6 +213,6 @@ def build_person(lib: Library, variant: str, anim_names: list[str] | None, all_v
         m, s, info = assemble(lib, main, lod, use, expression)
     # outfit: colour-variant tile of each part's texture (0 = top-left); parts with fewer tiles wrap around
     info.update({'groups': main, 'animations': animation_names(m), 'exported_animations': use,
-                 'outfits': max((mm.variant_count() for mm, _ in m), default=1)})
-    m = [(mm.with_variant(outfit), img) for mm, img in m]
+                 'outfits': max((mm.variant_count(img) for mm, img in m), default=1)})
+    m = [(mm.with_variant(outfit, img), img) for mm, img in m]
     return people_to_glb(m, s, use, variant.upper()), info

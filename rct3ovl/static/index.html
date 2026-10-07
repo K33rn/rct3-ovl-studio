@@ -239,11 +239,14 @@ $('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return s
 $('b-people').onclick = async () => {
   selOvl = null; document.querySelectorAll('.ovl.sel').forEach(d => d.classList.remove('sel'));
   $('ovltitle').textContent = 'People'; $('ovlsub').textContent = 'whole guests, staff and entertainers, assembled from their parts';
+  // [{variant, group, label}]: categories come from the game's Characters\<folder> (VF01/VM01 are in VM = vendors)
   const vs = await (await fetch('/api/people')).json(); resources = [];
-  const fam = { af: 'Adult female', am: 'Adult male', cf: 'Child female', cm: 'Child male', tf: 'Teen female', tm: 'Teen male',
-    ef: 'Elderly female', em: 'Elderly male', vf: 'VIP female', vm: 'VIP male' };
-  const by = {}; for (const v of vs) { const k = v.replace(/\d+$/, ''); (by[fam[k] ? fam[k] : (/\d/.test(v) ? 'Staff & specials' : 'Entertainers & mascots')] ??= []).push(v); }
-  $('res').innerHTML = Object.entries(by).map(([g, l]) => `<div class="group">${g} <small>${l.length}</small></div>` + l.map(v => `<div class="res" data-v="${v}">${v.toUpperCase()}</div>`).join('')).join('');
+  const order = ['Guests', 'Staff', 'Entertainers', 'VIPs & celebrities', 'Other'], by = {};
+  for (const p of vs) (by[p.group] ??= []).push(p);
+  $('res').innerHTML = Object.keys(by).sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)).map(g =>
+    `<div class="group">${esc(g)} <small>${by[g].length}</small></div>` +
+    by[g].sort((a, b) => a.label.localeCompare(b.label) || a.variant.localeCompare(b.variant)).map(p =>
+      `<div class="res" data-v="${esc(p.variant)}">${esc(p.variant.toUpperCase())} <span style="color:var(--dim)">· ${esc(p.label)}</span></div>`).join('')).join('');
 };
 
 // ---- view ------------------------------------------------------------------------------------------------

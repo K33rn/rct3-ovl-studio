@@ -98,3 +98,12 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   deep link #types=<tag>, search box, Download saves the .md. CLI: `rct3ovl types [tag]`.
 - Program name: "RCT3 OVL Extractor & Viewer (rct3ovl)", author K3rn (README author block, viewer header, CLI help).
 - Headless screenshots: Edge fails while the user's Edge is open; headless Chrome run directly (& $chrome ...) works.
+
+## 2026-10-07: "VIPs" were vendors; VF01 floating head; navy vendor arms
+- VF/VM live in Characters\VM and play Serve/IdleStackShelfs: they are the vendors. People list categories now come
+  from the Characters\<folder> names (characters.describe_variant): Guests / Staff / Entertainers / VIPs & celebrities.
+- VF01 matched an unrelated SS_Head_VF01 skin (walk/swim clips). Skinned heads are now only used when their clips
+  match the body's animations; otherwise the group's own head part is kept.
+- Variant grids: shared skin textures (TM01_Skin...) are 4x4 variants of 2x2 cells, and arm UVs fill one 1/8 cell.
+  morph._layout_repeat widens the UV cell to the texture's real repeat (edge-map autocorrelation >= 0.6; skin
+  ~0.9 at 1/4, ~0.1 at 1/8). Designs that never repeat (AF01 outfits) keep the UV cell.

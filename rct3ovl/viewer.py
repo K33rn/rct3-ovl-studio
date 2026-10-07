@@ -10,7 +10,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from .characters import build_person, variants
+from .characters import build_person, describe_variant, variants
 from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
@@ -112,7 +112,8 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 if u.path == '/api/people':
                     with lock:
                         vs = variants(lib)
-                    return self.js(sorted(vs))
+                        out = [describe_variant(lib, v, gs) for v, gs in sorted(vs.items())]
+                    return self.js(out)
                 if u.path == '/api/person':
                     anims = q['anims'].split(',') if q.get('anims') else ['Walk']
                     with lock:

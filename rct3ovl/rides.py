@@ -77,6 +77,75 @@ def list_rides(lib: Library) -> list[dict]:
     return cache
 
 
+def track_sets(lib: Library) -> list[dict]:
+    """Which track pieces each tracked ride (trr: coasters, tracked rides) is built from, and where they live.
+    The ride record lists its pieces by name (Medcurve:tks, Straight:tks…) - names many coasters share - and
+    some records name their track OVL ('../Track1/Track1'); for the rest, the track OVL holding all their
+    pieces is found by matching names (Stormrunner needs two). -> [{ride, title, folder, pieces: [(ovl, name)]}]"""
+    cache = getattr(lib, '_track_sets', None)
+    if cache is not None:
+        return cache
+    names = lib.index['names']
+    holders = {}
+    for ov in lib.index['ovls']:
+        if ov.get('counts', {}).get('tks'):
+            try:
+                o, _ = lib.open(ov['path'])
+            except Exception:
+                continue
+            holders[ov['path']] = {r.name.lower(): r.name for r in o.by_tag('tks')}
+    out = []
+    for t in sorted(k for k in names if k.endswith(':trr')):
+        h = lib.find(t)
+        if not h:
+            continue
+        o, r = h[0], h[1]
+        imps = _imports(o, r)
+        want = list(dict.fromkeys(x.lower() for x in imps if x.lower().endswith(':tks')))
+        if not want:
+            continue
+        own = os.path.dirname(names[t])
+        first = None
+        for i in range(0, 0x400, 4):
+            try:
+                if o.is_pointer(r.data + i):
+                    s = o.str_field(r.data + i)
+                    if '/' in s and 'track' in s.lower():
+                        first = os.path.normpath(os.path.join(own, s)) + '.common.ovl'
+                        break
+            except OvlError:
+                pass
+        chosen, left = [], set(want)
+        if first:
+            first = next((k for k in holders if k.lower() == first.lower()), None)
+        while left:
+            pick = first if first and first not in chosen else max(
+                (k for k in holders if k not in chosen), key=lambda k: (len(left & holders[k].keys()), -len(holders[k])),
+                default=None)
+            first = None
+            if not pick or not left & holders[pick].keys():
+                break
+            chosen.append(pick)
+            left -= holders[pick].keys()
+        pieces = []
+        for n in want:
+            src = next((c for c in chosen if n in holders[c]), None)
+            if src:
+                pieces.append((src, holders[src][n]))
+        ht = None
+        txt = next((i for i in imps if i.lower().endswith(':txt') and 'name' in i.lower()), None)
+        if txt:
+            ht = lib.find(txt)
+        try:
+            title = text(ht[0], ht[1]) if ht else ''
+        except OvlError:
+            title = ''
+        out.append({'ride': t, 'title': title or t.split(':')[0], 'folder': own, 'track_ovls': chosen,
+                    'pieces': pieces, 'missing': sorted(left)})
+    lib._track_sets = out
+    return out
+
+
 def _short(names: list[str]) -> list[str]:
     """pirateshipstart, pirateshiploop -> start, loop (drop the shared prefix)."""
     if len(names) < 2:

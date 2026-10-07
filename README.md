@@ -56,7 +56,7 @@ Unzip `rct3ovl.zip` somewhere easy to find, e.g. `Documents\rct3ovl`. Keep the f
    it; closing that window stops the viewer.
 
 ### 4. Use the viewer
-- **Left column:** every OVL file in the game, in its folders. Type in the box to filter, e.g. `coaster` or
+- **Left column:** every OVL file in the game, in its folders. Each coaster and tracked ride folder (`tracks\coasters\WoodenRC`…) also has a **🛤 … track pieces** entry with exactly that ride's pieces; the game keeps them in shared `TrackNN` files. Type in the box to filter, e.g. `coaster` or
   `chess`.
 - **Middle column:** what's inside the OVL you picked, grouped by type. Click the **?** next to a group to learn
   what that type is.
@@ -72,7 +72,7 @@ Unzip `rct3ovl.zip` somewhere easy to find, e.g. `Documents\rct3ovl`. Keep the f
 | Everything else | The decoded record |
 
 The buttons at the top:
-- **Peeps** lists every guest, staff member and entertainer as a whole, animated character.
+- **Peeps** lists every guest, staff member and entertainer as a whole, animated character. In eating and drinking animations (WalkEatRHand, SitBenchDrinkL…) a **Hold** menu puts any of the game's foods or drinks in the right hand; the item follows the game's own hand attachment point.
 - **Thrill Rides** lists the flat rides (Pirate Ship, Top Spin, Ferris Wheel, Soaked! and Wild! rides, themed rides…) with their ride animations: Static, Start, Loop and Stop. Each ride opens playing its loop.
 - **File types** opens the guide to every file type.
 - **Download** saves what you're looking at: `.glb`, `.png`, `.wav` or `.json`.

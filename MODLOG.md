@@ -162,3 +162,12 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   parts stayed put when animated (Barn Stormer planes, Aileron seats, Double SkyWheel wheels). Rest pose looked
   fine because every bone is at its bind pose there. 27 bsh models use bones 128+ (Zipper, Skywheel, Giant Ferris
   Wheel, Pop Concert, Dolphin/Lion/Tiger shows...). Now u8, with numbers >= bone count treated as unused.
+
+## 2026-10-07: food/drink in peeps' hands; track pieces per ride
+- AttachmentR/L mms parts are 3-vertex triangles = the hand attachment points. people_to_glb adds animated empty nodes
+  hand_R / hand_L (frame: origin centroid, X = p0-p1, Y = edge midpoint - p2, Z = X x Y; glTF space). Viewer Hold
+  menu (eat/drink animations) parents a carried-item shs to the hand node. Items: characters.carried_items: cid with a
+  model; food if the leftover is wrapper/box/stick (or a scoop), drink if empty can/bottle/cup/shell (65 food, 41 drink).
+- rides.track_sets: trr lists its tks by (shared) name; some trr hold a path string ('../Track1/Track1'), the rest are
+  matched to the TrackNN OVL containing all their pieces (Stormrunner needs two). 121 rides; viewer tree shows a
+  'track pieces' entry in each ride folder (/api/tracksets, /api/trackset, openOvl('trackset:<trr>')).

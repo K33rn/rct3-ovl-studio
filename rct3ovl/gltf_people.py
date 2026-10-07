@@ -149,6 +149,53 @@ def _add_skin(b: _Builder, root: dict, skin: SimpleSkin, clips: dict, img, anims
                                 {'sampler': len(ent['samplers']) - 1, 'target': {'node': base + i, 'path': 'rotation'}}]
 
 
+def _hand_side(name: str) -> str | None:
+    """AttachmentR_AM01_L1:mms -> 'R'. AttachmentH is the hat/head point; only the hands carry food and drink."""
+    n = name.lower()
+    return 'R' if n.startswith('attachmentr_') else 'L' if n.startswith('attachmentl_') else None
+
+
+def _hand_frame(P: np.ndarray) -> np.ndarray:
+    """4x4 (column vectors) from the 3 attachment-triangle points (already in glTF space): origin at the centroid,
+    X = p0 - p1, Y = from p2 up to the p0-p1 edge, Z = X x Y. In the rest 'holding' pose the triangle lies across the
+    hand with p2 below, so an item's own up (+Y) points out of the fist."""
+    o = P.mean(0)
+    x = P[0] - P[1]; x /= max(np.linalg.norm(x), 1e-9)
+    y = (P[0] + P[1]) / 2 - P[2]; y -= x * np.dot(x, y); y /= max(np.linalg.norm(y), 1e-9)
+    M = np.eye(4); M[:3, 0] = x; M[:3, 1] = y; M[:3, 2] = np.cross(x, y); M[:3, 3] = o
+    return M
+
+
+def _add_hand(b: _Builder, root: dict, mm: MorphMesh, side: str, anim_names, anims: dict):
+    """An empty node 'hand_R' / 'hand_L' that follows the hand attachment triangle in every exported animation, so
+    a viewer can parent a carried item (burger, drink, balloon…) to it."""
+    g = b.g
+    if not mm.anims or mm.anims[0].frames.shape[1] < 3:
+        return
+    sel = [a for a in mm.anims if anim_names is None or a.name in anim_names] or mm.anims[:1]
+    M0 = _hand_frame(sel[0].frames[0][:3].astype(np.float64) * _Z)
+    node = {'name': 'hand_' + side, 'translation': [float(v) for v in M0[:3, 3]],
+            'rotation': [float(v) for v in _quat_from_matrix(M0[:3, :3])]}
+    g['nodes'].append(node)
+    ni = len(g['nodes']) - 1
+    root.setdefault('children', []).append(ni)
+    for a in sel:
+        ent = anims.setdefault(a.name, {'name': a.name, 'samplers': [], 'channels': []})
+        t = _times(a.times, len(a.frames))
+        ti = b.accessor(t, 5126, 'SCALAR', minmax=True)
+        tr, qs, prev = [], [], None
+        for f in range(len(a.frames)):
+            M = _hand_frame(a.frames[f][:3].astype(np.float64) * _Z)
+            q = _quat_from_matrix(M[:3, :3])
+            if prev is not None and np.dot(q, prev) < 0:
+                q = -q
+            tr.append(M[:3, 3]); qs.append(q); prev = q
+        ent['samplers'] += [{'input': ti, 'output': b.accessor(np.array(tr, np.float32), 5126, 'VEC3'), 'interpolation': 'LINEAR'},
+                            {'input': ti, 'output': b.accessor(np.array(qs, np.float32), 5126, 'VEC4'), 'interpolation': 'LINEAR'}]
+        ent['channels'] += [{'sampler': len(ent['samplers']) - 2, 'target': {'node': ni, 'path': 'translation'}},
+                            {'sampler': len(ent['samplers']) - 1, 'target': {'node': ni, 'path': 'rotation'}}]
+
+
 def people_to_glb(morphs: list[tuple[MorphMesh, object]], skins: list[tuple[SimpleSkin, dict, object]] = (),
                   anim_names: list[str] | None = None, name: str = 'person') -> bytes:
     b = _Builder(); g = b.g
@@ -157,6 +204,9 @@ def people_to_glb(morphs: list[tuple[MorphMesh, object]], skins: list[tuple[Simp
     anims: dict[str, dict] = {}
     for mm, img in morphs:
         _add_morph(b, root, mm, img, anim_names, anims)
+        side = _hand_side(mm.name)
+        if side:
+            _add_hand(b, root, mm, side, anim_names, anims)
     for sk, clips, img in skins:
         sel = {k: v for k, v in clips.items() if anim_names is None or k in anim_names}
         _add_skin(b, root, sk, sel or dict(list(clips.items())[:1]), img, anims)

@@ -107,6 +107,7 @@
     <div id="toolbar">
       <span class="title" id="vtitle">Pick anything in an OVL</span>
       <span class="grp" id="g-anim"><select id="anim" title="Animation"></select><button id="b-play" class="on" title="Play / pause">Play</button></span>
+      <span class="grp" id="g-hold" title="What the peep is eating or drinking in this animation"><select id="hold"></select></span>
       <span class="grp" id="g-outfit" title="Colour variant: the texture holds several (outfits, mallard / plain duck, ...)"><select id="outfit"></select></span>
       <span class="grp" id="g-zoom" title="Scroll to zoom, drag to move, double-click to fit"><button id="z-out" title="Zoom out (-)">−</button><span id="zoompct">100%</span><button id="z-in" title="Zoom in (+)">+</button><button id="z-fit" title="Fit to window (0)">Fit</button><button id="z-1" title="Actual pixels (1)">1:1</button></span>
       <span class="grp" id="g-3d" style="display:flex">
@@ -162,7 +163,7 @@ function frame(obj) {
   grid = new THREE.GridHelper(step * 20, 20, 0x556070, 0x343a46); grid.position.y = box.min.y; grid.visible = $('b-grid').classList.contains('on'); scene.add(grid);
 }
 function clearModel() {
-  if (mixer) mixer.stopAllAction(); mixer = null; action = null; clips = [];
+  if (mixer) mixer.stopAllAction(); mixer = null; action = null; clips = []; heldObj = null; heldKey = ''; grp('g-hold', false);
   if (current) { scene.remove(current); current.traverse(o => { o.geometry?.dispose(); [].concat(o.material || []).forEach(m => { m.map?.dispose(); m.dispose(); }); }); }
   if (skel) scene.remove(skel); current = skel = null;
 }
@@ -174,7 +175,7 @@ function mode(m) {   // '3d' | 'img' | 'doc'
   renderer.domElement.style.visibility = m === '3d' ? 'visible' : 'hidden';
   $('img').style.display = m === 'img' ? 'flex' : 'none';
   $('doc').style.display = m === 'doc' ? 'block' : 'none'; $('doc').classList.remove('guide');
-  grp('g-3d', m === '3d'); if (m !== '3d') { grp('g-anim', false); grp('g-outfit', false); clearModel(); }
+  grp('g-3d', m === '3d'); if (m !== '3d') { grp('g-anim', false); grp('g-outfit', false); grp('g-hold', false); clearModel(); }
   grp('g-zoom', m === 'img');
 }
 
@@ -223,11 +224,13 @@ document.addEventListener('keydown', e => {
 function setDownload(blob, name) { if (dlUrl) URL.revokeObjectURL(dlUrl); dlUrl = blob ? URL.createObjectURL(blob) : null; dlName = name; }
 
 // ---- tree ------------------------------------------------------------------------------------------------
-let ovls = [], selOvl = null;
+let ovls = [], selOvl = null, tracksets = [];
 async function loadTree() {
   const t = await (await fetch('/api/tree')).json();
   ovls = t.ovls; $('rootinfo').textContent = `${ovls.length} OVL pairs · ${t.root}`;
-  renderTree(''); msg('Pick an OVL on the left, or People for whole characters');
+  renderTree(''); msg('Pick an OVL on the left, or Peeps / Thrill Rides');
+  // track pieces per ride arrive a moment later (the first time, the server scans the track files)
+  fetch('/api/tracksets').then(r => r.json()).then(s => { tracksets = s; renderTree($('treefilter').value); }).catch(() => {});
 }
 function renderTree(filter) {
   const f = filter.toLowerCase(), root = {};
@@ -237,9 +240,19 @@ function renderTree(filter) {
     for (const p of parts.slice(0, -1)) node = (node[p + '/'] ??= {});
     node[parts.at(-1)] = o;
   }
+  // each tracked ride's folder gets an entry with exactly its track pieces (the game keeps them in shared
+  // tracks\coasters\TrackNN files, which the ride record points to)
+  for (const s of tracksets) {
+    const label = `${s.title} track pieces`;
+    if (f && !(s.folder + '\\' + label).toLowerCase().includes(f)) continue;
+    let node = root;
+    for (const p of s.folder.split(/[\\/]/)) node = (node[p + '/'] ??= {});
+    node['\u0000' + label] = { path: 'trackset:' + s.ride, trackset: s, counts: { tks: s.count } };
+  }
   const html = (node, depth) => Object.keys(node).sort((a, b) => (b.endsWith('/') - a.endsWith('/')) || a.localeCompare(b)).map(k => {
     const v = node[k];
     if (k.endsWith('/')) return `<details${f || depth < 1 ? ' open' : ''}><summary>${esc(k.slice(0, -1))}</summary>${html(v, depth + 1)}</details>`;
+    if (v.trackset) return `<div class="ovl trackset${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="Pieces from ${esc(v.trackset.track_ovls.join(', '))}">🛤 ${esc(k.slice(1))}<span class="badge b-shs">${v.trackset.count}</span></div>`;
     const c = v.counts || {}, m = (c.shs || 0) + (c.bsh || 0) + (c.mms || 0) + (c.ssk || 0), x = (c.tex || 0) + (c.ftx || 0), s = c.snd || 0;
     return `<div class="ovl${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="${esc(v.path)} · v${v.version}">${esc(k)}${m ? `<span class="badge b-shs">${m}</span>` : ''}${x ? `<span class="badge b-tex">${x}</span>` : ''}${s ? `<span class="badge b-snd">♪${s}</span>` : ''}${v.error ? '<span class="badge err">!</span>' : ''}</div>`;
   }).join('');
@@ -262,6 +275,17 @@ const LABEL = { shs: 'Static models', bsh: 'Skinned models', mdl: 'Wild! animal 
 let seq = 0;   // newest request wins; older responses are dropped
 async function openOvl(path, auto = true) {
   selOvl = path; document.querySelectorAll('.ovl').forEach(d => d.classList.toggle('sel', d.dataset.p === path));
+  if (path.startsWith('trackset:')) {
+    $('ovlsub').textContent = 'loading…';
+    const t = await (await fetch('/api/trackset?ride=' + encodeURIComponent(path.slice(9)))).json();
+    if (t.error) { $('ovlsub').innerHTML = `<span class="err">${esc(t.error)}</span>`; return; }
+    resources = t.resources; texts = 0;
+    $('ovltitle').textContent = t.title + ' track pieces';
+    $('ovlsub').textContent = `${resources.length} pieces · stored in ${t.track_ovls.map(p => p.split(/[\\/]/).slice(-2, -1)[0]).join(' + ')}`;
+    renderRes();
+    if (auto && resources.length) show(resources[0]);
+    return;
+  }
   $('ovltitle').textContent = path.split(/[\\/]/).at(-1); $('ovlsub').textContent = 'loading…';
   const r = await (await fetch('/api/ovl?path=' + encodeURIComponent(path))).json();
   if (r.error) { $('ovlsub').innerHTML = `<span class="err">${esc(r.error)}</span>`; return; }
@@ -336,8 +360,9 @@ let outfit = 0;       // colour-variant tile, kept while browsing
 async function show(r, opts = {}) {
   const my = ++seq; selRes = r; renderRes(); $('vtitle').textContent = r.name; info(null);
   if (r.texts) return showTexts();
-  history.replaceState(null, '', `#ovl=${encodeURIComponent(selOvl)}&res=${encodeURIComponent(r.name)}`);
-  let q = `/api/res?path=${encodeURIComponent(selOvl)}&name=${encodeURIComponent(r.name)}`;
+  const ovl = r.ovl || selOvl;   // pieces in a ride's track set come from the shared TrackNN files
+  history.replaceState(null, '', `#ovl=${encodeURIComponent(ovl)}&res=${encodeURIComponent(r.name)}`);
+  let q = `/api/res?path=${encodeURIComponent(ovl)}&name=${encodeURIComponent(r.name)}`;
   if (opts.anims) q += '&anims=' + encodeURIComponent(opts.anims);
   if (r.tag === 'mms') q += '&outfit=' + outfit;
   msg('Loading…');
@@ -439,7 +464,45 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
 function play(n) {
   const c = clips.find(c => c.name === n); if (!mixer || !c) return;
   if (action) action.stop(); action = mixer.clipAction(c); action.reset().play();
+  updateHold(n);
 }
+
+// ---- food & drink in peeps' hands: eating/drinking animations get a Hold menu; the item model is parented to the
+// animated hand_R / hand_L node the person GLB carries (it follows the game's hand attachment point)
+let items = null, heldObj = null, heldKey = '', holdChoice = { food: null, drink: null };
+const holdKind = n => /drink/i.test(n) ? 'drink' : /eat/i.test(n) ? 'food' : null;
+const holdHand = n => /LHand|L$/.test(n) ? 'hand_L' : 'hand_R';   // WalkEatLHand, SitBenchDrinkL -> left
+function dropHeld() { if (heldObj) { heldObj.parent?.remove(heldObj); heldObj = null; heldKey = ''; } }
+async function updateHold(n) {
+  const kind = holdKind(n || '');
+  const hand = current?.getObjectByName(holdHand(n || '')) || current?.getObjectByName('hand_R');
+  if (!kind || !hand) { grp('g-hold', false); dropHeld(); return; }
+  if (!items) items = await (await fetch('/api/items')).json();
+  const list = items.filter(i => i.kind === kind);
+  const def = list.find(i => /burger|soda/i.test(i.name)) || list[0];
+  const sel = $('hold'), want = holdChoice[kind] ?? (def ? def.model + '|' + def.name : '');
+  sel.innerHTML = `<option value="">Nothing in hand</option>` + list.map(i => `<option value="${esc(i.model + '|' + i.name)}">${esc(i.name)}</option>`).join('');
+  sel.value = want; grp('g-hold', true);
+  sel.dataset.kind = kind;
+  await attachHeld(sel.value, hand);
+}
+async function attachHeld(val, hand) {
+  if (!val) { dropHeld(); return; }
+  const key = val + '@' + hand.name;
+  if (key === heldKey && heldObj?.parent === hand) return;
+  const it = items.find(i => i.model + '|' + i.name === val); if (!it) return;
+  const my = seq;
+  const resp = await fetch(`/api/res?path=${encodeURIComponent(it.ovl)}&name=${encodeURIComponent(it.model)}`);
+  if (!resp.ok || my !== seq) return;
+  const buf = await resp.arrayBuffer();
+  loader.parse(buf, '', g => { if (my !== seq) return; dropHeld(); heldObj = g.scene; heldKey = key; hand.add(heldObj);
+    heldObj.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => m.wireframe = wire); }); });
+}
+$('hold').onchange = e => {
+  const kind = e.target.dataset.kind; holdChoice[kind] = e.target.value;
+  const hand = current?.getObjectByName(holdHand($('anim').value)) || current?.getObjectByName('hand_R');
+  if (hand) attachHeld(e.target.value, hand);
+};
 $('anim').onchange = e => {
   const n = e.target.value;
   if (clips.some(c => c.name === n)) return play(n);

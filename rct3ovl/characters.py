@@ -161,6 +161,48 @@ def variants(lib: Library, scope: str | None = None) -> dict[str, list[str]]:
     return out
 
 
+def carried_items(lib: Library) -> list[dict]:
+    """Food and drink guests can hold: CarriedItem (cid) records with a model. Kind comes from what the item leaves
+    behind - drinks leave an empty can / bottle / cup / shell, food a wrapper / box / stick (ice cream nothing).
+    -> [{name, kind: 'food'|'drink', model, ovl}], one entry per distinct model+name."""
+    cache = getattr(lib, '_carried', None)
+    if cache is not None:
+        return cache
+    from .media import text
+    from .rides import _imports
+    names = lib.index['names']
+    out, seen = [], set()
+    for c in sorted(k for k in names if k.endswith(':cid')):
+        h = lib.find(c)
+        if not h:
+            continue
+        im = _imports(h[0], h[1])
+        shs = next((i for i in im if i.lower().endswith(':shs')), None)
+        if not shs or shs.lower() not in names:
+            continue
+        left = next((i.lower() for i in im if i.lower().endswith(':cid') and i != ':cid'), '')
+        txt = next((i for i in im if i.lower().endswith(':txt') and 'plural' not in i.lower()), None)
+        ht = lib.find(txt) if txt else None
+        try:
+            title = text(ht[0], ht[1]) if ht else c.split(':')[0]
+        except Exception:
+            title = c.split(':')[0]
+        if any(k in left for k in ('wrapper', 'box', 'stick')) or 'scoop' in title.lower():
+            kind = 'food'                               # checked first: pizza leaves an EmptyBox
+        elif any(k in left for k in ('empty', 'shell')):
+            kind = 'drink'
+        else:
+            continue                                    # hats, toys, maps, balloons…
+        key = (shs.lower(), title.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({'name': title, 'kind': kind, 'model': shs, 'ovl': names[shs.lower()]})
+    out.sort(key=lambda d: (d['kind'], d['name'].lower()))
+    lib._carried = out
+    return out
+
+
 # People list categories, from the game's own Characters\<folder> names
 _FOLDERS = {
     'AF': ('Guests', 'Adult female'), 'AM': ('Guests', 'Adult male'), 'TF': ('Guests', 'Teen female'),

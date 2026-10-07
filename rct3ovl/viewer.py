@@ -10,8 +10,8 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from .characters import build_person, describe_variant, variants
-from .rides import build_ride, list_rides
+from .characters import build_person, carried_items, describe_variant, variants
+from .rides import build_ride, list_rides, track_sets
 from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
@@ -115,6 +115,21 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                         vs = variants(lib)
                         out = [describe_variant(lib, v, gs) for v, gs in sorted(vs.items())]
                     return self.js(out)
+                if u.path == '/api/items':
+                    with lock:
+                        return self.js(carried_items(lib))
+                if u.path == '/api/tracksets':
+                    with lock:
+                        return self.js([{k: s[k] for k in ('ride', 'title', 'folder', 'track_ovls')} | {'count': len(s['pieces'])}
+                                        for s in track_sets(lib)])
+                if u.path == '/api/trackset':
+                    with lock:
+                        s = next((x for x in track_sets(lib) if x['ride'] == q['ride']), None)
+                    if not s:
+                        return self.js({'error': 'unknown ride'}, 404)
+                    return self.js({'title': s['title'], 'folder': s['folder'], 'track_ovls': s['track_ovls'],
+                                    'resources': [{'name': n, 'tag': 'tks', 'loader': 'TrackSection', 'part': '', 'ovl': p}
+                                                  for p, n in s['pieces']]})
                 if u.path == '/api/rides':
                     with lock:
                         return self.js([{k: r[k] for k in ('name', 'title', 'group')} for r in list_rides(lib)])

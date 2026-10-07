@@ -69,7 +69,7 @@ def shape_to_glb(shape: Shape, texture_lookup) -> bytes:
     materials, mat_index, tex_cache = [], {}, {}
 
     def material(sm) -> int:
-        key = (sm.texture.lower(), sm.transparency, sm.sides)
+        key = (sm.texture.lower(), sm.style.lower(), sm.transparency, sm.sides)
         if key in mat_index:
             return mat_index[key]
         m = {'name': sm.texture or 'untextured', 'pbrMetallicRoughness': {'metallicFactor': 0.0, 'roughnessFactor': 0.8},
@@ -89,16 +89,25 @@ def shape_to_glb(shape: Shape, texture_lookup) -> bytes:
             ti, has_alpha = tex_cache[sm.texture.lower()]
             if ti is not None:
                 m['pbrMetallicRoughness']['baseColorTexture'] = {'index': ti}
-                if sm.transparency == 2 and has_alpha:
-                    m['alphaMode'] = 'BLEND'
-                elif has_alpha:
-                    m['alphaMode'] = 'MASK'; m['alphaCutoff'] = 0.5
+        # RCT3 decides transparency per mesh (the texture style), not from the texture: 0 opaque (alpha ignored),
+        # 1 alpha-mask cut-out ('Low' variants use a lower threshold), 2 blended (glass, water, SIAlpha*).
+        style = sm.style.lower()
+        if sm.transparency == 2:
+            m['alphaMode'] = 'BLEND'
+        elif sm.transparency == 1:
+            m['alphaMode'] = 'MASK'; m['alphaCutoff'] = 0.25 if 'masklow' in style else 0.5
+        if 'unlit' in style:
+            m['extensions'] = {'KHR_materials_unlit': {}}
+            g.setdefault('extensionsUsed', []).count('KHR_materials_unlit') or \
+                g['extensionsUsed'].append('KHR_materials_unlit')
+        if 'glass' in style or 'water' in style:
+            m['pbrMetallicRoughness']['roughnessFactor'] = 0.1
         materials.append(m); mat_index[key] = len(materials) - 1
         return mat_index[key]
 
     prims = []
     for sm in shape.meshes:
-        if not len(sm.indices):
+        if not len(sm.indices) or 'fillz' in sm.style.lower():     # SIFillZ = invisible depth-only occluder
             continue
         pos = sm.positions * np.array([1, 1, -1], np.float32)
         nrm = sm.normals * np.array([1, 1, -1], np.float32)

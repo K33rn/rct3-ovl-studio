@@ -54,7 +54,7 @@ class Shape:
 
 
 _V1 = np.dtype([('pos', '<f4', 3), ('nrm', '<f4', 3), ('col', 'u1', 4), ('uv', '<f4', 2)])
-_V2 = np.dtype([('pos', '<f4', 3), ('nrm', '<f4', 3), ('bone', 'i1', 4), ('w', 'u1', 4), ('col', 'u1', 4),
+_V2 = np.dtype([('pos', '<f4', 3), ('nrm', '<f4', 3), ('bone', 'u1', 4), ('w', 'u1', 4), ('col', 'u1', 4),
                 ('uv', '<f4', 2)])
 
 
@@ -113,13 +113,10 @@ def load_shape(ovl: Ovl, ref: LoaderRef) -> Shape:
                      vb['pos'].astype(np.float32), vb['nrm'].astype(np.float32), vb['uv'].astype(np.float32),
                      np.ascontiguousarray(col), idx)
         if kind == 'bsh' and vcount:
-            j = vb['bone'].astype(np.int16)
-            w = vb['w'].astype(np.float32)
-            w[j < 0] = 0
-            j[j < 0] = 0
-            s = w.sum(1, keepdims=True)
-            w = np.where(s > 0, w / np.maximum(s, 1e-9), np.array([1, 0, 0, 0], np.float32))
-            sm.joints, sm.weights = j.astype(np.uint8), w.astype(np.float32)
+            # bone numbers are UNSIGNED bytes: rides with more than 128 bones (Barn Stormer 172, Double SkyWheel 216)
+            # use 128-255; read as signed they became negative and fell back to the root, so those parts never moved.
+            # Numbers past the bone count are checked once the skeleton is read (below).
+            sm.joints, sm.weights = vb['bone'].astype(np.uint8), vb['w'].astype(np.float32)
         shape.meshes.append(sm)
     if kind == 'bsh':
         nb, bones_p, m1_p, m2_p = struct.unpack('<4I', o.read(ref.data + 44, 16))
@@ -127,6 +124,15 @@ def load_shape(ovl: Ovl, ref: LoaderRef) -> Shape:
             name_p, parent = struct.unpack('<Ii', o.read(bones_p + 8 * b, 8))
             shape.bones.append(Bone(o.str_field(bones_p + 8 * b, f'bone{b}'), parent,
                                     _matrix(o, m1_p + 64 * b), _matrix(o, m2_p + 64 * b) if m2_p else None))
+        for sm in shape.meshes:
+            if sm.joints is None:
+                continue
+            j, w = sm.joints.astype(np.int32), sm.weights.copy()
+            bad = j >= max(nb, 1)
+            w[bad] = 0; j[bad] = 0
+            s = w.sum(1, keepdims=True)
+            sm.joints = j.astype(np.uint8)
+            sm.weights = np.where(s > 0, w / np.maximum(s, 1e-9), np.array([1, 0, 0, 0], np.float32)).astype(np.float32)
     else:
         ne, mats_p, names_p = struct.unpack('<3I', o.read(ref.data + 44, 12))
         for e in range(ne):

@@ -156,3 +156,9 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   sid -> svd (fallback: <sid name>:svd for the standard rides, whose sid lists no visuals) -> LOD0 model + its ban
   animations (names shortened: pirateshiploop -> Loop); opens on the Loop animation. 86 of 89 anr resolve; the
   2 observation towers are track-built (base tks + car) and the hall of mirrors has no matching model.
+
+## 2026-10-07: bsh bone indices are UNSIGNED bytes (user report: thrill rides wrong)
+- Vertex bone numbers were read as int8; values 128-255 became negative and were dropped to bone 0, so those
+  parts stayed put when animated (Barn Stormer planes, Aileron seats, Double SkyWheel wheels). Rest pose looked
+  fine because every bone is at its bind pose there. 27 bsh models use bones 128+ (Zipper, Skywheel, Giant Ferris
+  Wheel, Pop Concert, Dolphin/Lion/Tiger shows...). Now u8, with numbers >= bone count treated as unused.

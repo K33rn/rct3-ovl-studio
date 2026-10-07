@@ -124,10 +124,11 @@ All commands start with `uv run --no-project --with numpy --with pillow python -
 - **"does not look like the RCT3 data folder":** you picked the wrong folder. Pick the one that has a
   `Characters` folder directly inside it. The launcher will ask again.
 - **The viewer shows something old or broken after an update:** close the launcher window and start it again.
-- **Some models are plain grey (e.g. the elevator, observation tower and Roto-Drop cars):** their textures aren't
-  in your game folder. The info box shows **No picture** with the reason. Check that the copied game folder is
-  complete: the `tracks`, `WildAnimals`, `Pool` and `Water` folders shouldn't be empty. A few names (`chrome`,
-  `water`, `fakeglass`…) are always made by the game while it runs; those get a stand-in colour.
+- **Some models are plain grey, or there are no track pieces or zoo animals:** the game folder is incomplete. A
+  full RCT3 Gold folder is about 1.3 GB with about 7,500 OVL pairs, and `tracks`, `WildAnimals`, `Pool` and `Water`
+  are full of `.ovl` files. If a copy was interrupted, copy again and let it finish. The info box shows
+  **No picture** with the reason for each texture it can't find. A few names (`chrome`, `water`, `fakeglass`…) are
+  always made by the game while it runs; those get a stand-in colour.
 - **3D view stays empty:** the viewer loads its 3D library from the internet, so check your connection.
 - **Port already in use:** another viewer is still running. Close its window, or start a second one with
   `view "<game folder>" --port 8766`.

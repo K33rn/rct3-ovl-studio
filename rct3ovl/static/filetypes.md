@@ -16,7 +16,7 @@ Every type entry below covers:
 - **You get:** what rct3ovl turns it into;
 - **Found in:** where it lives in the game folder.
 
-The counts are from a full install (base game + Soaked! + Wild!).
+The counts are from a full RCT3 Gold install (base game + Soaked! + Wild!, 7,484 OVL pairs).
 
 **Quick reference:**
 
@@ -26,8 +26,8 @@ The counts are from a full install (base game + Soaked! + Wild!).
 | `bsh` | 3D model with a skeleton (ride cars, flat rides, animatronics) | `.glb` with animations |
 | `svd` | An object's look: models per detail level, and their animations | `.json` |
 | `ban` | Animation for a `bsh` (lap bar opening, ride motion) | inside the `.glb`, plus `.json` |
-| `mdl` | Wild!'s walking-animal model (the elephant ride's elephant) | `.glb` with skeleton and animations, one per detail level |
-| `modelanim`, `wad` | That model's animations (walk, run, stand, idles) and the list tying them together | inside the `.glb`, plus `.json` |
+| `mdl` | Wild! zoo animal model (50: camel, giraffe, lion, tiger, zebra…) | `.glb` with skeleton and animations, one per detail level |
+| `modelanim`, `wad` | Those animals' animations (walk, run, eat, drink, idles…) and the lists tying them together | inside the `.glb`, plus `.json` |
 | `mam` | Invisible stand-in shape for complex pieces | `.json` |
 | `tex` + `flic` + `btbl` | A picture and its pixels | `.png` |
 | `ftx` | 256-colour picture you can recolour in-game | `.png`, plus a recolour preview |
@@ -54,7 +54,9 @@ The counts are from a full install (base game + Soaked! + Wild!).
 | `cid`, `ced` | **Things guests buy** (food, balloons, hats) and their extras (salt, ketchup) | `.json` (model in `models/`) |
 | `rcg` | Research category | `.json` |
 | `was` | Wild! animal species (elephant): models, sounds, needs | `.json` |
-| `txs`, `tks` | Built into the game, never stored in OVLs: texture styles and track sections | names only |
+| `tks` | **One track piece**: straight, slope, curve, loop, station… | `.glb` model plus rail curves `.json` |
+| `wai`, `pty` | Wild! animal toys; Soaked! pool styles | `.json` |
+| `txs` | Built into the game, never stored in OVLs: texture styles | names only |
 
 ## The containers
 
@@ -72,18 +74,15 @@ The counts are from a full install (base game + Soaked! + Wild!).
 - **Found in:** everywhere. The game has 3,011 pairs, in three format versions: 1 for the base game, 4 for
   Soaked! and 5 for Wild!.
 
-### Built-in types: `txs`, `tks`
-- **What it is:** types that OVLs *refer to* but never contain. The game defines them itself.
-- **In the game:**
-  - `txs` (**texture style**) is how a surface is drawn, e.g. `SIOpaque` (solid), `SIAlphaMask` (cut-out leaves
-    and fences), `SIGlass`/`SIWater` (see-through) or `SIOpaqueSpecular50Reflection` (shiny).
-  - `tks` (**track section**) is used by tracked rides, e.g. `ElevatorBaseSec:tks`.
+### Built-in type: `txs`
+- **What it is:** a type that OVLs *refer to* but never contain. The game defines it itself.
+- **In the game:** `txs` (**texture style**) is how a surface is drawn, e.g. `SIOpaque` (solid), `SIAlphaMask`
+  (cut-out leaves and fences), `SIGlass`/`SIWater` (see-through) or `SIOpaqueSpecular50Reflection` (shiny).
 - **You get:** `txs` names decide the material in exported models (solid, cut-out or see-through, lit or unlit).
-  `tks` names are listed in the ride's JSON.
 
 ## 3D models
 
-### `shs`: StaticShape (4,909)
+### `shs`: StaticShape (16,306)
 - **What it is:** a solid 3D model that doesn't bend.
 - **In the game:** most scenery (rocks, buildings, fences, signs), path pieces, ride parts, carried items (food,
   hats, balloons), and the low-detail versions of moving models.
@@ -97,7 +96,7 @@ The counts are from a full install (base game + Soaked! + Wild!).
   Viewer and most 3D tools. Effect points become named empty objects.
 - **Found in:** almost every folder.
 
-### `bsh`: BoneShape (1,853)
+### `bsh`: BoneShape (2,217)
 - **What it is:** a 3D model with a skeleton, so parts of it can move.
 - **In the game:** ride cars (lap bars opening), flat rides (the pirate ship swinging), animatronics, moving
   scenery, stalls with moving parts, animals.
@@ -107,7 +106,7 @@ The counts are from a full install (base game + Soaked! + Wild!).
   tool finds these through the model's `svd`. The viewer has an animation menu to play them.
 - **Found in:** `Cars`, `Style\…\Rides`, `…\ShopsandStalls`, animated scenery.
 
-### `svd`: SceneryItemVisual (2,263)
+### `svd`: SceneryItemVisual (6,332)
 - **What it is:** the *look* of an object: which models to show, and which animations they can play.
 - **In the game:** the game swaps models as you zoom out (**levels of detail**). For each level, `svd` lists:
   - the model (`shs` or `bsh`) or a flat billboard;
@@ -119,23 +118,25 @@ The counts are from a full install (base game + Soaked! + Wild!).
 - **You get:** `data/svd/<name>.json`. It's also how rct3ovl knows which animations go with which `bsh`.
 - **Found in:** next to the models it describes.
 
-### `mdl`: Model (1)
+### `mdl`: Model (50)
 - **What it is:** Wild!'s newer model format, used for animals that walk around.
-- **In the game:** the elephant transport ride's elephant.
+- **In the game:** every Wild! zoo animal (camel, chimp, elephant, giraffe, gorilla, grizzly, hippo, horse,
+  kangaroo, leopard, lion, mandrill, orangutan, ostrich, panda, panther, polar bear, rhino, gazelle, tiger,
+  zebra), in adult, baby and male/female versions, plus the elephant transport ride's elephant.
 - **Inside:** a bounding box, and two extra-data blocks:
   - a name list: bones such as `Bip01 Trunk1`, wheels, cameras, rider seats `Peep01`…, lights;
   - the model itself:
     - a skeleton: 52 bones for the elephant, each with a parent-relative position and rotation plus an inverse
       bind matrix;
-    - a parent table and a material list;
+    - a parent table, then (16-byte aligned) the material name list;
     - four detail levels of meshes: vertices with up to 4 bone weights, and triangles;
     - after each level, a table saying which materials that level uses and which one each mesh takes. The
       far-away elephant is painted from a small picture in a shared animal thumbnail sheet.
 - **You get:**
-  - `models/<name>.mdl.glb`: the textured, skinned model with all its animations (walk, run, stand, two idles);
+  - `models/<name>.mdl.glb`: the textured, skinned model with all its animations (27–28 per zoo animal: walk,
+    sick walk, run, leap, eat, drink, idles…);
   - `<name>.lod1/2/3.mdl.glb`: the lower detail levels.
-- **Found in:** `Cars\TrackedRideCars\Elephant`.
-- **Found in:** `Cars\TrackedRideCars\Elephant`.
+- **Found in:** `WildAnimals\<animal>\<animal>_data` (models and textures), `Cars\TrackedRideCars\Elephant`.
 
 ### `mam`: ManifoldMesh (35)
 - **What it is:** a simple invisible shape (a *proxy*) that stands in for a complex piece.
@@ -147,7 +148,7 @@ The counts are from a full install (base game + Soaked! + Wild!).
 
 ## Animation
 
-### `ban`: BoneAnim (1,337)
+### `ban`: BoneAnim (1,670)
 - **What it is:** an animation for a `bsh` model.
 - **In the game:** a coaster lap bar opening and closing (`CarBarOpen`), a flat ride's motion cycle, an
   animatronic dinosaur's roar, a stall shutter.
@@ -156,45 +157,47 @@ The counts are from a full install (base game + Soaked! + Wild!).
   with the raw keys.
 - **Found in:** next to the models they animate.
 
-### `modelanim` (5) and `wad`: WildAnimalAnimData (1)
+### `modelanim` (1,125) and `wad`: WildAnimalAnimData (41)
 - **What it is:** animations for Wild!'s `mdl` animals, and the list tying them together.
-- **In the game:** the elephant's walk, run, stand and two idles. `wad` lists which `modelanim` to play for each
-  behaviour.
+- **In the game:** walk, sick walk, run, leap, eat and drink (in, loop, out), idles, reactions… `wad` lists the
+  `modelanim`s for one animal type. Species share lists: the tiger uses `lion:wad` and the zebra `horse:wad`.
+  The species record (`was`) names each model followed by its `wad`, which is how a model finds its
+  animations.
 - **Inside:**
   - `modelanim`: a duration, a frame count (30 per second), and per frame a position for some bones and a
     rotation (quaternion) for others. Which bone each track belongs to is in its extra-data name list;
   - `wad`: a list of animation links with blend timings.
 - **You get:** the animations built into the `mdl` model's `.glb` (pick them in the viewer's animation menu),
   plus `data/modelanim/*.json` with the keys and `data/wad/*.fields.json`.
-- **Found in:** `Cars\TrackedRideCars\Elephant`.
+- **Found in:** `WildAnimals\<animal>\<animal>_anims`, `Cars\TrackedRideCars\Elephant`.
 
 ## Pictures
 
 RCT3 stores all of its images **upside down** (bottom row first). rct3ovl flips them the right way up, and adjusts
 the models to match.
 
-### `tex`: Texture (538)
+### `tex`: Texture (785)
 - **What it is:** a normal picture used on models or in the interface.
 - **In the game:** ground and building textures, the menu backgrounds, logos, icon sheets.
 - **Inside:** settings plus a link to the actual pixels (`flic`).
 - **You get:** `textures/<name>.tex.png`.
 - **Found in:** many folders. The interface ones are in `Main.common.ovl`.
 
-### `flic`: Flic (525)
+### `flic`: Flic (771)
 - **What it is:** the raw pixels of a `tex`.
 - **In the game:** loaded straight onto the graphics card.
 - **Inside:** a format (DXT1, DXT3, DXT5 compression, or plain 32-bit colour), a size, and every smaller copy of
   the image (mipmaps).
 - **You get:** merged into the matching `tex` PNG. It isn't exported separately.
 
-### `btbl`: BmpTbl (158)
+### `btbl`: BmpTbl (182)
 - **What it is:** a bundle of many images packed into one block.
 - **In the game:** used where an OVL has lots of textures. Each `flic` then just holds a number pointing into the
   bundle.
 - **Inside:** a list of image headers and one big block of pixels.
 - **You get:** merged into the matching texture PNGs.
 
-### `ftx`: FlexiTexture (1,358)
+### `ftx`: FlexiTexture (1,601)
 - **What it is:** a 256-colour (paletted) picture. It's the type that makes **recolouring** possible.
 - **In the game:** anything whose colours you can change in-game:
   - ride trains, stalls and buildings;
@@ -209,7 +212,7 @@ the models to match.
   - a recolour preview with your own colours, in the viewer (colour pickers) or with the `recolour` command.
 - **Found in:** next to the models, plus `Cars\SharedTextures`.
 
-### `gsi`: GUISkinItem (3,833)
+### `gsi`: GUISkinItem (3,920)
 - **What it is:** an **icon**: a rectangle cut out of a big icon sheet (a `tex`).
 - **In the game:** every build-menu thumbnail, ride icon, toolbar button and stat icon (the calendar, the save
   disk…).
@@ -304,7 +307,7 @@ A guest is built from parts, like a dress-up doll: body, legs and head, plus ext
 
 ## Sound and text
 
-### `snd`: Sound (546)
+### `snd`: Sound (587)
 - **What it is:** a sound effect or ambient loop: screams, splashes, music stingers, animal noises, ride sounds.
 - **Inside:** the audio format (all are mono, 16-bit, 11–22 kHz), a loop flag, 3D distance settings, and the raw
   audio.
@@ -322,7 +325,7 @@ A guest is built from parts, like a dress-up doll: body, legs and head, plus ext
 
 ## Paths and motion
 
-### `spl`: Spline (887)
+### `spl`: Spline (10,360)
 - **What it is:** a smooth 3D curve.
 - **In the game:**
   - the route a ride's cars or boats follow (`pirateshipLoop`, `ElevatorPath01`);
@@ -334,7 +337,7 @@ A guest is built from parts, like a dress-up doll: body, legs and head, plus ext
 
 ## Buildable things
 
-### `sid`: SceneryItem (2,082)
+### `sid`: SceneryItem (6,219)
 - **What it is:** a **buildable object**, i.e. anything that appears in a build menu.
 - **In the game:** trees, benches, bins, lamps, signs, walls, path pieces, track pieces, supports, rides, stalls
   and entrances. It's the central record that ties everything else together.
@@ -434,16 +437,30 @@ A guest is built from parts, like a dress-up doll: body, legs and head, plus ext
 - **You get:** `data/anr/*.fields.json`. The ride model and its animation are in `models/`.
 - **Found in:** `Style\<theme>\Style.common.ovl` (the definitions) and `Style\…\Rides` (the models).
 
-### `trr`: TrackedRide (4)
-- **What it is:** a ride that runs on a fixed track, defined in an OVL. Example: the elevator.
+### `trr`: TrackedRide (125)
+- **What it is:** **a ride type that runs on track**: every coaster and tracked ride (elevator, mine train,
+  log flume, ghost train…).
 - **Inside:**
   - name, description and icon;
   - the loop and path splines;
-  - the track section (`tks`) it uses, e.g. `ElevatorBaseSec:tks`;
-  - speed and timing numbers.
+  - the track sections (`tks`) it can be built from, e.g. `ElevatorBaseSec:tks`;
+  - speed, excitement and timing numbers.
 - **You get:** `data/trr/*.fields.json`.
-- **Note:** most coasters' track pieces aren't `trr`: they're scenery items of type *ride track*, plus their
-  visuals and splines.
+- **Found in:** `tracks\coasters\…`, `tracks\TrackedRides\…`, and `Style\…\Scenery`.
+
+### `tks`: TrackSection (3,805)
+- **What it is:** **one buildable piece of track**: a straight, a slope, a curve, a half-loop, a station, a lift
+  hill with chain…
+- **In the game:** what you pick in the track builder. Each piece links:
+  - its scenery item (`sid`), which leads through its visual (`svd`) to the piece's 3D model;
+  - the left/right rail **splines** (`spl`) the cars follow along that piece.
+- **Inside:** the piece name, those links, and flags and numbers (banking, chain lift, speed limits…).
+- **You get:**
+  - `models/<piece>.tks.glb`: the piece's model, e.g. a loop or a curve, with textures;
+  - `data/tks/<piece>.json`: its scenery item, model name and rail curves with sampled points.
+
+  Track textures are mostly recolourable, so they show in the placeholder blue, magenta and yellow.
+- **Found in:** `tracks\coasters\<track type>`, `tracks\TrackedRides\<ride>`.
 
 ## Shops and items
 
@@ -478,6 +495,18 @@ A guest is built from parts, like a dress-up doll: body, legs and head, plus ext
 - **You get:** `data/ced/*.fields.json`.
 - **Found in:** `CarriedItems`.
 
+### `wai`: WildAnimalItem (7), Wild!
+- **What it is:** an **enrichment toy** you give zoo animals: ball, log, scratching post…
+- **Inside:** its model (`shs`), icon, name and description, cost and how much it entertains each animal.
+- **You get:** `data/wai/*.fields.json`. The toy model is in `models/`.
+- **Found in:** `WildAnimals\Items`.
+
+### `pty`: PoolType (1), Soaked!
+- **What it is:** a **swimming-pool style**: which pieces make up the pool walls (corners, edges at top, middle and
+  bottom heights), with their splines, name, icon and prices.
+- **You get:** `data/pty/*.fields.json`.
+- **Found in:** `Pool\<style>`.
+
 ## Research
 
 ### `rcg`: ResearchCategory (58)
@@ -490,15 +519,16 @@ A guest is built from parts, like a dress-up doll: body, legs and head, plus ext
 
 ## Wild! animals
 
-### `was`: WildAnimalSpecies (1)
-- **What it is:** **an animal species**, e.g. the elephant.
+### `was`: WildAnimalSpecies (22)
+- **What it is:** **an animal species**, e.g. the giraffe, the tiger, the elephant.
 - **In the game:** everything about the species:
   - name, description and icons;
-  - models for adult and young, and its animation set (`wad`);
+  - models for adult, young, male and female, each followed by its animation set (`wad`);
   - its sounds (`AnimalEat:snd`) and its shelter type;
   - size, speed, lifespan and needs.
 - **You get:** `data/was/*.fields.json`.
-- **Found in:** `Cars\TrackedRideCars\Elephant` (the elephant transport ride).
+- **Found in:** `WildAnimals\WildAnimals.common.ovl` (21 species), `Cars\TrackedRideCars\Elephant` (the elephant
+  transport ride).
 
 ## What the extractor writes
 

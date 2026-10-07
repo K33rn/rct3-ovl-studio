@@ -139,3 +139,14 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   ptr positions [frame][track] xyz, ptr rotations [frame][track] xyzw; track bone names in extra data (positions
   first). Frame-major verified by smoothness (1.9 deg/frame vs 108 track-major), loops close (0.1 deg).
 - Export: ElephantTransport.mdl.glb (skinned, Walk/Run/Stand/Idle1/Idle2) + lod1..3; data/modelanim/*.json.
+
+## 2026-10-07: full RCT3 Gold install (Desktop\Rollercoaster Tycoon 3 Gold)
+- 7,484 OVL pairs (old copy 3,011 was missing tracks, WildAnimals, Pool, Water). All open; 18,523 shs/bsh models
+  load (4.0 M triangles). Elevator01, Observe, RotoDrop, ts2..ts8 etc. textures now present; the remaining 33
+  unresolved names are engine-made (chrome, water, glass, ads, terrain) or leftovers on a few LOD meshes.
+- Wild! animals: 50 mdl, 1,125 modelanim, 41 wad, 22 was. Material name list is 16-byte aligned (padding varies).
+  Animations: was lists {mdl import, wad import} pairs (tiger -> lion:wad, zebra -> horse:wad); wad imports its
+  modelanims. Names shortened by common prefix (AdultCamelWalk -> Walk). All 50 decode, 4 levels each.
+- tks (3,805 track pieces): name, sid (-> svd -> model), L/R rail splines. Exported as models/<piece>.tks.glb +
+  data/tks json. New tags wai (animal toys), pty (pool style): field dumps; guide entries added.
+- A first, interrupted copy of the folder had 68 half pairs; textures now return None instead of raising.

@@ -15,10 +15,9 @@ from .media import sound_info, sound_wav, text
 from .mdl import animations_for_mdl, load_mdl, load_modelanim
 
 
-def _short(anim_name: str, model_name: str) -> str:
-    """'ElephantTransportWalk:modelanim' for 'ElephantTransport:mdl' -> 'Walk'."""
-    a, m = anim_name.split(':')[0], model_name.split(':')[0]
-    return a[len(m):] if a.lower().startswith(m.lower()) and len(a) > len(m) else a
+def _record_end(o, r) -> int:
+    starts = sorted({x.data for x in o.resources if x.data > r.data})
+    return starts[0] if starts else r.data + 4096
 from .meshes import load_shape
 from .morph import load_morph
 from .people import load_phd, load_ppg, load_prt, load_sal, load_san, load_ssk
@@ -127,11 +126,9 @@ def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morp
             files.append(('icons', f'{base}.png', _png(img)))
     elif tag == 'mdl':
         s = load_mdl(o, r)
-        an = animations_for_mdl(lib, r)
+        an = animations_for_mdl(lib, r)                 # names already shortened: AdultCamelWalk -> Walk
         if anims is not None:
-            an = [a for a in an if a.name.split(':')[0] in anims or _short(a.name, r.name) in anims]
-        for a in an:                                   # ElephantTransportWalk:modelanim -> Walk
-            a.name = _short(a.name, r.name)
+            an = [a for a in an if a.name in anims] or an[:1]
         lookup = lambda n: lib.texture_image(n, prefer=o)
         files.append(('models', f'{base}.mdl.glb', shape_to_glb(s, lookup, an)))
         for lv in range(1, getattr(s, 'levels', 1)):   # lower detail levels as their own files
@@ -199,6 +196,33 @@ def export_resource(lib: Library, o: Ovl, ts, r: LoaderRef, anims=None, max_morp
     elif tag == 'spl':
         sp = load_spline(o, r); sp['points'] = spline_points(sp)
         files.append(('splines', f'{base}.spl.json', _js(sp)))
+    elif tag == 'tks':
+        # track section: its scenery item (-> visual -> model) and the rail splines cars follow
+        imps = [n for n, s in sorted(o.symbol_refs, key=lambda x: x[1]) if r.data <= s < _record_end(o, r)]
+        sid = next((n for n in imps if n.lower().endswith(':sid')), None)
+        splines = list(dict.fromkeys(n for n in imps if n.lower().endswith(':spl')))
+        model = None
+        h = lib.find(sid) if sid else None
+        if h:
+            for vis in load_sid(h[0], h[1])['visuals']:
+                hv = lib.find(vis) if vis else None
+                if hv:
+                    lods = [l for l in load_svd(hv[0], hv[1]).lods if l.model.lower().endswith((':shs', ':bsh'))]
+                    if lods:
+                        model = lods[0].model; break
+        hm = lib.find(model) if model else None
+        if hm:
+            s = load_shape(hm[0], hm[1])
+            files.append(('models', f'{base}.tks.glb', shape_to_glb(s, lambda n: lib.texture_image(n, prefer=hm[0]))))
+            info['textures'] = sorted({m.texture for m in s.meshes if m.texture})
+        curves = []
+        for sp in splines:
+            hs = lib.find(sp)
+            if hs:
+                d = load_spline(hs[0], hs[1]); d['points'] = spline_points(d); curves.append(d)
+        files.append(('data/tks', f'{base}.json', _js({'name': r.name, 'scenery_item': sid, 'model': model,
+                                                       'rail_splines': curves})))
+        info.update({'scenery_item': sid or '', 'model': model or '', 'splines': splines})
     elif tag == 'sid':
         sd = load_sid(o, r)
         dn = sd['display_name']

@@ -95,8 +95,9 @@ def load_mdl(ovl: Ovl, ref: LoaderRef, level: int = 0) -> Shape:
             world = np.eye(4)
         shape.bones.append(Bone(names[i] if i < len(names) else f'bone{i}', parents[i],
                                 local.astype(np.float32), world.astype(np.float32)))
-    # material names: u32 lengths (incl. NUL) until the first name starts, then the names
-    q = p
+    # material names: u32 lengths (incl. NUL) until the first name starts, then the names; the length list
+    # starts on a 16-byte boundary (giraffe: 12 bytes of padding after the parent table, tiger 4, elephant 0)
+    q = (p + 15) // 16 * 16
     lens = []
     while q + 4 <= len(blob) and 1 < struct.unpack_from('<I', blob, q)[0] < 128 and len(lens) < 64:
         lens.append(struct.unpack_from('<I', blob, q)[0]); q += 4
@@ -199,18 +200,72 @@ def load_modelanim(ovl: Ovl, ref: LoaderRef):
     return anim
 
 
-def animations_for_mdl(lib, ref: LoaderRef) -> list:
-    """The model's animations: modelanim resources named after it (ElephantTransportWalk, …Run, …Stand, …Idle1/2)."""
-    base = ref.name.split(':')[0].lower()
-    out = []
-    for n in sorted(lib.index['names']):
-        if n.endswith(':modelanim') and n.startswith(base):
+def _record_imports(ovl: Ovl, ref: LoaderRef, suffix: str) -> list[str]:
+    """Imports with the given suffix whose field lies inside this resource's record (up to the next resource)."""
+    starts = sorted({r.data for r in ovl.resources if r.data > ref.data})
+    end = starts[0] if starts else ref.data + 65536
+    return [n for n, s in sorted(ovl.symbol_refs, key=lambda x: x[1]) if ref.data <= s < end and n.lower().endswith(suffix)]
+
+
+def _wad_for_mdl(lib, model: str) -> str | None:
+    """Species records (was) list each model followed by its animation list: {mdl import, wad import} - this is how
+    the tiger shares lion:wad and the zebra horse:wad. Cached per library."""
+    cache = getattr(lib, '_mdl_wad', None)
+    if cache is None:
+        cache = {}
+        for n, rel in lib.index['names'].items():
+            if not n.endswith(':was'):
+                continue
             h = lib.find(n)
-            if h:
-                try:
-                    out.append(load_modelanim(h[0], h[1]))
-                except OvlError:
-                    pass
+            if not h:
+                continue
+            refs = sorted(h[0].symbol_refs, key=lambda x: x[1])
+            for (a, sa), (b, sb) in zip(refs, refs[1:]):
+                if a.lower().endswith(':mdl') and b.lower().endswith(':wad') and sb == sa + 4 and a != ':mdl':
+                    cache.setdefault(a.lower(), b)
+        lib._mdl_wad = cache
+    return cache.get(model.lower())
+
+
+def _short_names(anims: list) -> None:
+    """'AdultCamelDrinkIn', 'AdultCamelWalk' -> 'DrinkIn', 'Walk': drop the prefix every name shares (up to a
+    word start)."""
+    names = [a.name.split(':')[0] for a in anims]
+    if len(names) < 2:
+        return
+    p = names[0]
+    for n in names[1:]:
+        while not n.startswith(p):
+            p = p[:-1]
+    while p and not (len(p) < len(min(names, key=len)) and min(names, key=len)[len(p)].isupper()):
+        p = p[:-1]
+    if p:
+        for a in anims:
+            short = a.name.split(':')[0][len(p):]
+            if short:
+                a.name = short
+
+
+def animations_for_mdl(lib, ref: LoaderRef) -> list:
+    """The model's animations: the modelanims its animation list (wad) names, found through the species record;
+    otherwise modelanims named after the model (ElephantTransportWalk, …Run)."""
+    names = []
+    wad = _wad_for_mdl(lib, ref.name)
+    h = lib.find(wad) if wad else None
+    if h:
+        names = list(dict.fromkeys(n for n in _record_imports(h[0], h[1], ':modelanim') if n != ':modelanim'))
+    if not names:
+        base = ref.name.split(':')[0].lower()
+        names = [n for n in sorted(lib.index['names']) if n.endswith(':modelanim') and n.startswith(base)]
+    out = []
+    for n in names:
+        h = lib.find(n)
+        if h:
+            try:
+                out.append(load_modelanim(h[0], h[1]))
+            except OvlError:
+                pass
+    _short_names(out)
     return out
 
 

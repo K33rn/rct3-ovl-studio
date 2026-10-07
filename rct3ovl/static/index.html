@@ -32,6 +32,25 @@
   .b-shs { background: #2b4a3a; color: #9fe0b8; } .b-tex { background: #4a3b2b; color: #f2c58a; } .b-snd { background: #2b3b4a; color: #9fc8f0; }
   .group { padding: 8px 12px 2px; color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
   .group small { color: var(--dim); text-transform: none; letter-spacing: 0; }
+  .group .help { float: right; cursor: pointer; color: var(--dim); border: 1px solid var(--line); border-radius: 50%; width: 16px; height: 16px;
+    line-height: 14px; text-align: center; font-size: 10px; text-transform: none; }
+  .group .help:hover { color: var(--accent); border-color: var(--accent); }
+  .head h1 #b-types { margin-left: auto; } .head h1 #b-people { margin-left: 0; }
+  /* file type guide */
+  #doc.guide { padding: 20px 28px 60px; line-height: 1.55; }
+  #doc.guide .md { max-width: 900px; }
+  #doc.guide h1 { font-size: 20px; color: var(--accent); margin: 0 0 12px; }
+  #doc.guide h2 { font-size: 16px; color: var(--accent); margin: 30px 0 8px; padding-top: 6px; border-top: 1px solid var(--line); }
+  #doc.guide h3 { font-size: 14px; margin: 20px 0 6px; padding: 6px 10px; background: var(--panel); border-left: 3px solid var(--accent); border-radius: 4px; scroll-margin-top: 64px; }
+  #doc.guide h3.hl { background: var(--sel); }
+  #doc.guide code { font: 12px ui-monospace, Consolas, monospace; background: var(--panel2); padding: 1px 4px; border-radius: 4px; }
+  #doc.guide table { border-collapse: collapse; margin: 8px 0 14px; width: 100%; font-size: 12.5px; }
+  #doc.guide th, #doc.guide td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+  #doc.guide th { background: var(--panel2); }
+  #doc.guide ul { margin: 4px 0 8px; padding-left: 22px; } #doc.guide li { margin: 2px 0; }
+  #doc.guide a { color: var(--accent); }
+  #doc.guide .tfilter { position: sticky; top: -20px; background: var(--bg); padding: 8px 0; z-index: 1; display: flex; gap: 8px; }
+  #doc.guide .tfilter input { max-width: 340px; }
   .res { padding: 3px 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .res.dim { color: var(--dim); cursor: default; }
   #view { position: relative; display: flex; flex-direction: column; min-width: 0; }
@@ -72,7 +91,7 @@
 <body>
 <div id="app">
   <div class="col">
-    <div class="head"><h1>RCT3 OVL Viewer <button id="b-people" title="Whole guests, staff and entertainers">People</button></h1><div class="sub" id="rootinfo">loading…</div>
+    <div class="head"><h1>RCT3 OVL Viewer <button id="b-types" title="What every file type is and does">File types</button><button id="b-people" title="Whole guests, staff and entertainers">People</button></h1><div class="sub">by K3rn</div><div class="sub" id="rootinfo">loading…</div>
       <input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="margin-top:8px"></div>
     <div class="scroll tree" id="tree"></div>
   </div>
@@ -149,7 +168,7 @@ const grp = (id, on) => $(id).style.display = on ? 'flex' : 'none';
 function mode(m) {   // '3d' | 'img' | 'doc'
   renderer.domElement.style.visibility = m === '3d' ? 'visible' : 'hidden';
   $('img').style.display = m === 'img' ? 'flex' : 'none';
-  $('doc').style.display = m === 'doc' ? 'block' : 'none';
+  $('doc').style.display = m === 'doc' ? 'block' : 'none'; $('doc').classList.remove('guide');
   grp('g-3d', m === '3d'); if (m !== '3d') { grp('g-anim', false); grp('g-outfit', false); clearModel(); }
   if (m !== 'img') grp('g-recol', false);
 }
@@ -208,13 +227,13 @@ function renderRes() {
   const f = $('resfilter').value.toLowerCase(), groups = {};
   for (const r of resources) if (!f || r.name.toLowerCase().includes(f) || r.tag.includes(f)) (groups[r.tag] ??= []).push(r);
   const tags = Object.keys(groups).sort((a, b) => ((ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99)) || a.localeCompare(b));
-  $('res').innerHTML = tags.map(t => `<div class="group">${LABEL[t] || t} <small>${t} · ${groups[t].length}</small></div>` + groups[t].map(r => {
+  $('res').innerHTML = tags.map(t => `<div class="group">${LABEL[t] || t} <small>${t} · ${groups[t].length}</small><span class="help" data-type="${t}" title="What is a ${t}?">?</span></div>` + groups[t].map(r => {
     const ok = !!r.name;
     return `<div class="res${ok ? '' : ' dim'}${selRes === r ? ' sel' : ''}" data-i="${resources.indexOf(r)}" title="${esc(r.loader)} · ${r.part}">${esc(r.name || '(unnamed ' + r.loader + ')')}</div>`;
   }).join('')).join('');
 }
 $('resfilter').oninput = renderRes;
-$('res').onclick = e => { const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
+$('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return showTypes(hp.dataset.type); const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
 
 // people list
 $('b-people').onclick = async () => {
@@ -363,8 +382,42 @@ $('bg').onchange = e => scene.background = new THREE.Color(e.target.value);
 $('b-reset').onclick = () => current && frame(current);
 $('b-dl').onclick = () => { if (!dlUrl) return; const a = document.createElement('a'); a.href = dlUrl; a.download = dlName; a.click(); };
 // deep links: #ovl=<path>&res=<name>[&anim=<name>]  or  #person=<variant>
+// ---- file type guide (static/filetypes.md, rendered with marked) ---------------------------------------------
+let guideHtml = null, guideMd = '';
+async function showTypes(tag) {
+  const my = ++seq; selRes = null; $('vtitle').textContent = 'File types' + (tag ? ' · ' + tag : ''); info(null); msg('');
+  history.replaceState(null, '', '#types' + (tag ? '=' + tag : ''));
+  mode('doc'); const doc = $('doc'); doc.classList.add('guide');
+  if (!guideHtml) {
+    const [{ marked }, md] = await Promise.all([import('https://cdn.jsdelivr.net/npm/marked@12.0.2/lib/marked.esm.js'),
+      fetch('/filetypes.md').then(r => r.text())]);
+    guideHtml = marked.parse(md); guideMd = md;
+  }
+  if (my !== seq) return;
+  setDownload(new Blob([guideMd], { type: 'text/markdown' }), 'RCT3 file types.md');
+  doc.innerHTML = `<div class="tfilter"><input type="search" id="gfilter" placeholder="Find a type, e.g. ric, stall, sound"></div><div class="md">${guideHtml}</div>`;
+  // every entry heading gets an id per tag it names (### `modelanim` (5) and `wad` -> type-modelanim, type-wad)
+  for (const h of doc.querySelectorAll('.md h3')) {
+    const tags = [...h.querySelectorAll('code')].map(c => c.textContent.replace(/^\./, '').replace(/^(common|unique)\.ovl$/, 'ovl')).filter(x => /^[a-z]+$/.test(x));
+    if (tags.length) { h.id = 'type-' + tags[0]; h.dataset.tags = tags.join(' '); }
+  }
+  // links from the quick-reference table to the entries
+  for (const td of doc.querySelectorAll('.md table td:first-child code')) {
+    const t = td.textContent; if (doc.querySelector(`.md h3[data-tags~="${t}"]`)) td.outerHTML = `<a href="#types=${t}"><code>${t}</code></a>`;
+  }
+  const go = t => { const h = t && doc.querySelector(`.md h3[data-tags~="${t}"]`); doc.querySelectorAll('.md h3.hl').forEach(x => x.classList.remove('hl'));
+    if (h) { h.classList.add('hl'); h.scrollIntoView({ block: 'start' }); } else doc.scrollTop = 0; };
+  go(tag);
+  $('gfilter').onkeydown = e => { if (e.key !== 'Enter') return; const q = e.target.value.trim().toLowerCase().replace(/^\./, '');
+    const h = [...doc.querySelectorAll('.md h3')].find(x => (x.dataset.tags || '').split(' ').includes(q)) ||
+      [...doc.querySelectorAll('.md h3, .md h3 ~ *')].find(x => x.textContent.toLowerCase().includes(q));
+    if (h) h.scrollIntoView({ block: 'start' }); };
+}
+$('b-types').onclick = () => showTypes();
+
 async function fromHash() {
   const h = new URLSearchParams(location.hash.slice(1));
+  if (h.has('types')) return showTypes(h.get('types') || '');
   if (h.get('person')) { $('b-people').click(); return showPerson(h.get('person'), h.get('anim')); }
   if (!h.get('ovl')) return;
   await openOvl(h.get('ovl'), false);

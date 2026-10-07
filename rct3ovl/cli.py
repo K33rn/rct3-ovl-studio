@@ -166,11 +166,36 @@ def cmd_recolour(a):
     print(f'{out} (recolourable channels: {ts.recolorable(r):03b})')
 
 
+def cmd_types(a):
+    """The file type guide (static/filetypes.md, also the viewer's File types page)."""
+    import re
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+    md = open(os.path.join(os.path.dirname(__file__), 'static', 'filetypes.md'), encoding='utf-8').read()
+    if not a.tag:
+        print(md); return
+    want = a.tag.lower().lstrip('.')
+    lines = md.split('\n')
+    for i, line in enumerate(lines):
+        names = re.findall(r'`\.?([a-z]+)`', line) + (['ovl', 'common', 'unique'] if '.common.ovl' in line else [])
+        if line.startswith('### ') and want in names:
+            j = i + 1
+            while j < len(lines) and not lines[j].startswith(('## ', '### ')):
+                j += 1
+            print('\n'.join(lines[i:j]).rstrip()); return
+    sys.exit(f'no such type: {a.tag}. Run "rct3ovl types" for the full list.')
+
+
 def main(argv=None):
-    p = argparse.ArgumentParser(prog='rct3ovl', description='RollerCoaster Tycoon 3 OVL extractor and model viewer')
+    p = argparse.ArgumentParser(prog='rct3ovl', description='rct3ovl, RCT3 OVL Extractor & Viewer by K3rn: '
+                                                         'RollerCoaster Tycoon 3 file extractor and 3D model viewer')
     p.add_argument('--language', help='language for names and text (English, German, French, Spanish, Dutch, Danish, '
                                       'Finnish, Italian, Norwegian, Swedish); default English')
     sp = p.add_subparsers(dest='cmd', required=True)
+    s = sp.add_parser('types', help='what every file type is and does (e.g. "types ric")')
+    s.add_argument('tag', nargs='?', help='one type, e.g. ric, sid, shs'); s.set_defaults(f=cmd_types)
     s = sp.add_parser('person', help='assemble one guest / staff member / mascot into a GLB ("list" to see all)')
     s.add_argument('root'); s.add_argument('variant', help='e.g. AF01, LG01, PANDA, or list')
     s.add_argument('--anims', default='Walk,Idle', help='comma separated animation names'); s.add_argument('-o', '--out')

@@ -92,3 +92,9 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   crops are now the right icons; before they cut the wrong cells from the upside-down atlas.
 - Checks: tests/facing.py, tests/mms_outward.py, tests/winding.py, renders. mesh_all/tex_all and the Characters/Animals
   extraction pass.
+
+## 2026-10-07: file type guide moved into the program; README = what it is + tutorial + author (K3rn)
+- Guide lives in rct3ovl/static/filetypes.md. Viewer: "File types" button, "?" on each resource group,
+  deep link #types=<tag>, search box, Download saves the .md. CLI: `rct3ovl types [tag]`.
+- Program name: "RCT3 OVL Extractor & Viewer (rct3ovl)", author K3rn (README author block, viewer header, CLI help).
+- Headless screenshots: Edge fails while the user's Edge is open; headless Chrome run directly (& $chrome ...) works.

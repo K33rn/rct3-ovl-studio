@@ -45,6 +45,8 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
             try:
                 if u.path in ('/', '/index.html'):
                     return self.send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html; charset=utf-8')
+                if u.path == '/filetypes.md':
+                    return self.send(200, open(os.path.join(STATIC, 'filetypes.md'), 'rb').read(), 'text/markdown; charset=utf-8')
                 if u.path == '/api/tree':
                     return self.js({'root': lib.root, 'ovls': lib.index['ovls']})
                 if u.path == '/api/ovl':

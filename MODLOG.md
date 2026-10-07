@@ -57,3 +57,14 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   MorphMesh.variant_grid/with_variant, `--variant`/`--outfit` (default 0 = top-left) and a viewer Variant menu.
 - The decode itself was verified: 11/10/11 is the smoothest split for every duck animation; shark and ray look right.
   The duck is just 80 triangles.
+
+## 2026-10-07: see-through people (user report, POPSTAR / JPOP01 swimsuit)
+- Morph meshes were inside out in browsers (back-face culling; Blender's default render hides this). The mms winding
+  is opposite to shs/bsh/ssk: the signed volume as stored is negative for every part, so the z mirror alone gives
+  outward faces. Removed the extra [0,2,1] flip in gltf_people._add_morph.
+- mms normal bytes are stored z, y, x (mean cos with face normals 0.71-0.81 vs ~0.2 before). Fixed in morph.py.
+- tests/winding.py (face vs vertex normals in the GLBs; now 0.88-1.00 for mms, 1.00 for ssk/bsh),
+  tests/mms_orient.py, tests/mms_normals.py.
+- POPSTAR01 had a faceless low-detail head: the groups are popstar01_* but the parts are PF01. The skinned-head lookup
+  now also tries the variant from the head part names. 45/57 characters have a detailed head; the other 12
+  (mascots, uniformed staff) have no ssk in the game.

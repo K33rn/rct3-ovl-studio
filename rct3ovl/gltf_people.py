@@ -51,7 +51,7 @@ def _add_morph(b: _Builder, root: dict, mm: MorphMesh, img, anim_names, anims: d
     a0 = mm.anims.index(sel[0])
     base = mm.positions(a0, 0) * _Z
     nbase = mm.normals(a0, 0)
-    tri = mm.indices.reshape(-1, 3)[:, [0, 2, 1]].reshape(-1).astype(np.uint32)
+    tri = mm.indices.astype(np.uint32)      # morph meshes: the z mirror alone gives outward faces (see morph.py)
     targets, hots = [], {}
     for a in sel:
         hots[a.name] = []

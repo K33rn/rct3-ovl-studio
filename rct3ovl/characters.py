@@ -25,10 +25,22 @@ def assemble(lib: Library, groups: list[str], lod: int = 0, anim_names: list[str
     head_group = next((g for g in groups if g.split(':')[0].endswith('_head')), None)
     sh = None
     if detailed_head and lod < 2 and head_group:
-        variant = head_group.split('_')[0]
-        for pre in ('head_', 'ss_head_'):
-            sh = (lib.find(f'{pre}{variant}_l{lod + 1}' + (f'_{expression}' if expression else '') + ':ssk')
-                  or lib.find(f'{pre}{variant}_l{lod + 1}:ssk'))
+        # the skinned head is named after the part variant, which can differ from the group's
+        # (popstar01_head lists Head_PF01_L3, and the detailed head is head_pf01_l1)
+        cands = [head_group.split('_')[0]]
+        hg = lib.find(head_group)
+        if hg:
+            for level in load_ppg(hg[0], hg[1]):
+                for pn in level:
+                    bits = pn.lower().split('_')
+                    if bits[0] == 'head' and len(bits) >= 3 and bits[1] not in cands:
+                        cands.append(bits[1])
+        for variant in cands:
+            for pre in ('head_', 'ss_head_'):
+                sh = (lib.find(f'{pre}{variant}_l{lod + 1}' + (f'_{expression}' if expression else '') + ':ssk')
+                      or lib.find(f'{pre}{variant}_l{lod + 1}:ssk'))
+                if sh:
+                    break
             if sh:
                 break
     for gname in groups:

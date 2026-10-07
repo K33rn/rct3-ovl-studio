@@ -97,10 +97,13 @@ class TextureSet:
 
     def tex_bitmap(self, ref: LoaderRef) -> Bitmap | None:
         o = self.ovl
-        flicpp = o.ptr(ref.data + 0x34)
-        if not flicpp:
-            return None
-        flic = o.ptr(flicpp)
+        try:
+            flicpp = o.ptr(ref.data + 0x34)
+            if not flicpp:
+                return None
+            flic = o.ptr(flicpp)
+        except OvlError:
+            return None                              # half of the pair missing (e.g. only Water.unique.ovl copied)
         return self.flic_bitmaps.get(flic)
 
     def ftx_image(self, ref: LoaderRef, frame: int = 0, colors=None) -> Image.Image | None:

@@ -180,3 +180,13 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Track pieces: TrackNN.common.ovl holds the tks + sid; each piece's svd/shs are in <Piece>_data OVLs in the SAME
   folder, and names repeat across track styles, so the global index picked e.g. Track11's model for Bobsleigh
   (Track2). Library.find_near: this OVL, then the folder's OVLs, then global. 6,086/6,086 pieces now resolve in-folder.
+
+## 2026-10-07: Ride Designs tab (premade .trk designs)
+- .trk = RCT3 self-describing save format (rct3ovl/trk.py): header, u32 type count @80, schema {u16 name, u32 nfields,
+  fields {u16 name, u16 type, u32 size, u32 nchildren, children}}, u32 object count, objects {u32 type, u64 id, fields
+  in schema order}. Variable data (array/list, size-0 struct, graphedValue) = u32 byte length + data; arrays: then u32
+  count + elements; string = u32 length + EFEFEFEF + UTF-16. All 208 designs parse (4-byte trailer).
+- TrackPiece: SYMBOLNAME, SceneryItemDataField POSX/POSZ (4 m tiles), HEIGHT (1 m), DIRECTION, Next. Multi-tile
+  pieces' reference tile is not their start/corner (not solved), so designs.py chains pieces: first by grid, then
+  each joined to the previous exit, rotation/reversal chosen by heading, stored HEIGHT and tile. 160/189 closed
+  circuits close within 10 cm; the rest are special types (splitting/racing, rivers, towers, robot arm, tilt lift).

@@ -11,6 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from .characters import build_person, carried_items, describe_variant, variants
+from .designs import build_design, design_files
 from .rides import build_ride, list_rides, track_sets
 from .export import export_resource
 from .gltf import shape_to_glb
@@ -115,6 +116,16 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                         vs = variants(lib)
                         out = [describe_variant(lib, v, gs) for v, gs in sorted(vs.items())]
                     return self.js(out)
+                if u.path == '/api/designs':
+                    with lock:
+                        titles = {s['ride']: s['title'] for s in track_sets(lib)}
+                        return self.js([dict(d, ride_title=titles.get(d['ride_type'].lower() + ':trr', d['ride_type']),
+                                             file=os.path.basename(d['file'])) for d in design_files(lib)])
+                if u.path == '/api/design':
+                    path = os.path.join(lib.root, 'Coaster Designs', os.path.basename(q['file']))
+                    with lock:
+                        glb, info = build_design(lib, path)
+                    return self.send(200, glb, 'model/gltf-binary', {'X-Info': json.dumps(info, default=str)[:60000]})
                 if u.path == '/api/items':
                     with lock:
                         return self.js(carried_items(lib))

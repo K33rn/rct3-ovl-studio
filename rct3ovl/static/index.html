@@ -94,7 +94,7 @@
 <body>
 <div id="app">
   <div class="col">
-    <div class="head"><h1>RCT3 OVL Viewer <button id="b-types" title="What every file type is and does">File types</button><button id="b-people" title="Whole guests, staff and entertainers">Peeps</button><button id="b-rides" title="Flat rides with their ride animations">Thrill Rides</button></h1><div class="sub">by K3rn</div><div class="sub" id="rootinfo">loading…</div>
+    <div class="head"><h1>RCT3 OVL Viewer <button id="b-types" title="What every file type is and does">File types</button><button id="b-people" title="Whole guests, staff and entertainers">Peeps</button><button id="b-rides" title="Flat rides with their ride animations">Thrill Rides</button><button id="b-designs" title="The game's premade roller coaster and tracked ride designs, built from their track pieces">Ride Designs</button></h1><div class="sub">by K3rn</div><div class="sub" id="rootinfo">loading…</div>
       <input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="margin-top:8px"></div>
     <div class="scroll tree" id="tree"></div>
   </div>
@@ -306,7 +306,7 @@ function renderRes() {
   }).join('')).join('');
 }
 $('resfilter').oninput = renderRes;
-$('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return showTypes(hp.dataset.type); const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.ride ? showRide(d.dataset.ride) : d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
+$('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return showTypes(hp.dataset.type); const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.design ? showDesign(d.dataset.design) : d.dataset.ride ? showRide(d.dataset.ride) : d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
 
 // people list
 $('b-people').onclick = async () => {
@@ -335,6 +335,33 @@ $('b-rides').onclick = async () => {
     by[g].sort((a, b) => a.title.localeCompare(b.title)).map(r =>
       `<div class="res" data-ride="${esc(r.name)}" title="${esc(r.name)}">${esc(r.title)}</div>`).join('')).join('');
 };
+
+// ride designs: the game's premade coasters & tracked rides (Coaster Designs\[Ride]Name.trk), grouped by ride type
+$('b-designs').onclick = async () => {
+  selOvl = null; document.querySelectorAll('.ovl.sel').forEach(d => d.classList.remove('sel'));
+  $('ovltitle').textContent = 'Ride Designs'; $('ovlsub').textContent = 'premade coasters and tracked rides, assembled from their track pieces';
+  $('res').innerHTML = '<div class="res dim">loading…</div>';
+  const ds = await (await fetch('/api/designs')).json(); resources = [];
+  const by = {}; for (const d of ds) (by[d.ride_title] ??= []).push(d);
+  $('res').innerHTML = Object.keys(by).sort((a, b) => a.localeCompare(b)).map(g =>
+    `<div class="group">${esc(g)} <small>${by[g].length}</small></div>` +
+    by[g].sort((a, b) => a.name.localeCompare(b.name)).map(d =>
+      `<div class="res" data-design="${esc(d.file)}" title="${esc(d.file)}">${esc(d.name)}</div>`).join('')).join('');
+};
+
+async function showDesign(file) {
+  const my = ++seq; selRes = null; document.querySelectorAll('.res').forEach(d => d.classList.toggle('sel', d.dataset.design === file));
+  const title = document.querySelector(`.res[data-design="${CSS.escape(file)}"]`)?.textContent || file;
+  $('vtitle').textContent = title; info(null); msg('Building ' + title + ' from its track pieces…');
+  history.replaceState(null, '', '#design=' + encodeURIComponent(file));
+  const resp = await fetch('/api/design?file=' + encodeURIComponent(file));
+  if (my !== seq) return;
+  if (!resp.ok) { msg((await resp.json()).error, true); return; }
+  animSrc = { url: '/api/design', name: file };
+  const meta = JSON.parse(resp.headers.get('X-Info') || '{}');
+  const buf = await resp.arrayBuffer(); if (my !== seq) return; msg('');
+  return loadGlb(buf, file.replace(/\.trk$/i, '') + '.glb', meta, 'design', null, my);
+}
 
 async function showRide(name, anim) {
   const my = ++seq; selRes = null; document.querySelectorAll('.res').forEach(d => d.classList.toggle('sel', d.dataset.ride === name));
@@ -444,8 +471,18 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
     const start = clips.find(c => c.name === wanted) || clips.find(c => /^walk$/i.test(c.name)) || clips.find(c => /walk|idle/i.test(c.name)) || clips[0];
     if (start) { sel.value = start.name; play(start.name); }
     frame(current);
-    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (skinned, animated)', tks: 'Track piece', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person', ride: 'Thrill ride' }[tag] || tag]];
+    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (skinned, animated)', tks: 'Track piece', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person', ride: 'Thrill ride', design: 'Ride design' }[tag] || tag]];
     if (tag === 'ride' && meta.model) rows.push(['Model', esc(meta.model)]);
+    if (tag === 'design') {
+      const st = meta.stats || {}, f1 = x => x == null ? '?' : (+x).toFixed(1);
+      if (meta.name) rows.push(['Name', esc(meta.name)]);
+      rows.push(['Ride type', esc(meta.ride)]);
+      if (meta.ratings) rows.push(['Excitement / Intensity / Nausea', meta.ratings.map(x => (+x).toFixed(2)).join(' / ')]);
+      rows.push(['Top speed', f1(st.MaxSpeed * 3.6) + ' km/h'], ['Length', f1(st.RideLength) + ' m'], ['Ride time', f1(st.RideTime) + ' s'],
+        ['Highest drop', f1(st.HighestDropHeight) + ' m'], ['Inversions / drops', `${st.NInversions ?? '?'} / ${st.NDrops ?? '?'}`]);
+      if (meta.cost != null) rows.push(['Cost', '$' + (meta.cost / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })]);
+      rows.push(['Track pieces', `${meta.placed} of ${meta.pieces}` + (meta.closure_gap != null && meta.closure_gap > 0.1 ? ` <span class="err">(circuit doesn't close by ${f1(meta.closure_gap)} m: special pieces may be misplaced)</span>` : '')]);
+    }
     let v = 0, t = 0; current.traverse(o => { if (o.isMesh) { v += o.geometry.attributes.position.count; t += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
     rows.push(['Vertices', v.toLocaleString()], ['Triangles', Math.round(t).toLocaleString()]);
     if (names.length) rows.push(['Animations', names.length + (clips.length < names.length ? ` (${clips.length} loaded, others load on pick)` : '')]);
@@ -568,6 +605,7 @@ async function fromHash() {
   if (h.has('types')) return showTypes(h.get('types') || '');
   if (h.get('person')) { $('b-people').click(); return showPerson(h.get('person'), h.get('anim')); }
   if (h.get('ride')) { await $('b-rides').onclick(); return showRide(h.get('ride'), h.get('anim')); }
+  if (h.get('design')) { await $('b-designs').onclick(); return showDesign(h.get('design')); }
   if (!h.get('ovl')) return;
   await openOvl(h.get('ovl'), false);
   if (h.get('texts')) return show(resources.find(x => x.texts));

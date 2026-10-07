@@ -63,9 +63,12 @@
   input[type=color] { width: 30px; height: 26px; padding: 0 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
   #stage { position: relative; flex: 1; min-height: 0; }
   #stage canvas { display: block; width: 100%; height: 100%; }
-  #img { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; overflow: auto;
+  #img { position: absolute; inset: 0; display: none; overflow: hidden; cursor: grab; touch-action: none; user-select: none;
     background: repeating-conic-gradient(#2a2d35 0 25%, #20232a 0 50%) 50% / 20px 20px; }
-  #img img { image-rendering: pixelated; max-width: 95%; max-height: 95%; min-width: 64px; box-shadow: 0 0 0 1px #000a; }
+  #img.dragging { cursor: grabbing; }
+  #img img { position: absolute; left: 0; top: 0; transform-origin: 0 0; image-rendering: pixelated; box-shadow: 0 0 0 1px #000a;
+    max-width: none; max-height: none; pointer-events: none; -webkit-user-drag: none; }
+  #zoompct { min-width: 52px; text-align: center; color: var(--dim); font-variant-numeric: tabular-nums; }
   #doc { position: absolute; inset: 0; display: none; overflow: auto; padding: 16px 20px; background: var(--bg); }
   #doc pre { font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-word; color: #c9d1dc; margin: 0; }
   #doc table.t { border-collapse: collapse; width: 100%; }
@@ -105,6 +108,7 @@
       <span class="title" id="vtitle">Pick anything in an OVL</span>
       <span class="grp" id="g-anim"><select id="anim" title="Animation"></select><button id="b-play" class="on" title="Play / pause">Play</button></span>
       <span class="grp" id="g-outfit" title="Colour variant: the texture holds several (outfits, mallard / plain duck, ...)"><select id="outfit"></select></span>
+      <span class="grp" id="g-zoom" title="Scroll to zoom, drag to move, double-click to fit"><button id="z-out" title="Zoom out (-)">−</button><span id="zoompct">100%</span><button id="z-in" title="Zoom in (+)">+</button><button id="z-fit" title="Fit to window (0)">Fit</button><button id="z-1" title="Actual pixels (1)">1:1</button></span>
       <span class="grp" id="g-recol" title="Recolour preview (the three in-game colour choices)"><input type="color" id="c0" value="#c81e1e"><input type="color" id="c1" value="#1e5adc"><input type="color" id="c2" value="#f0f0f0"><button id="b-recol">Recolour</button><button id="b-orig">Original</button></span>
       <span class="grp" id="g-3d" style="display:flex">
       <button id="b-wire" title="Wireframe">Wireframe</button>
@@ -171,7 +175,51 @@ function mode(m) {   // '3d' | 'img' | 'doc'
   $('doc').style.display = m === 'doc' ? 'block' : 'none'; $('doc').classList.remove('guide');
   grp('g-3d', m === '3d'); if (m !== '3d') { grp('g-anim', false); grp('g-outfit', false); clearModel(); }
   if (m !== 'img') grp('g-recol', false);
+  grp('g-zoom', m === 'img');
 }
+
+// ---- picture zoom / pan: wheel zooms at the cursor, drag moves, double-click fits -------------------------------
+const zoom = { s: 1, x: 0, y: 0, w: 0, h: 0, fit: true, key: '' };
+function zoomApply() {
+  $('imgel').style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.s})`;
+  $('zoompct').textContent = (zoom.s >= 10 ? Math.round(zoom.s * 100) : +(zoom.s * 100).toFixed(zoom.s < 0.1 ? 1 : 0)) + '%';
+}
+function zoomFit() {
+  const r = $('img').getBoundingClientRect(); if (!zoom.w || !r.width) return;
+  zoom.s = Math.min((r.width * 0.92) / zoom.w, (r.height * 0.92) / zoom.h, 8);   // small icons up to 8x
+  zoom.x = (r.width - zoom.w * zoom.s) / 2; zoom.y = (r.height - zoom.h * zoom.s) / 2; zoom.fit = true; zoomApply();
+}
+function zoomTo(s, cx, cy) {   // new scale, keeping the picture point under (cx, cy) in place
+  const r = $('img').getBoundingClientRect(); if (cx === undefined) { cx = r.width / 2; cy = r.height / 2; }
+  s = Math.min(64, Math.max(0.02, s));
+  zoom.x = cx - (cx - zoom.x) * (s / zoom.s); zoom.y = cy - (cy - zoom.y) * (s / zoom.s); zoom.s = s; zoom.fit = false; zoomApply();
+}
+function zoomLoaded(w, h, key) {   // new picture: fit it, unless it's the same picture again (e.g. recoloured)
+  const same = key === zoom.key && w === zoom.w && h === zoom.h;
+  zoom.w = w; zoom.h = h; zoom.key = key;
+  $('imgel').style.width = w + 'px'; $('imgel').style.height = h + 'px';
+  if (!same || zoom.fit) zoomFit(); else zoomApply();
+}
+$('img').addEventListener('wheel', e => {
+  e.preventDefault(); const r = $('img').getBoundingClientRect();
+  zoomTo(zoom.s * Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)), e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+let drag = null;
+$('img').addEventListener('pointerdown', e => { if (e.button !== 0) return; drag = { px: e.clientX, py: e.clientY, x: zoom.x, y: zoom.y };
+  $('img').setPointerCapture(e.pointerId); $('img').classList.add('dragging'); });
+$('img').addEventListener('pointermove', e => { if (!drag) return;
+  zoom.x = drag.x + e.clientX - drag.px; zoom.y = drag.y + e.clientY - drag.py; zoom.fit = false; zoomApply(); });
+const endDrag = () => { drag = null; $('img').classList.remove('dragging'); };
+$('img').addEventListener('pointerup', endDrag); $('img').addEventListener('pointercancel', endDrag);
+$('img').addEventListener('dblclick', zoomFit);
+$('z-in').onclick = () => zoomTo(zoom.s * 1.5); $('z-out').onclick = () => zoomTo(zoom.s / 1.5);
+$('z-fit').onclick = zoomFit; $('z-1').onclick = () => zoomTo(1);
+new ResizeObserver(() => { if (zoom.fit && $('img').style.display !== 'none') zoomFit(); }).observe($('img'));
+document.addEventListener('keydown', e => {
+  if ($('img').style.display === 'none' || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '')) return;
+  if (e.key === '+' || e.key === '=') zoomTo(zoom.s * 1.5); else if (e.key === '-') zoomTo(zoom.s / 1.5);
+  else if (e.key === '0') zoomFit(); else if (e.key === '1') zoomTo(1);
+});
 function setDownload(blob, name) { if (dlUrl) URL.revokeObjectURL(dlUrl); dlUrl = blob ? URL.createObjectURL(blob) : null; dlName = name; }
 
 // ---- tree ------------------------------------------------------------------------------------------------
@@ -273,8 +321,11 @@ async function show(r, opts = {}) {
     return loadGlb(buf, base + '.glb', meta, r.tag, opts.anims, my);
   }
   if (ct.startsWith('image/')) {
-    const blob = await resp.blob(); if (my !== seq) return; mode('img'); setDownload(blob, base + '.png'); $('imgel').src = dlUrl;
+    const blob = await resp.blob(); if (my !== seq) return; mode('img'); setDownload(blob, base + '.png');
+    $('imgel').style.visibility = 'hidden'; $('imgel').src = dlUrl;
     const img = await new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = dlUrl; });
+    if (my !== seq) return;
+    zoomLoaded(img.naturalWidth, img.naturalHeight, selOvl + '|' + r.name); $('imgel').style.visibility = 'visible';
     const rows = [['Size', `${img.naturalWidth} × ${img.naturalHeight}`], ['Type', r.tag === 'ftx' ? 'FlexiTexture (paletted)' : r.tag === 'gsi' ? 'Icon (cut from ' + esc(meta.texture) + ')' : 'Texture']];
     if (r.tag === 'ftx') {
       const rc = meta.recolourable ?? (opts.colors ? 7 : 0);

@@ -66,7 +66,7 @@ Unzip `rct3ovl.zip` somewhere easy to find, e.g. `Documents\rct3ovl`. Keep the f
 |---|---|
 | Models | 3D view. Drag to orbit, scroll to zoom, right-drag to pan. Pick an **animation** from the menu; use **Wireframe**, **Bones**, **Grid** and **Spin** to change the view |
 | Guest parts and animals | Also a **Variant** menu to switch outfits and colours |
-| Textures | The picture. Recolourable ones get three colour pickers |
+| Textures, icons and logos | The picture. **Scroll** to zoom in and out where the mouse points, **drag** to move around, **double-click** to fit it back in the window. The toolbar has **−**, **+**, **Fit** and **1:1** (actual pixels), or use the keys `+`, `-`, `0` and `1`. Recolourable ones also get three colour pickers |
 | Sounds | A player |
 | Text | A searchable table |
 | Everything else | The decoded record |

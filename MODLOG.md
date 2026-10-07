@@ -107,3 +107,9 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Variant grids: shared skin textures (TM01_Skin...) are 4x4 variants of 2x2 cells, and arm UVs fill one 1/8 cell.
   morph._layout_repeat widens the UV cell to the texture's real repeat (edge-map autocorrelation >= 0.6; skin
   ~0.9 at 1/4, ~0.1 at 1/8). Designs that never repeat (AF01 outfits) keep the UV cell.
+
+## 2026-10-07: zoom/pan for pictures
+- Viewer picture view: wheel zoom anchored at the cursor (2%..6400%), drag to pan, double-click / Fit / 1:1 / +/-,
+  keys + - 0 1. Fit caps small icons at 800%. Recolouring keeps the zoom. tests/ui_zoom.py drives it with the
+  installed Chrome via Playwright (channel='chrome', no browser download).
+- The user renamed the game folder to Desktop\RCT# files\New folder (the launcher re-asks when the saved path is gone).

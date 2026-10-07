@@ -68,3 +68,14 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - POPSTAR01 had a faceless low-detail head: the groups are popstar01_* but the parts are PF01. The skinned-head lookup
   now also tries the variant from the head part names. 45/57 characters have a detailed head; the other 12
   (mascots, uniformed staff) have no ssk in the game.
+
+## 2026-10-07: boxy trousers / floating arms (user report, People tab)
+- Real cause: the morph's offset and scale triples are stored z, y, x relative to the packed position fields
+  (x:11 low | y:10 | z:11). Bit-split smoothness can't detect this (same boundaries). It shows when the x and z
+  ranges differ a lot (walking): AM01's waist came out 0.67 m deep x 0.08 m wide in Walk but 0.16 x 0.33 in
+  Applause. Swapped, the waist is about 0.23 x 0.23 in every animation. Fixed in morph._unpack.
+- That also fixes the animals. The duck is now a recognisable mallard; the earlier note that the "wedge" duck was
+  genuine was WRONG.
+- The winding/normal fixes from earlier still hold on top (tests/mms_outward.py: normals point away from each
+  piece's centre; tests/winding.py 0.89-1.00).
+- Lesson: check that proportions stay the same across animations, not just within one frame.

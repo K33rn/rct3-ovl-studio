@@ -78,7 +78,12 @@ class MorphMesh:
 def _unpack(raw: np.ndarray, off, scale) -> np.ndarray:
     raw = raw.astype(np.uint32)
     q = np.stack([raw & 0x7FF, (raw >> 11) & 0x3FF, raw >> 21], -1).astype(np.float32)
-    return (np.asarray(off, np.float32) + np.asarray(scale, np.float32) * q).astype(np.float32)
+    # the morph's offset and scale triples are stored z, y, x relative to the packed fields: with them read as
+    # x, y, z a walking guest's hips come out 0.67 m deep and 0.08 m wide (x/z ranges differ a lot while walking);
+    # swapped, the waist is the same 0.23 m in every animation
+    off = np.asarray(off, np.float32)[[2, 1, 0]]
+    scale = np.asarray(scale, np.float32)[[2, 1, 0]]
+    return (off + scale * q).astype(np.float32)
 
 
 def load_morph(ovl: Ovl, ref: LoaderRef, max_anims: int | None = None) -> MorphMesh:

@@ -10,6 +10,7 @@ import numpy as np
 
 sys.path.insert(0, __file__.rsplit('tests', 1)[0])
 from rct3ovl.library import Library  # noqa: E402
+from rct3ovl.morph import _unpack  # noqa: E402
 
 lib = Library(sys.argv[1])
 for n in sys.argv[2:]:
@@ -22,8 +23,7 @@ for n in sys.argv[2:]:
     m = struct.unpack('<3fI3fIIIIIIIII', o.read(mp, 64)); off, sc, dp = np.array(m[0:3]), np.array(m[4:7]), m[11]
     blob = np.frombuffer(o.read(dp, fsize), np.uint8)
     raw = blob[:4 * npos].copy().view('<u4').astype(np.int64)
-    q = np.stack([raw & 0x7FF, (raw >> 11) & 0x3FF, raw >> 21], -1)
-    P = (off + sc * q)[uv['pi']]
+    P = _unpack(raw, off, sc)[uv['pi']]
     fn = -np.cross(P[idx[:, 1]] - P[idx[:, 0]], P[idx[:, 2]] - P[idx[:, 0]])      # outward
     fn /= np.maximum(np.linalg.norm(fn, axis=1, keepdims=True), 1e-9)
     nb = blob[4 * npos:4 * npos + 3 * nnrm].reshape(nnrm, 3)

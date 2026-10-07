@@ -15,7 +15,7 @@ turns what's inside into normal files you can use anywhere:
 |---|---|
 | 3D models (rides, scenery, cars, stalls, food) | `.glb` files with textures and animations (Blender, Windows 3D Viewer…) |
 | Guests, staff and entertainers | Whole animated characters as `.glb` |
-| Textures, icons and logos | `.png` pictures (recolourable ones can be previewed in your own colours) |
+| Textures, icons and logos | `.png` pictures |
 | Sounds | `.wav` audio |
 | Text (names, descriptions, in 10 languages) | `.json` |
 | Rides, shops, scenery items, paths and everything else | Readable `.json` records |
@@ -64,9 +64,9 @@ Unzip `rct3ovl.zip` somewhere easy to find, e.g. `Documents\rct3ovl`. Keep the f
 
 | What you picked | What the right side shows |
 |---|---|
-| Models | 3D view. Drag to orbit, scroll to zoom, right-drag to pan. Pick an **animation** from the menu; use **Wireframe**, **Bones**, **Grid** and **Spin** to change the view |
+| Models | 3D view. Drag to orbit, scroll to zoom, right-drag to pan. Pick an **animation** from the menu; use **Wireframe**, **Bones**, **Grid** and **Spin** to change the view. **Rotate X** / **Rotate Z** turn the model 90° (cars of vertical rides such as the elevator are stored lying down; the game stands them up on the track). A **No picture** line in the info box lists textures that can't be shown, and why |
 | Guest parts and animals | Also a **Variant** menu to switch outfits and colours |
-| Textures, icons and logos | The picture. **Scroll** to zoom in and out where the mouse points, **drag** to move around, **double-click** to fit it back in the window. The toolbar has **−**, **+**, **Fit** and **1:1** (actual pixels), or use the keys `+`, `-`, `0` and `1`. Recolourable ones also get three colour pickers |
+| Textures, icons and logos | The picture. **Scroll** to zoom in and out where the mouse points, **drag** to move around, **double-click** to fit it back in the window. The toolbar has **−**, **+**, **Fit** and **1:1** (actual pixels), or use the keys `+`, `-`, `0` and `1` |
 | Sounds | A player |
 | Text | A searchable table |
 | Everything else | The decoded record |
@@ -124,6 +124,10 @@ All commands start with `uv run --no-project --with numpy --with pillow python -
 - **"does not look like the RCT3 data folder":** you picked the wrong folder. Pick the one that has a
   `Characters` folder directly inside it. The launcher will ask again.
 - **The viewer shows something old or broken after an update:** close the launcher window and start it again.
+- **Some models are plain grey (e.g. the elevator, observation tower and Roto-Drop cars):** their textures aren't
+  in your game folder. The info box shows **No picture** with the reason. Check that the copied game folder is
+  complete: the `tracks`, `WildAnimals`, `Pool` and `Water` folders shouldn't be empty. A few names (`chrome`,
+  `water`, `fakeglass`…) are always made by the game while it runs; those get a stand-in colour.
 - **3D view stays empty:** the viewer loads its 3D library from the internet, so check your connection.
 - **Port already in use:** another viewer is still running. Close its window, or start a second one with
   `view "<game folder>" --port 8766`.

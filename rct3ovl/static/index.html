@@ -109,14 +109,15 @@
       <span class="grp" id="g-anim"><select id="anim" title="Animation"></select><button id="b-play" class="on" title="Play / pause">Play</button></span>
       <span class="grp" id="g-outfit" title="Colour variant: the texture holds several (outfits, mallard / plain duck, ...)"><select id="outfit"></select></span>
       <span class="grp" id="g-zoom" title="Scroll to zoom, drag to move, double-click to fit"><button id="z-out" title="Zoom out (-)">−</button><span id="zoompct">100%</span><button id="z-in" title="Zoom in (+)">+</button><button id="z-fit" title="Fit to window (0)">Fit</button><button id="z-1" title="Actual pixels (1)">1:1</button></span>
-      <span class="grp" id="g-recol" title="Recolour preview (the three in-game colour choices)"><input type="color" id="c0" value="#c81e1e"><input type="color" id="c1" value="#1e5adc"><input type="color" id="c2" value="#f0f0f0"><button id="b-recol">Recolour</button><button id="b-orig">Original</button></span>
       <span class="grp" id="g-3d" style="display:flex">
       <button id="b-wire" title="Wireframe">Wireframe</button>
       <button id="b-bones" title="Show skeleton">Bones</button>
       <button id="b-grid" class="on" title="Ground grid">Grid</button>
       <button id="b-spin" title="Auto rotate">Spin</button>
       <select id="bg" title="Background"><option value="#20232a">Dark</option><option value="#7a8494">Grey</option><option value="#cfd6e0">Light</option></select>
-      <button id="b-reset" title="Reset camera">Reset</button></span>
+      <button id="b-rotx" title="Turn the model 90° forwards (e.g. stand up an elevator car, which the game stores lying down)">Rotate X</button>
+      <button id="b-rotz" title="Turn the model 90° sideways">Rotate Z</button>
+      <button id="b-reset" title="Reset camera and rotation">Reset</button></span>
       <button id="b-dl" title="Download the current file">Download</button>
     </div>
     <div id="stage"><div id="img"><img id="imgel" alt=""></div><div id="doc"></div><div id="info"></div><div id="msg">Loading game index…</div></div>
@@ -174,7 +175,6 @@ function mode(m) {   // '3d' | 'img' | 'doc'
   $('img').style.display = m === 'img' ? 'flex' : 'none';
   $('doc').style.display = m === 'doc' ? 'block' : 'none'; $('doc').classList.remove('guide');
   grp('g-3d', m === '3d'); if (m !== '3d') { grp('g-anim', false); grp('g-outfit', false); clearModel(); }
-  if (m !== 'img') grp('g-recol', false);
   grp('g-zoom', m === 'img');
 }
 
@@ -250,8 +250,8 @@ let tf; $('treefilter').oninput = e => { clearTimeout(tf); tf = setTimeout(() =>
 
 // ---- resources -------------------------------------------------------------------------------------------
 let resources = [], selRes = null, texts = 0;
-const ORDER = ['shs', 'bsh', 'mms', 'ssk', 'tex', 'ftx', 'gsi', 'snd', 'txt', 'svd', 'ban', 'san', 'sid', 'spl'];
-const LABEL = { shs: 'Static models', bsh: 'Skinned models', mms: 'Morph meshes (people parts, animals)', ssk: 'Person heads (simple skins)',
+const ORDER = ['shs', 'bsh', 'mdl', 'mms', 'ssk', 'tex', 'ftx', 'gsi', 'snd', 'txt', 'svd', 'ban', 'san', 'sid', 'spl'];
+const LABEL = { shs: 'Static models', bsh: 'Skinned models', mdl: 'Wild! models', mms: 'Morph meshes (people parts, animals)', ssk: 'Person heads (simple skins)',
   tex: 'Textures', ftx: 'Flexi textures', gsi: 'Icons', snd: 'Sounds', txt: 'Text', svd: 'Scenery visuals', ban: 'Bone animations',
   san: 'Head animations', sid: 'Scenery items', spl: 'Splines', ppg: 'Person part groups', prt: 'Person parts', ric: 'Ride cars',
   rit: 'Ride trains', trr: 'Tracked rides', ced: 'Carried item extras', cid: 'Carried items', sta: 'Stalls', ptd: 'Path types',
@@ -307,7 +307,6 @@ async function show(r, opts = {}) {
   history.replaceState(null, '', `#ovl=${encodeURIComponent(selOvl)}&res=${encodeURIComponent(r.name)}`);
   let q = `/api/res?path=${encodeURIComponent(selOvl)}&name=${encodeURIComponent(r.name)}`;
   if (opts.anims) q += '&anims=' + encodeURIComponent(opts.anims);
-  if (opts.colors) q += '&colors=' + opts.colors;
   if (r.tag === 'mms') q += '&outfit=' + outfit;
   msg('Loading…');
   const resp = await fetch(q);
@@ -327,12 +326,7 @@ async function show(r, opts = {}) {
     if (my !== seq) return;
     zoomLoaded(img.naturalWidth, img.naturalHeight, selOvl + '|' + r.name); $('imgel').style.visibility = 'visible';
     const rows = [['Size', `${img.naturalWidth} × ${img.naturalHeight}`], ['Type', r.tag === 'ftx' ? 'FlexiTexture (paletted)' : r.tag === 'gsi' ? 'Icon (cut from ' + esc(meta.texture) + ')' : 'Texture']];
-    if (r.tag === 'ftx') {
-      const rc = meta.recolourable ?? (opts.colors ? 7 : 0);
-      if (meta.frames > 1) rows.push(['Frames', meta.frames]);
-      rows.push(['Recolourable', rc ? ['1st', '2nd', '3rd'].filter((_, i) => rc & (1 << i)).join(', ') + ' colour' : 'no']);
-      if (rc || opts.colors) { grp('g-recol', true); [0, 1, 2].forEach(i => $('c' + i).disabled = !(rc & (1 << i)) && !opts.colors); }
-    }
+    if (r.tag === 'ftx' && meta.frames > 1) rows.push(['Frames', meta.frames]);
     rows.push(['Stored in', r.part + '.ovl']); info(rows); return;
   }
   if (ct.startsWith('audio/')) {
@@ -393,13 +387,17 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
     const start = clips.find(c => c.name === wanted) || clips.find(c => /^walk$/i.test(c.name)) || clips.find(c => /walk|idle/i.test(c.name)) || clips[0];
     if (start) { sel.value = start.name; play(start.name); }
     frame(current);
-    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person' }[tag] || tag]];
+    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (standing pose)', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person' }[tag] || tag]];
     let v = 0, t = 0; current.traverse(o => { if (o.isMesh) { v += o.geometry.attributes.position.count; t += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; } });
     rows.push(['Vertices', v.toLocaleString()], ['Triangles', Math.round(t).toLocaleString()]);
     if (names.length) rows.push(['Animations', names.length + (clips.length < names.length ? ` (${clips.length} loaded, others load on pick)` : '')]);
     if (meta.textures) rows.push(['Textures', meta.textures.map(esc).join(', ')]);
+    for (const [t, why] of Object.entries(meta.missing_textures || {}))
+      rows.push(['<span class="err">No picture</span>', `${esc(t)}: ${esc(why)}`]);
     if (meta.texture) rows.push(['Texture', esc(meta.texture)]);
-    if (meta.bones) rows.push(['Bones', Array.isArray(meta.bones) ? meta.bones.map(esc).join(', ') : meta.bones]);
+    if (meta.bones) rows.push(['Bones', !Array.isArray(meta.bones) ? meta.bones : meta.bones.length <= 8 ? meta.bones.map(esc).join(', ')
+      : `${meta.bones.length}: ${meta.bones.slice(0, 6).map(esc).join(', ')}…`]);
+    if (meta.note) rows.push(['Note', esc(meta.note)]);
     if (meta.attach_points?.length) rows.push(['Attach points', meta.attach_points.map(esc).join(', ')]);
     if (meta.parts) rows.push(['Parts', meta.parts.map(esc).join(', ') + (meta.head ? ', ' + esc(meta.head) : '')]);
     info(rows);
@@ -422,10 +420,6 @@ $('outfit').onchange = e => {
   const r = resources.find(x => x.name === animSrc.name); if (r) show(r, { anims: n });
 };
 $('b-play').onclick = () => { playing = !playing; $('b-play').classList.toggle('on', playing); $('b-play').textContent = playing ? 'Play' : 'Paused'; };
-const hex = id => $(id).disabled ? '' : $(id).value.slice(1);
-$('b-recol').onclick = () => selRes && show(selRes, { colors: [hex('c0'), hex('c1'), hex('c2')].join(',') });
-$('b-orig').onclick = () => selRes && show(selRes);
-['c0', 'c1', 'c2'].forEach(id => $(id).onchange = () => $('b-recol').click());
 
 const toggle = (id, fn) => $(id).onclick = () => { const on = $(id).classList.toggle('on'); fn(on); };
 toggle('b-wire', on => { wire = on; current?.traverse(o => { if (o.isMesh) [].concat(o.material).forEach(m => m.wireframe = on); }); });
@@ -433,7 +427,10 @@ toggle('b-bones', on => { if (skel) skel.visible = on; });
 toggle('b-grid', on => grid.visible = on);
 toggle('b-spin', on => controls.autoRotate = on);
 $('bg').onchange = e => scene.background = new THREE.Color(e.target.value);
-$('b-reset').onclick = () => current && frame(current);
+$('b-reset').onclick = () => { if (!current) return; current.rotation.set(0, 0, 0); current.updateMatrixWorld(true); frame(current); };
+// display-only turning: some models are stored on their side (cars of vertical rides follow their track)
+const turn = axis => { if (!current) return; current.rotation[axis] += Math.PI / 2; current.updateMatrixWorld(true); frame(current); };
+$('b-rotx').onclick = () => turn('x'); $('b-rotz').onclick = () => turn('z');
 $('b-dl').onclick = () => { if (!dlUrl) return; const a = document.createElement('a'); a.href = dlUrl; a.download = dlName; a.click(); };
 // deep links: #ovl=<path>&res=<name>[&anim=<name>]  or  #person=<variant>
 // ---- file type guide (static/filetypes.md, rendered with marked) ---------------------------------------------

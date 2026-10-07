@@ -17,6 +17,30 @@ from .meshes import Shape
 _S = np.diag([1.0, 1.0, -1.0, 1.0])
 
 
+# Texture names the game engine fills in while running (reflections, water, glass, ads, terrain): they are never
+# stored in an OVL. (colour rgba, metallic, roughness, blended)
+_CHROME = ((0.75, 0.76, 0.78, 1.0), 1.0, 0.25, False)
+_WATER = ((0.25, 0.5, 0.7, 0.55), 0.0, 0.1, True)
+_GLASS = ((0.7, 0.85, 0.95, 0.35), 0.0, 0.05, True)
+ENGINE_TEXTURES = {
+    'chrome:ftx': _CHROME, 'mirrorchrome:ftx': _CHROME,
+    'water:ftx': _WATER, 'siwater:ftx': _WATER, 'watermask:ftx': _WATER, 'watemask:ftx': _WATER,
+    'fakeglass:ftx': _GLASS, 'fakeglass2sided:ftx': _GLASS,
+    'useadtexture:ftx': ((0.9, 0.9, 0.85, 1.0), 0.0, 0.8, False),
+    'useterraintexture:ftx': ((0.35, 0.5, 0.25, 1.0), 0.0, 0.9, False),
+    'useclifftexture:ftx': ((0.5, 0.45, 0.4, 1.0), 0.0, 0.9, False),
+}
+
+
+def texture_note(name: str, found: bool) -> str | None:
+    """Why a model's texture can't be shown (None if it can)."""
+    if found:
+        return None
+    if name.lower() in ENGINE_TEXTURES:
+        return 'made by the game engine while running (shown with a stand-in colour)'
+    return 'not in this game folder (the copy may be missing files, e.g. the tracks folder)'
+
+
 def gl_uv(uvs: np.ndarray) -> np.ndarray:
     """RCT3 v counts from the bottom row (images are stored bottom-up); textures are exported upright, so v' = 1 - v."""
     out = np.array(uvs, np.float32, copy=True)
@@ -155,6 +179,13 @@ def shape_to_glb(shape: Shape, texture_lookup, animations=None) -> bytes:
             ti, has_alpha = tex_cache[sm.texture.lower()]
             if ti is not None:
                 m['pbrMetallicRoughness']['baseColorTexture'] = {'index': ti}
+            else:
+                # no picture: engine-made textures get a stand-in look, missing ones a neutral grey (not white)
+                colour, metal, rough, blend = ENGINE_TEXTURES.get(sm.texture.lower(), ((0.55, 0.55, 0.58, 1.0), 0.0, 0.8, False))
+                m['pbrMetallicRoughness'].update({'baseColorFactor': list(colour), 'metallicFactor': metal,
+                                                  'roughnessFactor': rough})
+                if blend:
+                    m['alphaMode'] = 'BLEND'
         # RCT3 decides transparency per mesh (the texture style), not from the texture: 0 opaque (alpha ignored),
         # 1 alpha-mask cut-out ('Low' variants use a lower threshold), 2 blended (glass, water, SIAlpha*).
         style = sm.style.lower()

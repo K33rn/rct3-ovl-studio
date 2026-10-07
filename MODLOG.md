@@ -113,3 +113,17 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   keys + - 0 1. Fit caps small icons at 800%. Recolouring keeps the zoom. tests/ui_zoom.py drives it with the
   installed Chrome via Playwright (channel='chrome', no browser download).
 - The user renamed the game folder to Desktop\RCT# files\New folder (the launcher re-asks when the saved path is gone).
+
+## 2026-10-07: recolour UI removed; standalone heads; missing textures; Wild! mdl decoded
+- Viewer: recolour pickers removed (the CLI `recolour` command remains). Rotate X/Z buttons (display only).
+- Standalone ssk heads: clips fall back to the head's other detail levels (pop star L2 heads have none) and then a
+  neutral guest pose; texture comes from the character's own head part, preferring the same folder (SS_Head_VF01 in
+  MovieStar vs the vendor VF01 in VM).
+- Missing textures: 54 names are referenced but absent. Engine-made ones (chrome, water, fakeglass, UseAdTexture,
+  useterraintexture...) get stand-in materials; the rest (Elevator01, Observe1/2, DoubleDecker, RotoDrop,
+  LauncherFreefall, ts2..ts8, Pool1...) are missing from the user's copy: tracks, WildAnimals, Pool and Water are
+  EMPTY there. Info box shows "No picture" + reason (gltf.texture_note, tests/missing_textures.py).
+- mdl decoded (rct3ovl/mdl.py, tests/mdl_probe.py, tests/mdl_uvmatch.py): 52 x 96 B bones {pos, quat, inverse bind},
+  parent table, material name list (mesh n -> material n), 4 detail levels of meshes with 32 B headers (0x1305),
+  44 B vertices {pos, normal, 4 bone idx, 4 weights /255, colour, uv}, u16 indices. Exported static (bind pose);
+  modelanim not decoded.

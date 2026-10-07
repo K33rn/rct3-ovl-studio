@@ -20,7 +20,7 @@ with sync_playwright() as p:
     pg.click('#b-designs'); pg.wait_for_selector('.res[data-design]', timeout=180000)
     groups = pg.eval_on_selector_all('#res .group', 'gs => gs.map(g => g.textContent)')
     print('design groups:', len(groups), groups[:8], '| designs:', pg.eval_on_selector_all('.res[data-design]', 'ds => ds.length'))
-    for f, shot in (('[Bobsleigh]Icicle Bob.trk', 'icicle'), ('[WoodenRC]', 'wooden')):
+    for f, shot in (('[AirPoweredRC]Twin Thunder.trk', 'twin'), ('[BodySlide]Crossover.trk', 'crossover'), ('[WoodenRC]', 'wooden')):
         sel = f'.res[data-design="{f}"]' if f.endswith('.trk') else f'.res[data-design^="{f}"]'
         pg.eval_on_selector(sel, 'e => e.click()')
         pg.wait_for_function(ready, timeout=180000); pg.wait_for_timeout(1500)

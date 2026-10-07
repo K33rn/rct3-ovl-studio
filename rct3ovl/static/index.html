@@ -151,6 +151,7 @@ function resize() { const r = stage.getBoundingClientRect(); renderer.setSize(r.
 new ResizeObserver(resize).observe(stage); resize();
 renderer.setAnimationLoop(() => { const dt = clock.getDelta(); if (mixer && playing) mixer.update(dt); controls.update(); renderer.render(scene, camera); });
 
+let gridTile = 0;   // 4 for ride designs: draw RCT3 tiles
 function frame(obj) {
   const box = new THREE.Box3().setFromObject(obj, true);
   if (box.isEmpty()) return;
@@ -159,8 +160,12 @@ function frame(obj) {
   controls.target.copy(c);
   camera.near = r / 100; camera.far = r * 100; camera.updateProjectionMatrix();
   camera.position.copy(c).add(new THREE.Vector3(1, 0.7, 1.4).normalize().multiplyScalar(r * 2.8));
-  scene.remove(grid); const step = Math.pow(10, Math.floor(Math.log10(r)));
-  grid = new THREE.GridHelper(step * 20, 20, 0x556070, 0x343a46); grid.position.y = box.min.y; grid.visible = $('b-grid').classList.contains('on'); scene.add(grid);
+  scene.remove(grid);
+  if (gridTile) {   // ride designs: the park's 4 m tiles, covering the ride (designs.py puts tile edges on multiples of 4 m)
+    const n = 2 * Math.ceil((Math.max(Math.abs(box.min.x), box.max.x, Math.abs(box.min.z), box.max.z) + gridTile) / gridTile);
+    grid = new THREE.GridHelper(n * gridTile, n, 0x556070, 0x343a46);
+  } else { const step = Math.pow(10, Math.floor(Math.log10(r))); grid = new THREE.GridHelper(step * 20, 20, 0x556070, 0x343a46); }
+  grid.position.y = box.min.y; grid.visible = $('b-grid').classList.contains('on'); scene.add(grid);
 }
 function clearModel() {
   if (mixer) mixer.stopAllAction(); mixer = null; action = null; clips = []; heldObj = null; heldKey = ''; grp('g-hold', false);
@@ -470,7 +475,7 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
     $('outfit').value = outfit % nv; grp('g-outfit', nv > 1);
     const start = clips.find(c => c.name === wanted) || clips.find(c => /^walk$/i.test(c.name)) || clips.find(c => /walk|idle/i.test(c.name)) || clips[0];
     if (start) { sel.value = start.name; play(start.name); }
-    frame(current);
+    gridTile = tag === 'design' ? 4 : 0; frame(current);
     const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (skinned, animated)', tks: 'Track piece', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person', ride: 'Thrill ride', design: 'Ride design' }[tag] || tag]];
     if (tag === 'ride' && meta.model) rows.push(['Model', esc(meta.model)]);
     if (tag === 'design') {
@@ -480,6 +485,7 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
       if (meta.ratings) rows.push(['Excitement / Intensity / Nausea', meta.ratings.map(x => (+x).toFixed(2)).join(' / ')]);
       rows.push(['Top speed', f1(st.MaxSpeed * 3.6) + ' km/h'], ['Length', f1(st.RideLength) + ' m'], ['Ride time', f1(st.RideTime) + ' s'],
         ['Highest drop', f1(st.HighestDropHeight) + ' m'], ['Inversions / drops', `${st.NInversions ?? '?'} / ${st.NDrops ?? '?'}`]);
+      if (meta.footprint_tiles) rows.push(['Footprint', meta.footprint_tiles + ' tiles (4 m)']);
       if (meta.cost != null) rows.push(['Cost', '$' + (meta.cost / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })]);
       rows.push(['Track pieces', `${meta.placed} of ${meta.pieces}` + (meta.closure_gap != null && meta.closure_gap > 0.1 ? ` <span class="err">(circuit doesn't close by ${f1(meta.closure_gap)} m: special pieces may be misplaced)</span>` : '')]);
     }

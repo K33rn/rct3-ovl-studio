@@ -190,3 +190,15 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   pieces' reference tile is not their start/corner (not solved), so designs.py chains pieces: first by grid, then
   each joined to the previous exit, rotation/reversal chosen by heading, stored HEIGHT and tile. 160/189 closed
   circuits close within 10 cm; the rest are special types (splitting/racing, rivers, towers, robot arm, tilt lift).
+
+## 2026-10-07: design fixes (Twin Thunder, grid)
+- Designs can hold several separate track chains (Butterfly Knot/Firestorm/Racing Demon: 2): each is walked on
+  its own; circuits start at a StationMiddle piece (one tile, so its grid position is exact).
+- Vertical joints (top hats): all 4 rotations continue straight up/down, so DIRECTION alone isn't enough (Topsection
+  points the other way to normal pieces). Now picks the rotation whose exit lands nearest the NEXT piece's stored
+  tile. Twin Thunder closes; 165/189 circuits close within 10 cm (was 160). Tried a per-piece "base turn" from the
+  entry tangent instead: worse (147), reverted.
+- "Off the grid": the viewer grid was centred on the world origin, designs sat at park coords (~150-500 m away).
+  designs.py now shifts the ride by whole tiles + half a tile to the origin (tile edges on multiples of 4 m, lowest
+  point at y=0) and the viewer draws a 4 m tile grid sized to the ride for designs. Info shows the footprint in tiles.
+- tests/design_closure.py (closure over all designs), tests/design_trace.py (per-piece rotation/tile vs stored).

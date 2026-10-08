@@ -83,7 +83,10 @@ The buttons at the top:
   - Drag a launch to move it in time or to another track. Pick its launcher, tube and colour in the right-hand panel.
   - Set up launchers (mortars, mortar wall, Catherine wheel, laser dome, water jet) on park tiles. You can also click a launcher in 3D to pick it.
   - Play, pause, scrub the timeline ruler, ¼× to 2× speed, the game's music (or any music file), and camera views.
-  - Keys: Space play, Delete remove, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+D duplicate, F fire the selected launch, +/- zoom.
+  - Select several launches by dragging a box across empty timeline space, or Ctrl/Shift-click them. Ctrl+A selects everything.
+  - Copy, cut and paste parts of a show (Ctrl+C / Ctrl+X / Ctrl+V, or the buttons on the right). Pasting puts them at the playhead with their spacing and tracks kept. The clipboard is remembered, so you can paste into another show.
+  - With several selected: drag one to move them all, ←/→ nudge 0.1 s (Shift: 1 s), ↑/↓ change track, Duplicate, Delete, Preview them with their own timing, or change their firework, launcher or colour together.
+  - Keys: Space play, Delete remove, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+D duplicate, F fire the selection, Esc deselect (again: back), +/- zoom. Hold Alt while dragging to turn off snapping.
   - Your show is autosaved in the browser; **Save** downloads it as a `.fireworks.json` to **Open…** later.
   - The game's `.wma` music is converted once with ffmpeg; `rct3ovl-viewer.bat` includes it (`--with imageio-ffmpeg`).
 - **File types** opens the guide to every file type.

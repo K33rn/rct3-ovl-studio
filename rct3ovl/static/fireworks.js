@@ -95,6 +95,9 @@ async function build() {
   #fw .tl .ent.live { filter: brightness(1.35); }
   #fw .tl .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5050; pointer-events: none; z-index: 3; box-shadow: 0 0 6px #ff5050; }
   #fw .tl .rplay { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5050; pointer-events: none; }
+  #fw .tl .band { position: absolute; border: 1px solid var(--accent); background: #ffb02e22; pointer-events: none; display: none; z-index: 4; }
+  #fw .tl .ent.multi { box-shadow: 0 0 0 2px var(--accent), 0 0 8px #ffb02e88; z-index: 2; }
+  #fw .insp .kbd { font: 11px ui-monospace, Consolas, monospace; color: var(--dim); }
   #fw .tl .drop { position: absolute; height: var(--rowh); border: 1px dashed var(--accent); border-radius: 5px; pointer-events: none; display: none; }
   #fw .toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: #000c; color: #fff; padding: 6px 12px; border-radius: 8px; font-size: 12px; pointer-events: none; opacity: 0; transition: opacity .3s; }
   #fw .toast.on { opacity: 1; }
@@ -155,7 +158,7 @@ async function build() {
   const data = await (await fetch('/api/fw/data')).json();
   const FW = Object.fromEntries(data.fireworks.map(f => [f.file, f]));
   for (const f of data.fireworks) f.duration = fireworkDuration(f);
-  const S = { show: null, sel: null, selLauncher: 0, t: 0, playing: false, speed: 1, pps: 40, rowH: 26, undo: [], redo: [], fired: new Set() };
+  const S = { show: null, sel: null, selLauncher: 0, t: 0, playing: false, speed: 1, pps: 40, rowH: 26, undo: [], redo: [], fired: new Set(), multi: new Set() };
 
   // ---- three.js scene --------------------------------------------------------------------------------------
   const view = $('#fw-view', root);
@@ -472,11 +475,17 @@ async function build() {
   const blank = () => ({ name: 'My show', music: '', launchers: [{ type: 'Mortarx16', row: 0, col: 0, dir: 0, corner: -1 },
     { type: 'Mortarx1', row: 0, col: -3, dir: 0, corner: 0 }, { type: 'Mortarx1', row: 0, col: 3, dir: 0, corner: 0 }], entries: [] });
   const clone = o => JSON.parse(JSON.stringify(o));
+  // selection: S.multi holds every selected launch, S.sel the one shown in detail (the last clicked)
+  const selList = () => S.show.entries.filter(e => S.multi.has(e));
+  function select(list, primary) {
+    S.multi = new Set(list);
+    S.sel = primary && S.multi.has(primary) ? primary : (S.multi.has(S.sel) ? S.sel : list[list.length - 1] || null);
+  }
   const showEnd = () => Math.max(10, ...S.show.entries.map(e => e.time + (FW[e.firework]?.duration || 4) + 1));
   const timelineEnd = () => Math.max(30, showEnd() + 10, isFinite(musicEl.duration) ? musicEl.duration : 0);
   const tracks = () => Math.max(12, ...S.show.entries.map(e => e.track + 2));
   function setShow(show, keepT) {
-    S.show = show; S.sel = null; S.selLauncher = 0;
+    S.show = show; select([]); S.selLauncher = 0;
     if (!keepT) seek(0);
     setMusic(show.music || '');
     rebuildLaunchers(); renderAll();
@@ -484,8 +493,8 @@ async function build() {
   }
   function changed(label) { store.set('rct3fw.autosave', S.show); if (label) toast(label); }
   function snapshot() { S.undo.push(clone(S.show)); if (S.undo.length > 120) S.undo.shift(); S.redo = []; }
-  function undo() { if (!S.undo.length) return; S.redo.push(clone(S.show)); S.show = S.undo.pop(); S.sel = null; rebuildLaunchers(); renderAll(); changed('Undo'); }
-  function redo() { if (!S.redo.length) return; S.undo.push(clone(S.show)); S.show = S.redo.pop(); S.sel = null; rebuildLaunchers(); renderAll(); changed('Redo'); }
+  function undo() { if (!S.undo.length) return; S.redo.push(clone(S.show)); S.show = S.undo.pop(); select([]); rebuildLaunchers(); renderAll(); changed('Undo'); }
+  function redo() { if (!S.redo.length) return; S.undo.push(clone(S.show)); S.show = S.redo.pop(); select([]); rebuildLaunchers(); renderAll(); changed('Redo'); }
 
   // ---- music --------------------------------------------------------------------------------------------------
   function setMusic(name) {
@@ -576,9 +585,30 @@ async function build() {
   // ---- UI: inspector ---------------------------------------------------------------------------------------------
   function tubeCount(li) { const o = launcherObjs[li]; const i = o?.def?.info; return i ? (i.bone_tubes || i.tubes.length || 1) : 16; }
   function renderEntry() {
-    const box = $('#fw-entry', root), e = S.sel;
-    if (!e) { box.innerHTML = '<div class="muted">Click a launch on the timeline to edit it. Drag fireworks from the list onto the timeline to add them.</div>'; return; }
-    const ls = S.show.launchers;
+    const box = $('#fw-entry', root), e = S.sel, ls = S.show.launchers;
+    const clipRow = `<div class="row"><button data-a="copy" title="Ctrl+C">Copy</button><button data-a="cut" title="Ctrl+X">Cut</button>
+      <button data-a="paste" title="Ctrl+V: at the playhead" ${clip?.entries?.length ? '' : 'disabled'}>Paste${clip?.entries?.length ? ` (${clip.entries.length})` : ''}</button></div>`;
+    if (!e) {
+      box.innerHTML = `<div class="muted">Click a launch to edit it, or drag a box across the timeline to select several (Ctrl/Shift-click adds more).
+        Drag fireworks from the list onto the timeline to add them.</div>` +
+        (clip?.entries?.length ? `<div class="row"><button data-a="paste" title="Ctrl+V">Paste ${clip.entries.length} at the playhead</button></div>` : '') +
+        `<div class="kbd">Ctrl+A select all · Ctrl+C/X/V copy, cut, paste · Del delete · ←/→ nudge · ↑/↓ track</div>`;
+      return;
+    }
+    if (S.multi.size > 1) {
+      const sel = selList(), t0 = Math.min(...sel.map(x => x.time)), t1 = Math.max(...sel.map(x => x.time));
+      const cost = sel.reduce((a, x) => a + (FW[x.firework]?.cost || 0), 0);
+      box.innerHTML = `
+        <div><b>${sel.length} launches selected</b><div class="muted">${fmt(t0)} – ${fmt(t1)} · tracks ${Math.min(...sel.map(x => x.track)) + 1}–${Math.max(...sel.map(x => x.track)) + 1} · $${(cost / 100).toFixed(2)}</div></div>
+        ${clipRow}
+        <div class="row"><button data-a="prev" title="F: fire them with their own timing">▶ Preview</button><button data-a="dup" title="Ctrl+D: copy right after">Duplicate</button><button data-a="del" title="Delete">Delete</button><button data-a="none" title="Esc">Deselect</button></div>
+        <label>Move<span class="row"><button data-a="m-1">−1 s</button><button data-a="m-0.1">−0.1</button><button data-a="m0.1">+0.1</button><button data-a="m1">+1 s</button></span></label>
+        <label>Firework<select data-k="b-firework"><option value="">(keep each)</option>${data.fireworks.map(f => `<option value="${esc(f.file)}">${esc(f.title)}</option>`).join('')}</select></label>
+        <label>Launcher<select data-k="b-launcher"><option value="">(keep each)</option>${ls.map((l, i) => `<option value="${i}">#${i + 1} ${esc(LAUNCHER_NAMES[l.type] || l.type)}</option>`).join('')}</select></label>
+        <label>Colour<span class="row"><input type="color" data-k="b-tint" value="#ffffff" title="Tint all selected launches"><button data-a="b-notint">Original</button></span></label>
+        <div class="kbd">Drag any selected launch to move them all · ←/→ nudge 0.1 s (Shift: 1 s) · ↑/↓ track</div>`;
+      return;
+    }
     box.innerHTML = `
       <label>Firework<select data-k="firework">${data.fireworks.map(f => `<option value="${esc(f.file)}"${f.file === e.firework ? ' selected' : ''}>${esc(f.title)}</option>`).join('')}</select></label>
       <label>Launcher<select data-k="launcher">${ls.map((l, i) => `<option value="${i}"${i === e.launcher ? ' selected' : ''}>#${i + 1} ${esc(LAUNCHER_NAMES[l.type] || l.type)}</option>`).join('')}</select></label>
@@ -588,12 +618,23 @@ async function build() {
       <label>Colour<span class="row"><input type="color" data-k="tint" value="${e.tint ? hex(e.tint) : '#ffffff'}" title="Tint this launch (new: the game can't do this)">
         <button data-a="notint" ${e.tint ? '' : 'disabled'}>Original</button></span></label>
       <div class="row"><button data-a="fire">▶ Fire now</button><button data-a="dup" title="Ctrl+D">Duplicate</button><button data-a="del" title="Delete">Delete</button></div>
+      ${clipRow}
       <div class="muted">${esc(FW[e.firework]?.title)} · $${((FW[e.firework]?.cost || 0) / 100).toFixed(2)} · lasts about ${(FW[e.firework]?.duration || 0).toFixed(1)} s</div>`;
   }
   $('#fw-entry', root).addEventListener('change', ev => {
     const k = ev.target.dataset.k, e = S.sel; if (!k || !e) return;
-    snapshot();
     const v = ev.target.value;
+    if (k.startsWith('b-')) {   // bulk change of every selected launch
+      if (v === '') return;
+      snapshot();
+      for (const x of selList()) {
+        if (k === 'b-firework') x.firework = v;
+        if (k === 'b-launcher') { x.launcher = +v; x.slot %= tubeCount(+v); }
+        if (k === 'b-tint') x.tint = unhex(v);
+      }
+      changed(`Changed ${S.multi.size} launches`); renderAll(); return;
+    }
+    snapshot();
     if (k === 'firework') e.firework = v;
     else if (k === 'launcher') { e.launcher = +v; e.slot = Math.min(e.slot, tubeCount(e.launcher) - 1); }
     else if (k === 'slot') e.slot = +v;
@@ -603,7 +644,15 @@ async function build() {
     changed(); renderAll();
   });
   $('#fw-entry', root).addEventListener('click', ev => {
-    const a = ev.target.dataset.a, e = S.sel; if (!a || !e) return;
+    const a = ev.target.dataset.a, e = S.sel; if (!a) return;
+    if (a === 'paste') return paste();
+    if (!e) return;
+    if (a === 'copy') return copySel(false);
+    if (a === 'cut') return copySel(true);
+    if (a === 'prev') return previewSel();
+    if (a === 'none') { select([]); return markSel(); }
+    if (a.startsWith('m')) return nudge(+a.slice(1), 0);
+    if (a === 'b-notint') { snapshot(); for (const x of selList()) delete x.tint; changed(); renderAll(); return; }
     if (a === 'fire') { audio(); launch(e); }
     if (a === 'notint') { snapshot(); delete e.tint; changed(); renderAll(); }
     if (a === 'dup') duplicate();
@@ -649,7 +698,7 @@ async function build() {
       snapshot();
       S.show.launchers.splice(i, 1);
       S.show.entries = S.show.entries.filter(e => e.launcher !== i).map(e => (e.launcher > i && e.launcher--, e));
-      if (S.sel && !S.show.entries.includes(S.sel)) S.sel = null;
+      select(selList());
       S.selLauncher = Math.max(0, Math.min(S.selLauncher, S.show.launchers.length - 1));
       changed('Launcher removed'); rebuildLaunchers().then(renderAll);
     }
@@ -660,6 +709,7 @@ async function build() {
   const ph = document.createElement('div'); ph.className = 'playhead';
   const rph = document.createElement('div'); rph.className = 'rplay';
   const drop = document.createElement('div'); drop.className = 'drop';
+  const band = document.createElement('div'); band.className = 'band';
   function renderTimeline() {
     const n = tracks(), w = Math.ceil(timelineEnd() * S.pps) + 200;
     root.style.setProperty('--rowh', S.rowH + 'px');
@@ -669,10 +719,10 @@ async function build() {
     S.show.entries.forEach((e, i) => {
       const fw = FW[e.firework]; if (!fw) return;
       const c = e.tint || fw.colour, wpx = Math.max(16, (fw.duration || 3) * S.pps);
-      html += `<div class="ent${e === S.sel ? ' sel' : ''}" data-i="${i}" style="left:${e.time * S.pps}px;top:${e.track * S.rowH}px;width:${wpx}px;background:${hex(c)}"
+      html += `<div class="ent${e === S.sel ? ' sel' : S.multi.has(e) ? ' multi' : ''}" data-i="${i}" style="left:${e.time * S.pps}px;top:${e.track * S.rowH}px;width:${wpx}px;background:${hex(c)}"
         title="${esc(fw.title)} · ${fmt(e.time)} · launcher #${e.launcher + 1} tube ${e.slot + 1}">${esc(fw.title)}<span class="tail" style="width:${Math.max(0, wpx - 2.2 * S.pps)}px"></span></div>`;
     });
-    canvas.innerHTML = html; canvas.append(ph, drop);
+    canvas.innerHTML = html; canvas.append(ph, drop, band);
     // ruler ticks: a label every 1/2/5/10 s depending on zoom
     const stepS = [0.5, 1, 2, 5, 10, 15, 30].find(s => s * S.pps >= 46) || 60;
     let r = '';
@@ -692,36 +742,79 @@ async function build() {
     const go = ev => seek(timeAt(ev.clientX));
     go(e); ruler.onpointermove = go; ruler.onpointerup = () => { ruler.onpointermove = null; };
   });
-  // select / move launches; click empty lane to move the playhead
+  // select / move launches. Empty space: click moves the playhead, drag draws a box that selects the launches it
+  // touches (Ctrl/Shift adds to the selection), double-click adds a firework. A launch: click selects it,
+  // Ctrl/Shift-click adds or removes it, dragging moves every selected launch together.
   let lastDown = null;
+  const contentXY = ev => { const r = lanes.getBoundingClientRect(); return [ev.clientX - r.left + lanes.scrollLeft, ev.clientY - r.top + lanes.scrollTop]; };
+  const entryEls = () => { const m = new Map(); canvas.querySelectorAll('.ent').forEach(el => m.set(S.show.entries[+el.dataset.i], el)); return m; };
+  function markSel() {
+    for (const [e, el] of entryEls()) { el.classList.toggle('sel', e === S.sel); el.classList.toggle('multi', S.multi.has(e) && e !== S.sel); }
+    renderEntry();
+  }
   canvas.addEventListener('pointerdown', e => {
-    const el = e.target.closest('.ent');
+    if (e.button !== 0) return;
+    const el = e.target.closest('.ent'), add = e.ctrlKey || e.metaKey || e.shiftKey;
     if (!el) {
-      // double-click on an empty spot adds the firework picked in the list (detected here: the redraw below
-      // replaces the lanes between the two clicks, so the browser's dblclick never fires)
+      // double-click on an empty spot adds the firework picked in the list (detected here: the redraw on the first
+      // click replaces the lanes, so the browser's dblclick never fires)
       const now = performance.now(), last = lastDown; lastDown = { t: now, x: e.clientX, y: e.clientY };
       if (last && now - last.t < 450 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 6) {
         lastDown = null;
         const f = lib.querySelector('.fwk.sel')?.dataset.f || S.sel?.firework || data.fireworks[0].file;
         addEntry(f, snap(timeAt(e.clientX)), trackAt(e.clientY)); return;
       }
-      seek(timeAt(e.clientX)); S.sel = null; renderTimeline(); renderEntry(); return;
+      const [x0, y0] = contentXY(e), before = add ? selList() : [];
+      let banding = false;
+      canvas.setPointerCapture(e.pointerId);
+      canvas.onpointermove = ev => {
+        const [x1, y1] = contentXY(ev);
+        if (!banding && Math.hypot(x1 - x0, y1 - y0) < 5) return;
+        banding = true;
+        const L = Math.min(x0, x1), T = Math.min(y0, y1), W = Math.abs(x1 - x0), H = Math.abs(y1 - y0);
+        Object.assign(band.style, { display: 'block', left: L + 'px', top: T + 'px', width: W + 'px', height: H + 'px' });
+        const t0 = L / S.pps, t1 = (L + W) / S.pps, r0 = Math.floor(T / S.rowH), r1 = Math.floor((T + H) / S.rowH);
+        const hit = S.show.entries.filter(x => x.track >= r0 && x.track <= r1 && x.time <= t1 &&
+          x.time + Math.max(16 / S.pps, FW[x.firework]?.duration || 3) >= t0);
+        select([...new Set([...before, ...hit])]);
+        for (const [x, xel] of entryEls()) { xel.classList.toggle('sel', x === S.sel); xel.classList.toggle('multi', S.multi.has(x) && x !== S.sel); }
+      };
+      canvas.onpointerup = () => {
+        canvas.onpointermove = canvas.onpointerup = null; band.style.display = 'none';
+        if (banding) { lastDown = null; renderEntry(); if (S.multi.size) toast(`${S.multi.size} launch${S.multi.size > 1 ? 'es' : ''} selected`); return; }
+        seek(timeAt(e.clientX)); if (!add) select([]); markSel();
+      };
+      return;
     }
     const ent = S.show.entries[+el.dataset.i];
-    S.sel = ent; S.selLauncher = ent.launcher; obj3dMarkSel();
-    canvas.querySelectorAll('.ent.sel').forEach(x => x.classList.remove('sel')); el.classList.add('sel');
-    renderEntry(); renderLaunchers();
-    const t0 = ent.time, tr0 = ent.track, x0 = e.clientX, y0 = e.clientY; let moved = false;
+    if (add) {   // Ctrl/Shift-click: add to or remove from the selection
+      if (S.multi.has(ent)) { S.multi.delete(ent); select([...S.multi]); } else select([...S.multi, ent], ent);
+      markSel(); return;
+    }
+    const wasIn = S.multi.has(ent);
+    if (!wasIn) select([ent], ent); else S.sel = ent;
+    S.selLauncher = ent.launcher; obj3dMarkSel(); markSel(); renderLaunchers();
+    // drag: move the whole selection by the same time / track offset
+    const group = selList(), orig = group.map(x => [x, x.time, x.track]), els = entryEls();
+    const minT = Math.min(...group.map(x => x.time)), minTr = Math.min(...group.map(x => x.track));
+    const t0 = ent.time, x0 = e.clientX, y0 = e.clientY; let moved = false;
     el.setPointerCapture(e.pointerId);
     el.onpointermove = ev => {
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
       if (!moved) { snapshot(); moved = true; }
-      ent.time = Math.max(0, snap(t0 + (ev.clientX - x0) / S.pps, ev.shiftKey));
-      ent.track = Math.max(0, tr0 + Math.round((ev.clientY - y0) / S.rowH));
-      el.style.left = ent.time * S.pps + 'px'; el.style.top = ent.track * S.rowH + 'px';
+      const dt = Math.max(-minT, snap(t0 + (ev.clientX - x0) / S.pps, ev.altKey) - t0);
+      const dtr = Math.max(-minTr, Math.round((ev.clientY - y0) / S.rowH));
+      for (const [x, ti, tr] of orig) {
+        x.time = Math.max(0, ti + dt); x.track = tr + dtr;
+        const xe = els.get(x); if (xe) { xe.style.left = x.time * S.pps + 'px'; xe.style.top = x.track * S.rowH + 'px'; }
+      }
       el.title = fmt(ent.time);
     };
-    el.onpointerup = () => { el.onpointermove = null; if (moved) { changed(); renderAll(); } };
+    el.onpointerup = () => {
+      el.onpointermove = el.onpointerup = null;
+      if (moved) { changed(group.length > 1 ? `Moved ${group.length} launches` : ''); renderAll(); }
+      else if (wasIn && S.multi.size > 1) { select([ent], ent); markSel(); }   // plain click inside a group: just that one
+    };
   });
   lanes.addEventListener('dragover', e => {
     if (!e.dataTransfer.types.includes('text/x-firework')) return;
@@ -742,16 +835,61 @@ async function build() {
     const used = new Set(S.show.entries.filter(x => x.launcher === li && Math.abs(x.time - time) < 3).map(x => x.slot));
     let slot = 0; while (used.has(slot) && slot < tubeCount(li) - 1) slot++;
     const e = { firework: file, launcher: li, slot, time, track };
-    S.show.entries.push(e); S.sel = e;
+    S.show.entries.push(e); select([e], e);
     changed(`Added ${FW[file]?.title} at ${fmt(time)}`); renderAll();
   }
   function removeSel() {
-    if (!S.sel) return;
-    snapshot(); S.show.entries = S.show.entries.filter(x => x !== S.sel); S.sel = null; changed('Deleted'); renderAll();
+    const sel = selList(); if (!sel.length) return;
+    snapshot(); S.show.entries = S.show.entries.filter(x => !S.multi.has(x)); select([]);
+    changed(sel.length > 1 ? `Deleted ${sel.length} launches` : 'Deleted'); renderAll();
   }
   function duplicate() {
-    if (!S.sel) return;
-    snapshot(); const e = clone(S.sel); e.time = snap(e.time + 0.5); S.show.entries.push(e); S.sel = e; changed('Duplicated'); renderAll();
+    const sel = selList(); if (!sel.length) return;
+    const t0 = Math.min(...sel.map(x => x.time)), t1 = Math.max(...sel.map(x => x.time));
+    const off = snap(t1 - t0 + 0.5);                      // the copy starts just after the original
+    snapshot();
+    const copies = sel.map(x => ({ ...clone(x), time: x.time + off }));
+    S.show.entries.push(...copies); select(copies);
+    changed(sel.length > 1 ? `Duplicated ${sel.length} launches` : 'Duplicated'); renderAll();
+  }
+  // clipboard: kept in the browser, so a part of one show can be pasted into another (even after a reload)
+  let clip = store.get('rct3fw.clipboard');
+  function copySel(cut) {
+    const sel = selList().sort((a, b) => a.time - b.time);
+    if (!sel.length) { toast('Select launches first: drag a box on the timeline, or Ctrl-click'); return; }
+    clip = { entries: clone(sel), launchers: Object.fromEntries(sel.map(x => [x.launcher, S.show.launchers[x.launcher]?.type])) };
+    store.set('rct3fw.clipboard', clip);
+    if (cut) { snapshot(); S.show.entries = S.show.entries.filter(x => !S.multi.has(x)); select([]); changed(); renderAll(); }
+    else renderEntry();
+    toast(`${cut ? 'Cut' : 'Copied'} ${sel.length} launch${sel.length > 1 ? 'es' : ''}${sel.length > 1 ? ` (${fmt(sel[sel.length - 1].time - sel[0].time)} long)` : ''}`);
+  }
+  function paste() {
+    if (!clip?.entries?.length) { toast('Nothing copied yet'); return; }
+    if (!S.show.launchers.length) { toast('Add a launcher first'); return; }
+    // keep the launches' spacing and tracks, starting at the playhead; launchers keep their number when that launcher
+    // is the same type here, else the first launcher of that type, else the selected one
+    const ls = S.show.launchers, t0 = Math.min(...clip.entries.map(x => x.time)), at = snap(S.t);
+    const mapL = i => {
+      if (ls[i]?.type === clip.launchers[i]) return i;
+      const j = ls.findIndex(l => l.type === clip.launchers[i]);
+      return j >= 0 ? j : clamp(S.selLauncher, 0, ls.length - 1);
+    };
+    snapshot();
+    const add = clip.entries.map(x => { const li = mapL(x.launcher); return { ...clone(x), launcher: li, slot: x.slot % tubeCount(li), time: +(at + x.time - t0).toFixed(3) }; });
+    S.show.entries.push(...add); select(add);
+    changed(`Pasted ${add.length} launch${add.length > 1 ? 'es' : ''} at ${fmt(at)}`); renderAll();
+  }
+  function nudge(dt, dtr) {
+    const sel = selList(); if (!sel.length) return;
+    const minT = Math.min(...sel.map(x => x.time)), minTr = Math.min(...sel.map(x => x.track));
+    dt = Math.max(-minT, dt); dtr = Math.max(-minTr, dtr);
+    if (!dt && !dtr) return;
+    snapshot(); for (const x of sel) { x.time = +(x.time + dt).toFixed(3); x.track += dtr; } changed(); renderAll();
+  }
+  function previewSel() {   // fire the selection with its own timing, from now
+    const sel = selList().sort((a, b) => a.time - b.time); if (!sel.length) return;
+    audio(); const t0 = sel[0].time;
+    for (const x of sel) setTimeout(() => launch(x), (x.time - t0) * 1000 / S.speed);
   }
   const zoom = k => { const mid = timeAt(lanes.getBoundingClientRect().left + lanes.clientWidth / 2); S.pps = clamp(S.pps * k, 6, 400); renderTimeline(); lanes.scrollLeft = mid * S.pps - lanes.clientWidth / 2; syncScroll(); };
   $('#fw-zin', root).onclick = () => zoom(1.5); $('#fw-zout', root).onclick = () => zoom(1 / 1.5);
@@ -827,15 +965,21 @@ async function build() {
     if (root.style.display === 'none' || e.target.closest('input,select,textarea')) return;
     const k = e.key.toLowerCase();
     if (k === ' ') { e.preventDefault(); play(); }
-    else if (k === 'escape') close();
+    else if (k === 'escape') { if (S.multi.size) { select([]); markSel(); } else close(); }
     else if (k === 'delete' || k === 'backspace') { e.preventDefault(); removeSel(); }
     else if (k === 'home') { seek(0); lanes.scrollLeft = 0; }
     else if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
     else if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); redo(); }
     else if ((e.ctrlKey || e.metaKey) && k === 'd') { e.preventDefault(); duplicate(); }
+    else if ((e.ctrlKey || e.metaKey) && k === 'c') { e.preventDefault(); copySel(false); }
+    else if ((e.ctrlKey || e.metaKey) && k === 'x') { e.preventDefault(); copySel(true); }
+    else if ((e.ctrlKey || e.metaKey) && k === 'v') { e.preventDefault(); paste(); }
+    else if ((e.ctrlKey || e.metaKey) && k === 'a') { e.preventDefault(); select(S.show.entries.slice()); markSel(); toast(`All ${S.multi.size} launches selected`); }
+    else if (k === 'arrowleft' || k === 'arrowright') { if (S.multi.size) { e.preventDefault(); nudge((k === 'arrowleft' ? -1 : 1) * (e.shiftKey ? 1 : 0.1), 0); } }
+    else if (k === 'arrowup' || k === 'arrowdown') { if (S.multi.size) { e.preventDefault(); nudge(0, k === 'arrowup' ? -1 : 1); } }
     else if (k === '+' || k === '=') zoom(1.5);
     else if (k === '-') zoom(1 / 1.5);
-    else if (k === 'f' && S.sel) { audio(); launch(S.sel); }
+    else if (k === 'f' && S.multi.size) previewSel();
   }
   window.addEventListener('keydown', onKey);
 

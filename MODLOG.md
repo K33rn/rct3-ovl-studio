@@ -240,3 +240,8 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   WebAudio sounds by distance, music via ffmpeg (imageio-ffmpeg added to the .bat) cached as ogg in ~/.rct3ovl/music.
 - Bug found by tests/fw_debug.py: the server dropped emitters' NumParticles when trimming fields -> nothing burst.
 - Double-click on the timeline is detected in pointerdown (the redraw between clicks swallowed dblclick).
+- Fireworks editor, multi-select + clipboard: S.multi (set) + S.sel (detail); box select on empty timeline space,
+  Ctrl/Shift-click toggles, group drag (Alt = no snap; Shift is now the add-to-selection key), arrow-key nudge,
+  Ctrl+A/C/X/V. Clipboard in localStorage (rct3fw.clipboard) with launcher types, so pasting into another show
+  maps launchers by type. Paste = at the playhead, spacing and tracks kept. Bulk firework/launcher/tint changes.
+  tests/ui_fw_clipboard.py covers it.

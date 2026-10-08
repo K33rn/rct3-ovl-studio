@@ -84,7 +84,8 @@ async function build() {
   #fw .land b { color: var(--accent); font-size: 12px; }
   #fw .land .tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
   #fw .land .tools button { padding: 4px 2px; font-size: 12px; } #fw .land .tools button.on { background: var(--sel); border-color: var(--accent); }
-  #fw .land label { display: grid; grid-template-columns: 74px 1fr; align-items: center; gap: 6px; color: var(--dim); }
+  #fw .land label { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 6px; color: var(--dim); }
+  #fw .land label > input { width: 100%; min-width: 0; margin: 0; box-sizing: border-box; }   /* sliders stay inside the panel */
   #fw .insp { padding: 4px 12px 14px; display: grid; gap: 7px; }
   #fw .insp label { display: grid; grid-template-columns: 82px 1fr; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
   #fw .insp input[type=number], #fw .insp input[type=text], #fw .insp input[type=time], #fw .insp select { width: 100%; min-width: 0; background: var(--bg); color: var(--text);

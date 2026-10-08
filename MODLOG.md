@@ -271,3 +271,5 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Fix: AFE view stretched sideways. setAfeMode hid the side panels before the AFE panes were added, so the view sat in
   the 280 px left column when resize() ran; it then returned to its old size, so the ResizeObserver never fired and the
   canvas stayed 280 px wide (aspect 0.40 for a 1.86 view). Now resizes two frames later. tests/fw_afe_aspect.py.
+- Fix: landscape panel sliders ran past the panel (range inputs' intrinsic width grew the 1fr column): minmax(0, 1fr)
+  + width 100% / min-width 0. tests/fw_land_panel.py checks every control is inside.

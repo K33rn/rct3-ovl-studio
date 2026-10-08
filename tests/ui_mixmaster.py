@@ -65,12 +65,9 @@ with sync_playwright() as p:
     pg.click('#fw-land')
     pg.click('#fw-ptabs button[data-k="firework"]'); pg.click('#fw-lib .fwk[data-f="GreenPeony.frw"] .pv'); pg.wait_for_timeout(2600)
     pg.screenshot(path=f'{out}/4_landscape.png')
-    # AFE: wrong name, then the right one
+    # AFE: opens straight away (no name needed)
+    print('create button:', pg.inner_text('#fw-create'))
     pg.click('#fw-create button')
-    pg.fill('#fw .dlg input', 'Chris Sawyer'); pg.click('#fw .dlg button[data-r="1"]'); pg.wait_for_timeout(300)
-    print('after wrong name, afe open:', pg.evaluate("document.getElementById('fw').classList.contains('afe')"), '|', pg.inner_text('#fw-toast'))
-    pg.click('#fw-create button')
-    pg.fill('#fw .dlg input', 'atari'); pg.click('#fw .dlg button[data-r="1"]')
     pg.wait_for_selector('#fw .afe-tree .afe-node', timeout=20000); pg.wait_for_timeout(2500)
     print('afe open:', pg.evaluate("document.getElementById('fw').classList.contains('afe')"), '| nodes:', pg.eval_on_selector_all('#fw .afe-node', 'n => n.length'),
           '| particles', pg.evaluate(f'{D}.count()'))

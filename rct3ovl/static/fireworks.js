@@ -806,7 +806,7 @@ async function build() {
 
   // ---- UI: palette (Fireworks / Lasers / Water Jets) ---------------------------------------------------------------
   const lib = $('#fw-lib', root);
-  const afeUnlocked = () => !!store.get('rct3fw.afe');
+  const afeUnlocked = () => true;
   function renderLib() {
     const f = $('#fw-search', root).value.toLowerCase(), kind = S.tab;
     root.querySelectorAll('#fw-ptabs button').forEach(b => b.classList.toggle('on', b.dataset.k === kind));
@@ -847,14 +847,9 @@ async function build() {
     data = await (await fetch('/api/fw/data')).json(); loadRegistry(); descCache.clear(); renderLib(); renderAll(); toast('Reloaded all effects');
   };
 
-  // ---- editors: Advanced Firework Editor (unlocked with a name, as in the game), laser and water jet designers ----
+  // ---- editors: Advanced Firework Editor (always available here; the game hides it behind a guest name), laser and
+  // water jet designers ----
   async function openEditor(kind, key) {
-    if (kind === 'firework' && !afeUnlocked()) {
-      const name = await ask('Advanced firework editor', 'The advanced firework editor is hidden. Enter the name that unlocks it:', '', 'Unlock');
-      if (name == null) return;
-      if (name.trim().toLowerCase() !== 'atari') { toast('Nothing happened: that name doesn\'t unlock anything'); return; }
-      store.set('rct3fw.afe', true); renderLib(); toast('Advanced firework editor unlocked!');
-    }
     const def = key ? clone(REG[kind][key]) : null;
     if (def && !key.startsWith('my:')) { def.title = def.title + ' (copy)'; if (def.nodes?.[def.root]) def.nodes[def.root].Name = def.title; }
     const mod = await import(kind === 'firework' ? './fw_afe.js' : './fw_designers.js');

@@ -96,7 +96,7 @@ The buttons at the top:
   - **Keys:** Space play, Delete remove, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+D duplicate, F fire the selection, Esc deselect (again: back), +/- time scale. Hold Alt while dragging to turn off snapping.
   - **Saving:** your show is autosaved in the browser. **Save** downloads it as a `.fireworks.json` (including your own effects) to **Open…** later.
   - **Export to RCT3…:** downloads the show as a `.fwd`, or saves it straight into the game's `FireworkDisplays` folder, along with any of your own fireworks it uses. The game's display format only holds fireworks, launchers, music, start time and months, so lasers, water jets, aiming, landscape and colour/strength changes stay in the editor.
-  - **Advanced firework editor (AFE):** RCT3's hidden Firework Designer. Click 🔒 *Advanced firework editor* and enter the guest name that unlocks it in the game (**Atari**).
+  - **Advanced firework editor (AFE):** RCT3's hidden Firework Designer (in the game it is unlocked by a guest named Atari; here it is always available). Click ✎ *Advanced firework editor* on the Fireworks tab.
     - It edits a firework's whole particle tree: add, duplicate, move or remove emitters, with every setting in the game's groups (emitter rate, speed and rotation; particle basics, life, motion, special effects, modifiers).
     - Bottom panel: the particle's colour over its life and its texture.
     - The firework fires in the 3D view as you edit, and Ctrl+Z undoes.

@@ -11,7 +11,7 @@ with sync_playwright() as p:
         pg.evaluate(f"window.__fwdebug.ctx.previewEffect('jet', window.__fwdebug.REG.jet['{k}'], {{loop: true}})")
     pg.wait_for_timeout(3500)
     pg.screenshot(path=sys.argv[2])
-    pg.click('#fw-create button'); pg.fill('#fw .dlg input', 'atari'); pg.click('#fw .dlg button[data-r="1"]')
+    pg.click('#fw-create button')
     pg.wait_for_selector('#fw .afe-texgrid canvas', timeout=20000); pg.wait_for_timeout(2500)
     pg.screenshot(path=sys.argv[3])
     b.close()

@@ -267,3 +267,4 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   (computeVertexNormals reuses a too-short normal buffer -> NaN -> spreads through the half-float bloom: delete
   'normal' first); flare thumbnails black (2D canvas drops RGB of alpha-0 pixels: /api/fw/page?opaque=1).
 - WebGLRenderer needs stencil: true and the composer a stencil render target (reflections only where water is).
+- AFE unlocked: no name prompt any more (afeUnlocked() always true); the button shows ✎ and opens the editor directly.

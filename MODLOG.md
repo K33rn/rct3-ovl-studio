@@ -208,3 +208,7 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   query, 1x4 above), active tab highlighted (setTab; cleared when an OVL is opened from the tree).
 - Column dividers (.resizer on each list column's right edge): pointer drag sets --c1/--c2 on #app, min 180 px,
   keeps >= 360 px for the 3D view, saved in localStorage, double-click resets. tests/ui_layout.py checks it.
+- Fix: narrowing the 3D view wrapped its toolbar and the canvas (height:100%, in flow) then fed its pixel height back
+  into #stage, so the view grew past the window (1832 px in an 850 px window) and the model drew off-screen. Canvas is now
+  absolutely positioned in #stage, #app rows minmax(0,1fr) + overflow hidden, #view min-height 0. Left column min
+  220 px so the tab labels fit. tests/ui_resize_bug.py drags both dividers across and back and checks sizes.

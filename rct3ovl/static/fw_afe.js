@@ -4,6 +4,7 @@
 // expand / collapse). Right: the selected emitter and its particle with the game's groups - emitter rate, speed,
 // rotation; particle basics, life, motion, special effects, modifiers. Bottom: the particle's colour over its life and
 // its texture. The firework fires in the 3D view while you edit.
+import { runTour } from './tour.js';
 
 const css = `
   #fw .afe-l, #fw .afe-r, #fw .afe-b { background: var(--panel); min-height: 0; min-width: 0; display: flex; flex-direction: column; font-size: 12px; }
@@ -447,4 +448,30 @@ export function openAFE(ctx, def, key) {
   touched(true);
   ctx.toast('Advanced firework editor: edits fire in the 3D view');
   raf = requestAnimationFrame(tick);
+  setTimeout(() => runTour('afe', [
+    { title: 'The Advanced Firework Editor',
+      html: `<p>A firework is a <b>tree of particles</b>: the base releases particles through <b>emitters</b>, and each particle can have emitters of its own:
+        trails while it flies, bursts when it ends. Every number here is a setting from the game's firework files. The firework keeps firing in the 3D view
+        as you change things.</p>` },
+    { target: '.afe-tree', title: 'The tree',
+      html: `<p>The base at the top, then each emitter: how many particles it releases (×), when (in its parent's life, 0–100%) and for how long they live.
+        Click one to edit it; ▾ / ▸ fold branches.</p>` },
+    { target: '.afe-tools', title: 'Changing the tree',
+      html: `<p><b>+ Child emitter</b> adds an emitter (with a new particle) under the selected one; <b>Duplicate</b> copies a branch; <b>↑ ↓</b> reorder;
+        <b>Remove</b> deletes a branch; <b>Expand / Collapse</b> open or close everything.</p>` },
+    { target: '.afe-r', title: 'Settings',
+      html: `<p>For the base: name, cost, sound, and the colour / strength modifiers the MixMaster changes per launch.</p>
+        <p>For an emitter and its particle: <b>rate</b> (# particles, start / end time), <b>speed</b> (straight, sphere = round bursts, circle = rings,
+        parent = keep the parent's speed), <b>rotation</b>, <b>life</b>, <b>size</b>, <b>motion</b> (drag, gravity, stretch) and <b>special effects</b>.
+        Drag a slider or type a number.</p>` },
+    { target: '.afe-col', title: 'Colour over its life',
+      html: `<p>The particle's colour from birth (left) to death (right). Click to add a colour stop, drag to move it, right-click to remove it, and pick its
+        colour below. <b>Glow</b> draws it like a spark; off, it is solid (smoke).</p>` },
+    { target: '.afe-tex', title: 'Texture',
+      html: `<p>The game's particle pictures: flares, stars, sparkles, smoke, splashes. Click one to give it to the selected particle.</p>` },
+    { target: '.afe-top', title: 'Load and save',
+      html: `<p><b>New</b> starts a simple firework, <b>Load firework…</b> opens any game firework (as a copy) or one of yours.
+        <b>Save firework</b> adds it to your fireworks in the palette; <b>Save to game</b> writes a <code>.frw</code> into the game's Fireworks folder;
+        <b>Download .frw</b> saves the file. <b>← MixMaster</b> goes back. <kbd>Ctrl+Z</kbd> undoes, <kbd>F</kbd> fires.</p>` },
+  ]), 900);
 }

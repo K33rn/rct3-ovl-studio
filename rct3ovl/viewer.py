@@ -49,7 +49,7 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
             try:
                 if u.path in ('/', '/index.html'):
                     return self.send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html; charset=utf-8')
-                if u.path == '/fireworks.js' or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
+                if u.path in ('/fireworks.js', '/tour.js') or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
                                                  and os.path.exists(os.path.join(STATIC, u.path[1:]))):
                     return self.send(200, open(os.path.join(STATIC, u.path[1:]), 'rb').read(), 'text/javascript; charset=utf-8')
                 if u.path == '/api/fw/data':

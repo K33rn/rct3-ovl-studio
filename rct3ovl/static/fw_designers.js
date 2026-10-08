@@ -4,6 +4,7 @@
 // edit the selected point's value underneath. Persisting-image lasers draw frames made on a sketch pad.
 // The effect plays on a laser dome / water jet base in the scene while you edit.
 import { blenderAt } from './fw_effects.js';
+import { runTour } from './tour.js';
 
 const RENDER = ['Cone of Light', 'Plane of Light', 'Persisting Image'];
 const css = `
@@ -210,6 +211,17 @@ function designer(ctx, kind, def, key, cfg) {
   const tick = () => { lines.forEach(l => l.draw()); cfg.tick?.(def, body, handle); raf = requestAnimationFrame(tick); };
   raf = requestAnimationFrame(tick);
   cfg.after?.(def, body);
+  setTimeout(() => runTour('designers', [
+    { target: () => w.querySelector('[data-d="fields"]'), title: 'Designer settings',
+      html: `<p>The effect's name, type and length, and its basic settings. For lasers: <b>power</b> (how far the beams reach), <b>no. beams</b>,
+        <b>trail persistence</b> (afterglow) and, for image lasers, the image scale. Your changes play straight away in the 3D view.</p>` },
+    { target: () => w.querySelector('[data-d="lines"]'), title: 'Timelines of control points',
+      html: `<p>Each line changes one thing over the effect's run (colour, rotation speed, elevation, beam width / pressure, jet radius…).
+        Click an empty spot to add a point, drag a point to move it, right-click to delete it, and set the selected point's value underneath.</p>` },
+    { target: () => w.querySelector('.row'), title: 'Load and save',
+      html: `<p><b>Load</b> any game effect (as a copy) or one of yours, <b>New</b> starts fresh. <b>Save</b> adds it to your palette, <b>Save to game</b>
+        writes the game file, <b>Download</b> saves it. The window can be dragged by its title bar.</p>` },
+  ]), 700);
   return w;
 }
 

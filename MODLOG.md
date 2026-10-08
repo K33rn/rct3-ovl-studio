@@ -301,3 +301,9 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   one the piece loops (own clock) or holds still. Deterministic, so scrubbing matches playback.
 - Export notes that scenery stays in the editor. tests/ui_scenery_mix.py (stacking, riders, cue timing 2.0 s cue:
   3.5 s -> 1.5 s clip time).
+
+## 2026-10-07: walkthroughs
+- static/tour.js: spotlight tour engine (hole with a 9999px box-shadow, card placed below / above / right / left of the
+  target, waits up to 8 s for targets, owns the keyboard in the capture phase so app shortcuts don't fire, remembers
+  seen tours in localStorage rct3ovl.tour.<id>). Tours: main (17 steps, opens real examples on every tab), mixmaster
+  (24), afe (7), designers (3); each starts on first open, "? Tour" replays. tests/ui_tours.py walks all of them.

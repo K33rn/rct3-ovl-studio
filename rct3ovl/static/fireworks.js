@@ -14,6 +14,7 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { createTerrain } from './fw_terrain.js';
 import { createRibbons, drawLaser, jetState, jetDir, defaultLaser, defaultJet } from './fw_effects.js';
+import { runTour } from './tour.js';
 
 const TILE = 4, GRAVITY = 9.81, MAX_PARTICLES = 40000, MAX_VOICES = 40, D2R = Math.PI / 180;
 const LAUNCHER_NAMES = { Mortarx1: 'Mortar ×1', Mortarx16: 'Mortar ×16', MortarWallx8: 'Wall ×8',
@@ -51,6 +52,7 @@ export async function openFireworks({ onBack }) {
   ui.root.style.display = 'grid';
   ui.resize(); ui.start();
   history.replaceState(null, '', '#fireworks');
+  setTimeout(() => ui.tour(false), 900);   // the MixMaster walkthrough, the first time
 }
 
 // ------------------------------------------------------------------------------------------------------------
@@ -175,6 +177,7 @@ async function build() {
   <div class="bar">
     <button class="back" id="fw-back" title="Back to the viewer (Esc)">← Back</button>
     <h2>MixMaster</h2>
+    <button id="fw-tour" title="A guided walkthrough of the MixMaster" style="font-size:11px;padding:2px 8px">? Tour</button>
     <select id="fw-show" title="Open a show"></select>
     <button id="fw-new" title="Start an empty show">New</button>
     <button id="fw-open" title="Open a show saved from this editor (.json)">Open…</button>
@@ -2040,10 +2043,127 @@ async function build() {
   renderLib(); fillShows();
   const auto = store.get('rct3fw.autosave');
   if (auto) { showSel.value = 'auto'; setShow(auto); } else { showSel.value = 'd' + Math.max(0, data.displays.findIndex(d => /stratosphere/i.test(d.name))); openChoice(showSel.value); }
+  // ---- the MixMaster walkthrough -----------------------------------------------------------------------------------
+  const wait = (ms = 300) => new Promise(r => setTimeout(r, ms));
+  const tab = async k => { S.tab = k; $('#fw-search', root).value = ''; renderLib(); await wait(250); };
+  const panel = (id, btn, on) => { const p = $(id, root); if (p.classList.contains('on') !== on) $(btn, root).click(); };
+  const closePanels = () => { panel('#fw-landp', '#fw-land', false); panel('#fw-scenep', '#fw-scenebtn', false); };
+  const FW_TOUR = [
+    { title: 'Welcome to the MixMaster',
+      html: `<p>The MixMaster is a show editor like the one in RCT3 Soaked!: fireworks, lasers and water jets on a timeline, set to music, on
+        launchers you place in a 3D park. Everything is simulated from the game's own files.</p>
+        <p>This tour covers every part of it. <b>← Back</b> (top left) or <kbd>Esc</kbd> returns to the viewer; <b>? Tour</b> replays this.</p>`,
+      before: async () => { closePanels(); } },
+    { target: '#fw-show', title: 'Shows',
+      html: `<p>Open one of the game's four shows (Haunted Skies, Lunar Lights, Pirate Pyrotechnics, Stratosphere), your autosaved show, or a new empty one.</p>
+        <ul><li><b>New</b> starts an empty show with a few launchers.</li><li><b>Save</b> downloads your show as a file; <b>Open…</b> loads it again.</li>
+        <li>Your work is also autosaved in the browser all the time.</li></ul>` },
+    { target: '#fw-export', title: 'Export to RCT3',
+      html: `<p>Turns the show into a MixMaster display file (<code>.fwd</code>) for the game: download it, or save it straight into the game's
+        <b>FireworkDisplays</b> folder, together with any fireworks you made yourself.</p>
+        <p>The window tells you what the game's display format can't hold (lasers, water jets, aiming, landscape, scenery, colour and strength changes).
+        The game's own files are never overwritten.</p>` },
+    { target: '#fw-play', title: 'Playing the show',
+      html: `<ul><li><b>Play / Pause</b> (<kbd>Space</kbd>) and <b>■</b> to stop and rewind (<kbd>Home</kbd>).</li>
+        <li>The clock shows where you are and how long the show runs.</li>
+        <li>The speed menu plays it at ¼×, ½×, 1× or 2× (slow motion helps timing).</li></ul>` },
+    { target: '#fw-music', title: 'Music and volume',
+      html: `<p>Pick one of the game's music tracks, or <b>Choose a music file…</b> to use any song on your computer. The show and music stay in step,
+        also when you jump around the timeline. The slider sets the volume of the music and the effects' sounds.</p>` },
+    { target: '#fw-grid', title: 'Grid snap',
+      html: `<p><b>On:</b> launchers and scenery snap to the park's 4 m tiles (small bases to tile corners, as in the game), and <kbd>R</kbd> turns a quarter.</p>
+        <p><b>Off:</b> place things anywhere, and <kbd>R</kbd> turns 15° at a time.</p>` },
+    { target: '#fw-landp', title: 'Landscape',
+      before: async () => { closePanels(); panel('#fw-landp', '#fw-land', true); await wait(200); },
+      html: `<p>Shape the ground around the show: <b>Raise</b>, <b>Lower</b>, <b>Smooth</b> and <b>Flatten</b>, and paint <b>Water</b> at the level you set
+        (<b>Dry</b> removes it). Pick a tool, then left-drag on the ground; the ring shows the brush size.</p>
+        <p>Fireworks and lasers reflect in the water. <b>Flatten all</b> and <b>Remove water</b> reset it. The button <b>Landscape</b> opens and closes this panel.</p>` },
+    { target: '#fw-scenep', title: 'Scene: day, night, backdrop, ground',
+      before: async () => { closePanels(); panel('#fw-scenep', '#fw-scenebtn', true); await wait(200); },
+      html: `<ul><li><b>Time of day:</b> Day, Sunset or Night, with the game's own sky colours, clouds and stars. Day makes placing things easy; night
+        is how the show looks in the park.</li><li><b>Backdrop:</b> the game's skylines (Hill, City, Desert…).</li>
+        <li><b>Tile grid lines</b> on or off, and the <b>ground</b>: plain night grass or any of the game's 32 ground textures.</li></ul>
+        <p>These are kept with the show.</p>` },
+    { target: '#fw-cam', title: 'Camera and glow',
+      before: async () => { closePanels(); },
+      html: `<p>Camera views: <b>Crowd view</b>, <b>Autolook</b> (follows the bursts), <b>Close up</b>, <b>Top down</b>, <b>Slow orbit</b> and <b>Freelook</b>.
+        <b>Glow</b> switches the bloom effect.</p>` },
+    { target: '#fw-ptabs', title: 'The palette',
+      before: async () => { await tab('firework'); },
+      html: `<p>Everything you can add: <b>Fireworks</b>, <b>Lasers</b>, <b>Water Jets</b>, <b>Scenery</b> and <b>Bases</b> (the launchers).</p>
+        <ul><li><b>▶</b> previews an effect in the 3D view, <b>✎</b> edits it (a game effect is copied first).</li>
+        <li><b>Drag</b> an effect onto the timeline, or into the 3D view onto a launcher (or onto open ground: a matching launcher is placed there).</li>
+        <li>The search box filters the list; <b>$</b> at the bottom shows or hides prices; <b>↻ Reload</b> picks up new files in the game folder.</li></ul>` },
+    { target: '#fw-create', title: 'The Advanced Firework Editor',
+      before: async () => { await tab('firework'); },
+      html: `<p>RCT3's hidden firework designer. It shows a firework's whole tree of particles and every setting, with the firework firing as you edit.
+        Make your own fireworks, then save them to your list, into the game, or as a file. It has its own short tour when you open it.</p>` },
+    { target: '#fw-create', title: 'Lasers and the Advanced Laser Designer',
+      before: async () => { await tab('laser'); },
+      html: `<p>The game's lasers: cones of light, planes of light and drawn images. They fire from <b>laser domes</b>.</p>
+        <p><b>Advanced laser designer</b> makes your own: type, duration, power, beams, trails, and timelines for colour, rotation speed, elevation
+        and beam width; image lasers get a sketch pad.</p>` },
+    { target: '#fw-create', title: 'Water jets and their designer',
+      before: async () => { await tab('jet'); },
+      html: `<p>The game's water jets fire from <b>water jet bases</b>. The <b>Advanced water jet designer</b> sets pressure (how high), elevation (tilt),
+        jet radius and colour over time.</p>` },
+    { target: '#fw-lib', title: 'Scenery',
+      before: async () => { await tab('scenery'); await wait(800); },
+      html: `<p>Any of the game's 1,330 scenery pieces. Drag one into the 3D view to place it (a see-through preview follows the mouse). Filter by category or
+        <b>animated only</b>.</p><ul><li>Click a piece to select it, drag to move it, <kbd>R</kbd> turns it, <kbd>Delete</kbd> removes it.</li>
+        <li>Put launchers on top of scenery: they stand on the highest surface and move with the piece.</li>
+        <li>Animated pieces loop, play only when cued, or stand still. <b>Cue at playhead</b> (in the piece's panel) adds a block to the timeline to
+        time fireworks with the animation.</li></ul>` },
+    { target: '#fw-lib', title: 'Bases (launchers)',
+      before: async () => { await tab('base'); await wait(300); },
+      html: `<p>The six MixMaster bases: mortars, the mortar wall and Catherine wheel fire <b>fireworks</b>, the laser dome fires <b>lasers</b>, the water jet
+        base fires <b>water jets</b>. Drag one into the 3D view to place it.</p>` },
+    { target: '#fw-view', title: 'The 3D view',
+      before: async () => { await tab('firework'); },
+      html: `<ul><li>Drag to orbit, right-drag to pan, scroll to zoom.</li><li>Click a launcher (numbered labels) or scenery piece to select it;
+        drag it to move it; <kbd>R</kbd> turns it.</li><li>Drop palette items here to place them.</li>
+        <li>The numbers at the top right count particles and laser beams.</li></ul>` },
+    { target: '#fw-lanes', title: 'The timeline',
+      html: `<p>Each block is one firework, laser, water jet or scenery cue, starting where its left edge is and as long as it runs. Tracks are just rows to
+        keep things tidy.</p><ul><li><b>Add:</b> drag from the palette, or double-click an empty spot to add the item picked in the palette.</li>
+        <li><b>Move:</b> drag a block (sideways = time, up/down = track). <kbd>Alt</kbd> turns snapping off.</li>
+        <li><b>Select several:</b> drag a box over empty space, or <kbd>Ctrl</kbd>/<kbd>Shift</kbd>-click. <kbd>Ctrl+A</kbd> selects all.</li>
+        <li><b>Ctrl-drag</b> clones; <kbd>Ctrl+C</kbd> <kbd>Ctrl+X</kbd> <kbd>Ctrl+V</kbd> copy, cut and paste at the playhead (also into another show);
+        <kbd>Ctrl+D</kbd> duplicates; <kbd>Delete</kbd> removes; <kbd>←</kbd> <kbd>→</kbd> nudge, <kbd>↑</kbd> <kbd>↓</kbd> change track.</li></ul>` },
+    { target: '#fw-ruler', title: 'Time ruler and time scale',
+      html: `<p>Click or drag on the ruler to jump to that moment: the sky shows exactly what would be in the air then. The red line is the playhead
+        (pastes and drops go there). <b>−</b> / <b>+</b> on the left (or <kbd>Ctrl</kbd>+scroll) change the time scale.</p>` },
+    { target: '#fw-aimbar', title: 'Base aiming controls',
+      html: `<p>Click this bar to add an <b>angle control point</b> for the selected launcher at that time; turn and tilt it in the right-hand panel, or
+        drag the green-highlighted launcher in the 3D view. The launcher turns smoothly from point to point during the show.</p>
+        <p>One point can control several launchers; right-click a point to remove it.</p>` },
+    { target: '#fw-entry', title: 'The selected effect',
+      html: `<p>Click a block to edit it here: which firework / laser / jet, its launcher and tube, time and track, its <b>colour</b> and, for fireworks,
+        its <b>strength</b> (more or fewer particles), as RCT3's colour and strength modifiers do. <b>Fire now</b> previews it, <b>✎ Edit</b> opens it in
+        its editor.</p><p>With several selected, change them all at once or move them together.</p>` },
+    { target: '#fw-showinfo', title: 'Show settings',
+      html: `<p>The show's name, the time of day it starts in the park, and the months it plays. Below: how many effects and launchers it has, how long it
+        runs and what the fireworks cost.</p>` },
+    { target: '#fw-launchers', title: 'Launchers',
+      html: `<p>Every launcher in the show: its type, tile column and row, and facing. Edit them here or move them in the 3D view; <b>✕</b> removes one
+        (with its effects). Click a row to select that launcher.</p>` },
+    { title: 'Keyboard shortcuts',
+      html: `<ul><li><kbd>Space</kbd> play / pause · <kbd>Home</kbd> rewind · <kbd>F</kbd> fire the selection</li>
+        <li><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> undo / redo (everything can be undone)</li>
+        <li><kbd>Ctrl+C</kbd> <kbd>Ctrl+X</kbd> <kbd>Ctrl+V</kbd> <kbd>Ctrl+D</kbd> <kbd>Ctrl+A</kbd> · <kbd>Delete</kbd></li>
+        <li><kbd>←</kbd> <kbd>→</kbd> nudge 0.1 s (<kbd>Shift</kbd>: 1 s) · <kbd>↑</kbd> <kbd>↓</kbd> track · <kbd>+</kbd> <kbd>−</kbd> time scale</li>
+        <li><kbd>R</kbd> turn the selected launcher or scenery piece · <kbd>Esc</kbd> deselect, then back to the viewer</li></ul>` },
+    { title: 'Ready',
+      html: `<p>A good first try: press <b>Play</b> on a game show, or start a <b>New</b> show, drag a few fireworks onto the timeline and press Play.</p>
+        <p><b>? Tour</b> at the top replays this walkthrough.</p>` },
+  ];
+  function tour(force) { if (root.style.display !== 'none' && !root.classList.contains('afe')) runTour('mixmaster', FW_TOUR, { force, onEnd: closePanels }); }
+  $('#fw-tour', root).onclick = () => tour(true);
+
   window.__fwdebug = {   // for tests
     count: () => parts.length, parts: () => parts, step, launch, FW, REG, descInfo, S, ribbons, terrain, openEditor, ctx, seek, applyAims, renderAll,
     sceneryObjs: () => sceneryObjs };
-  return { root, resize, start, stop, onBack: null };
+  return { root, resize, start, stop, tour, onBack: null };
 }
 
 // how long a firework runs: its lifetime plus the longest chain of particles it releases

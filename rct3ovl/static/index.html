@@ -36,6 +36,7 @@
   .group .help:hover { color: var(--accent); border-color: var(--accent); }
   .head .brand { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .head .brand .sub { margin-left: auto; }
+  #b-tour { font-size: 11px; padding: 2px 8px; }
   /* the four tabs: one even row (wraps to two when the column is narrow) */
   .tabs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin: 8px 0 6px;
           padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
@@ -115,7 +116,7 @@
 <div id="app">
   <div class="col">
     <div class="head">
-      <div class="brand"><h1>RCT3 OVL Viewer</h1><span class="sub">by K3rn</span></div>
+      <div class="brand"><h1>RCT3 OVL Viewer</h1><span class="sub">by K3rn</span><button id="b-tour" title="A guided walkthrough of the whole program">? Tour</button></div>
       <nav class="tabs">
         <button id="b-types" title="What every file type is and does">File types</button>
         <button id="b-people" title="Whole guests, staff and entertainers">Peeps</button>
@@ -748,7 +749,90 @@ async function fromHash() {
   const r = resources.find(x => x.name === h.get('res')); if (r) await show(r, { anims: h.get('anim') });
 }
 window.addEventListener('hashchange', fromHash);
-loadTree().then(fromHash).catch(e => msg('Could not load index: ' + e, true));
+// ---- the walkthrough: runs by itself the first time, "? Tour" replays it ------------------------------------------
+const clickFirst = async (sel, wait = 8000) => {   // click the first match once it exists (opens an example for the tour)
+  for (let t = 0; t < wait; t += 100) { const e = document.querySelector(sel); if (e) { e.click(); return e; } await new Promise(r => setTimeout(r, 100)); }
+};
+const idle = (ms = 300) => new Promise(r => setTimeout(r, ms));
+const TOUR = [
+  { title: 'Welcome to the RCT3 OVL Viewer',
+    html: `<p>This program opens <b>RollerCoaster Tycoon 3</b>'s game files and shows what is inside them: 3D models with their textures and
+      animations, pictures, sounds, texts, whole guests, rides, ride designs, scenery, and a full fireworks show editor.</p>
+      <p>This tour goes through every part of the screen and every tab, and opens real examples on the way. It takes a few minutes.</p>
+      <p>Use <kbd>Next</kbd> / <kbd>←</kbd> <kbd>→</kbd> to move, <kbd>Esc</kbd> to stop. You can replay it any time with <b>? Tour</b> at the top left.</p>` },
+  { target: '#tree', title: '1. The game\'s OVL files',
+    html: `<p>RCT3 keeps nearly everything in <b>OVL files</b> (pairs of <code>.common.ovl</code> / <code>.unique.ovl</code>). This list shows all of them, in the
+      game's own folders (Animals, Characters, Rides, Style, Scenery, tracks…).</p>
+      <ul><li>Click ▸ to open a folder, click an OVL to see what is in it.</li>
+      <li>The coloured numbers say how many <b>models</b> (green), <b>pictures</b> (orange) and <b>sounds</b> (blue) it holds.</li></ul>` },
+  { target: '#treefilter', title: 'Finding an OVL',
+    html: `<p>Type part of a name to filter the list, for example <b>duck</b>, <b>coaster</b> or <b>chess</b>. Clear it to see everything again.</p>
+      <p>The line above shows where the game files are. The viewer remembers that folder (to choose another one, delete <code>game_folder.txt</code> next to the program).</p>` },
+  { target: '#res', title: '2. What is inside an OVL',
+    before: async () => { document.querySelector('#tree details')?.setAttribute('open', ''); await clickFirst('#tree .ovl'); await idle(600); },
+    html: `<p>Opening an OVL lists its <b>resources</b>, grouped by type: 3D models, textures, sounds, texts, animations, ride and scenery records and many more.</p>
+      <ul><li>Click one to view it on the right.</li><li>The <b>?</b> next to a group explains that file type.</li>
+      <li>The box above filters the list (by name or type).</li></ul>` },
+  { target: '#stage', title: '3. The viewer',
+    before: async () => { await clickFirst('#res .res:not(.dim)'); await idle(1200); },
+    html: `<p>The selected resource shows here.</p>
+      <ul><li><b>3D models:</b> drag to orbit, right-drag to pan, scroll to zoom. They come with their textures, skeletons and animations.</li>
+      <li><b>Pictures:</b> scroll to zoom, drag to move, double-click to fit.</li>
+      <li><b>Sounds</b> play here; <b>texts</b> and <b>records</b> are shown as readable tables.</li></ul>
+      <p>The box at the bottom left lists details: size, textures, bones, animations, where it comes from.</p>` },
+  { target: '#toolbar', title: 'The viewer\'s buttons',
+    html: `<ul><li><b>Animation</b> list and <b>Play</b> (when the model has animations).</li>
+      <li><b>Wireframe</b>, <b>Bones</b> (the skeleton), <b>Grid</b>, <b>Spin</b>, and the background colour.</li>
+      <li><b>Rotate X / Z</b> stand up models the game stores lying down. <b>Reset</b> puts the camera back.</li>
+      <li><b>Download</b> saves the current thing as a file: a <code>.glb</code> 3D model (with textures and animations), a <code>.png</code> picture,
+      a <code>.wav</code> sound or the record as <code>.json</code>.</li></ul>` },
+  { target: '.tabs', title: '4. The tabs',
+    html: `<p>Besides browsing OVLs, six tabs collect things the game spreads over many files:</p>
+      <ul><li><b>File types</b>: what every kind of file is and does.</li><li><b>Peeps</b>: whole guests, staff and entertainers.</li>
+      <li><b>Thrill Rides</b>: flat rides with their ride animations.</li><li><b>Ride Designs</b>: the premade coasters and tracked rides.</li>
+      <li><b>Scenery</b>: every scenery item.</li><li><b>Fireworks</b>: the MixMaster show editor.</li></ul>
+      <p>The tab you are on is highlighted. Next, each one in turn.</p>` },
+  { target: '#doc', title: 'File types',
+    before: async () => { document.getElementById('b-types').click(); await idle(500); },
+    html: `<p>A guide to every file type in RCT3: what it is, what it does in the game, what it holds, and what you get when you view or download it.</p>
+      <p>Use the filter at the top to jump to a type. The <b>?</b> buttons in resource lists open this guide at the right place.</p>` },
+  { target: '#res', title: 'Peeps',
+    before: async () => { document.getElementById('b-people').click(); await clickFirst('#res .res[data-v]'); await idle(1800); },
+    html: `<p>Every kind of guest, staff member and entertainer, put together from its body, legs and head parts, and grouped (adults, children,
+      teens, VIPs, staff, entertainers, mascots…).</p><p>Click one to see the whole person with its animations.</p>` },
+  { target: '#toolbar', title: 'Peeps: animations, outfits, food',
+    html: `<ul><li><b>Animation</b>: walking, queueing, eating, cheering, riding, staff jobs… (hundreds per peep).</li>
+      <li><b>Variant</b>: the outfit / colour versions the game picks from.</li>
+      <li>In eating and drinking animations a menu appears to choose the <b>food or drink</b> held in the hand.</li></ul>` },
+  { target: '#res', title: 'Thrill Rides',
+    before: async () => { document.getElementById('b-rides').click(); await clickFirst('#res .res[data-ride]'); await idle(2000); },
+    html: `<p>All flat rides (the base game, Soaked! and Wild!): the ride's model with its moving parts.</p>
+      <p>The <b>Animation</b> list holds the ride's own sequences, such as <i>start</i>, <i>loop</i> and <i>stop</i>; it opens on the running loop.</p>` },
+  { target: '#res', title: 'Ride Designs',
+    before: async () => { document.getElementById('b-designs').click(); await clickFirst('#res .res[data-design]'); await idle(2500); },
+    html: `<p>The game's premade roller coasters and tracked rides, grouped by ride type. Each is built from its track pieces into one model, on a grid of
+      the park's 4 m tiles.</p><p>The box at the bottom shows its excitement, intensity and nausea, top speed, length, drops, inversions and cost.</p>` },
+  { target: '#res', title: 'Scenery',
+    before: async () => { document.getElementById('b-scenery').click(); await clickFirst('#res .res[data-scenery]', 15000); await idle(1500); },
+    html: `<p>All 1,330 scenery items: trees and plants, walls and roofs, animatronics, path extras, shops, entrances, pools, enclosures and more, grouped by
+      category and theme. Animated ones are marked <b>⟳</b> and play their animation.</p>` },
+  { target: '#resfilter', title: 'Searching any list',
+    html: `<p>This box filters whatever list is open: an OVL's resources, peeps, rides, designs or scenery. Try <b>rex</b> on the Scenery tab.</p>` },
+  { target: '.resizer[data-col="1"]', title: 'Resizing the columns',
+    html: `<p>Drag the thin line on the right edge of either list to make it wider or narrower. Double-click it to reset. The widths are remembered.</p>` },
+  { target: '#b-fireworks', title: 'Fireworks: the MixMaster',
+    html: `<p>The last tab opens the <b>MixMaster</b>, a full-window editor for firework, laser and water-jet shows, with the game's own fireworks,
+      the Advanced Firework Editor, landscaping, scenery and export back into RCT3.</p>
+      <p>It has its own walkthrough, which starts the first time you open it. <b>← Back</b> in its top left returns here.</p>`,
+    action: { label: 'Open the MixMaster', run: () => document.getElementById('b-fireworks').click() } },
+  { title: 'That\'s everything',
+    html: `<p>Pick an OVL on the left or a tab to start. Replay this tour with <b>? Tour</b> at the top left any time.</p>` },
+];
+document.getElementById('b-tour').onclick = () => import('/tour.js').then(m => m.runTour('main', TOUR, { force: true }));
+
+loadTree().then(fromHash).then(() => {
+  if (location.hash !== '#fireworks') import('/tour.js').then(m => m.runTour('main', TOUR)).catch(() => {});
+}).catch(e => msg('Could not load index: ' + e, true));
 </script>
 </body>
 </html>

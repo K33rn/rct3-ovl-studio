@@ -117,6 +117,7 @@ The buttons at the top:
     - Save to your lasers / water jets, to the game (`.las` / `.wjt`) or as a download.
   - **Game files:** files written into the game folder are built from the game's own files of the same kind, so they load like the originals. The game's own files are never overwritten.
   - The game's `.wma` music is converted once with ffmpeg; `rct3ovl-viewer.bat` includes it (`--with imageio-ffmpeg`).
+- **Walkthrough:** a guided tour starts the first time you open the viewer. It highlights each part of the screen, explains it and opens examples on every tab. The MixMaster, the Advanced Firework Editor and the laser / water jet designers have their own tours the first time they open. **? Tour** (top left in the viewer, next to MixMaster in the MixMaster) replays them. ← → or Enter move, Esc stops.
 - **File types** opens the guide to every file type.
 - The six tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks) sit under the title; the one in use is highlighted.
 - Drag the thin divider on the right edge of either list column to make it wider or narrower (double-click a divider to reset it). Widths are remembered.
@@ -185,8 +186,6 @@ All commands start with `uv run --no-project --with numpy --with pillow python -
 RCT3 OVL Extractor & Viewer (rct3ovl)
 Author: K3rn
 ```
-
-Built with the help of Claude (AI).
 
 **Thanks to:**
 - OVL Extractor 2.0 (gamemodderz) and the RCT3 Importer / libOVL (Jonathan Wilson, belgabor et al.), for their

@@ -49,16 +49,19 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
             try:
                 if u.path in ('/', '/index.html'):
                     return self.send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html; charset=utf-8')
-                if u.path == '/fireworks.js':
-                    return self.send(200, open(os.path.join(STATIC, 'fireworks.js'), 'rb').read(), 'text/javascript; charset=utf-8')
+                if u.path == '/fireworks.js' or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
+                                                 and os.path.exists(os.path.join(STATIC, u.path[1:]))):
+                    return self.send(200, open(os.path.join(STATIC, u.path[1:]), 'rb').read(), 'text/javascript; charset=utf-8')
                 if u.path == '/api/fw/data':
                     with lock:
                         return self.js({'fireworks': fw.list_fireworks(lib), 'displays': fw.list_displays(lib),
                                         'sprites': fw.sprites(lib), 'music': fw.music_list(lib),
+                                        'lasers': fw.list_effects(lib, 'laser'), 'jets': fw.list_effects(lib, 'jet'),
+                                        'drawings': fw.list_drawings(lib), 'sounds': fw.sound_names(lib),
                                         'can_play_music': fw._ffmpeg() is not None, 'launchers': fw.LAUNCHERS})
                 if u.path == '/api/fw/page':
                     with lock:
-                        png = fw.page_png(lib, q['name'])
+                        png = fw.page_png(lib, q['name'], q.get('opaque') == '1')
                     return self.send(200, png, 'image/png') if png else self.js({'error': 'no such page'}, 404)
                 if u.path == '/api/fw/sound':
                     with lock:
@@ -207,6 +210,27 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 traceback.print_exc()
                 return self.js({'error': repr(e)}, 500)
 
+    def do_POST(self):
+        # fireworks editor: build a game file from edited data (download) or save it into the game folder
+        u = urlparse(self.path)
+        try:
+            body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
+            if u.path == '/api/fw/build':
+                with lock:
+                    blob = fw.build(lib, body['kind'], body['data'])
+                name = (body.get('name') or 'export') + fw.EXT[body['kind']]
+                return self.send(200, blob, 'application/octet-stream',
+                                 {'Content-Disposition': f'attachment; filename="{name}"'})
+            if u.path == '/api/fw/save':
+                with lock:
+                    path = fw.save_to_game(lib, body['kind'], body.get('name') or 'My effect', body['data'])
+                return self.js({'path': path, 'file': os.path.basename(path)})
+            return self.js({'error': 'not found'}, 404)
+        except Exception as e:
+            traceback.print_exc()
+            return self.js({'error': str(e)}, 500)
+
+    H.do_POST = do_POST
     httpd = ThreadingHTTPServer(('127.0.0.1', port), H)
     url = f'http://127.0.0.1:{port}/'
     print(f'RCT3 OVL viewer: {url}  (game folder: {lib.root})  Ctrl+C to stop')

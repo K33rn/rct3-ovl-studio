@@ -600,3 +600,20 @@ the premade ride designs (`.trk`), without the header. The viewer's **Fireworks*
 - **Launchers:** the mortars (`Mortarx1`, `Mortarx16`, `MortarWallx8`), the Catherine wheel (`CWFW`), the laser
   dome and the water jet. Each tube runs from a `fireworkstartNN` point to a `fireworkendNN` point in the
   launcher's model; on the spinning Catherine wheel these points are bones.
+
+### `.las`: a laser (8, `Lasers\`)
+- **What it is:** one laser effect for the MixMaster (Soaked!), e.g. SpinMaster or Crab Laser.
+- **Inside:** name, duration, power (how far the beams reach), number of beams, type (cone of light, plane of light,
+  persisting image), trail persistence and image scale, plus four timelines of control points: colour (with brightness),
+  elevation, rotation speed and beam width. Image lasers also hold their frames: point paths with a "beam on" flag per
+  point, drawn one frame after another.
+
+### `.wjt`: a water jet (2, `WaterJets\`)
+- **What it is:** one water-jet effect (Soaked!), e.g. Sprinkler.
+- **Inside:** name, duration and type, plus timelines of control points for pressure (how fast the water leaves the
+  nozzle), elevation (tilt from straight up), jet radius and colour.
+
+### `.lwr`: a laser drawing (4, `LaserWriting\`)
+- **What it is:** one image a laser can draw, e.g. Crab or Spiral.
+- **Inside:** after a 64-byte header, the same save format: the drawing's points, which of them the beam draws to, how
+  long it takes, and a small preview picture.

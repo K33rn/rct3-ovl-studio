@@ -67,6 +67,7 @@ class Trk:
             for _ in range(nf):
                 f, p = self._field(p); fields.append(f)
             self.types.append((name, fields))
+        self.schema_end = p
         nobj = self._u32(p); p += 4
         for _ in range(nobj):
             if p + 12 > len(b):
@@ -138,6 +139,70 @@ class Trk:
                 raise TrkError(f'{f.name}: {n} B at {p} run past the end')
             return bytes(b[p + 4:p + 4 + n]), p + 4 + n
         raise TrkError(f'unknown field type {t!r} ({f.name}) at {p}')
+
+    # -- writing --
+    def dump(self, objects: list[tuple[str, int, dict]] | None = None) -> bytes:
+        """The file again, with this file's header, schema and trailer and the given objects
+        [(type name, object id, field values)] (default: the parsed ones). Values use the same Python shapes the
+        parser produces, so parse -> dump gives back the original bytes."""
+        if objects is None:
+            objects = [(self.objects[o][0], o, self.objects[o][1]) for o in self.order]
+        index = {name: i for i, (name, _) in enumerate(self.types)}
+        out = bytearray(self.b[:self.schema_end])
+        out += struct.pack('<I', len(objects))
+        for name, oid, vals in objects:
+            out += struct.pack('<IQ', index[name], oid)
+            self._write_fields(out, self.types[index[name]][1], vals)
+        out += self.b[self.end:]
+        return bytes(out)
+
+    def _write_fields(self, out, fields, vals):
+        for f in fields:
+            self._write(out, f, vals.get(f.name) if isinstance(vals, dict) else None)
+
+    def _write(self, out: bytearray, f: _Field, v):
+        t = f.type
+        if t == 'int32':
+            out += struct.pack('<i', int(v or 0))
+        elif t == 'uint32':
+            out += struct.pack('<I', int(v or 0))
+        elif t == 'float32':
+            out += struct.pack('<f', float(v or 0))
+        elif t in ('bool', 'uint8'):
+            out.append(int(v or 0) & 0xFF)
+        elif t == 'vector3':
+            out += struct.pack('<3f', *(v or (0, 0, 0)))
+        elif t in ('managedobjectptr', 'reference'):
+            out += struct.pack('<Q', int(v or 0))
+        elif t == 'string':
+            s = v or ''
+            raw = b'\xef\xef\xef\xef' + s.encode('utf-16-le')    # marker + UTF-16, no terminator (also when empty)
+            out += struct.pack('<I', len(raw)) + raw
+        elif t in ('struct', 'struct4'):
+            if f.size:
+                self._write_fields(out, f.children, v or {})
+            else:
+                body = bytearray(); self._write_fields(body, f.children, v or {})
+                out += struct.pack('<I', len(body)) + body
+        elif t in ('array', 'list'):
+            body = bytearray()
+            if len(f.children) == 1 and f.children[0].type in ('uint8', 'bool'):
+                data = bytes(v or b''); body += struct.pack('<I', len(data)) + data
+            else:
+                items = v or []
+                body += struct.pack('<I', len(items))
+                for it in items:
+                    if len(f.children) == 1:
+                        self._write(body, f.children[0], it)
+                    else:
+                        self._write_fields(body, f.children, it)
+            out += struct.pack('<I', len(body)) + body
+        elif f.size and not f.children:
+            data = bytes(v or b'\0' * f.size); out += data[:f.size].ljust(f.size, b'\0')
+        elif not f.size and not f.children:
+            data = bytes(v or b''); out += struct.pack('<I', len(data)) + data
+        else:
+            raise TrkError(f'cannot write field type {t!r} ({f.name})')
 
     # -- convenience --
     def of_type(self, name: str):

@@ -245,3 +245,25 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   Ctrl+A/C/X/V. Clipboard in localStorage (rct3fw.clipboard) with launcher types, so pasting into another show
   maps launchers by type. Paste = at the playhead, spacing and tracks kept. Bulk firework/launcher/tint changes.
   tests/ui_fw_clipboard.py covers it.
+
+## 2026-10-07: MixMaster - AFE, lasers, water jets, aiming, landscape, export to RCT3
+- Game text (txt resources) gave the feature lists: RCParticleEditorDialog = "Firework Designer" (particledescdialog_*,
+  particledescwindow_* groups), Advanced Laser Designer (laserdesigner_*), Advanced WaterJet Designer, MixMaster effect
+  types Fireworks / Lasers / Water Jets, base aiming controls (tutorialtext_lasers1_step11-15: angle control points on a
+  bar over the timeline, one point can drive several emitters, right-click removes). Cheat guest names:
+  cheatpeepname_* -> the AFE unlock name is "Atari".
+- .las / .wjt: trk format (header 80). Blender {FixedPts[20] {BlenderElement, PointTime}, NumPts, MaxTime,
+  DurationTransform}; unused points repeat an element with time 0xCDCDCDCD. Colour elements ARGB int32. Units:
+  elevation rad above horizon (lasers) / from vertical (jets), rotvel rad/s, power = beam length m, pressure m/s.
+  .lwr: header 64, LaserWritingLetter {DragPoints[1022] X/Y (NumPts used), SolidConnection bytes, Duration, Preview}.
+- trk.py writer (Trk.dump): header + schema copied, objects re-encoded. Strings = EFEFEFEF + UTF-16, no terminator,
+  marker also for empty strings. tests/trk_roundtrip.py: all 208 .trk, 28 .frw, 140 ParticleEffects .frw, 4 .fwd,
+  8 .las, 2 .wjt, 4 .lwr byte-identical. tests/fw_build_check.py: game file -> editor data -> built file -> same
+  content (fireworks keep their %%FireworkNameNN base name). save_to_game never overwrites files it didn't write
+  (manifest ~/.rct3ovl/created_files.json); tests/fw_save_check.py runs on a temp copy.
+- Client: fireworks.js rewritten around REG {firework, laser, jet} (game + yours in localStorage, embedded in saved
+  shows), modules fw_terrain.js, fw_effects.js, fw_designers.js, fw_afe.js (served by viewer as /fw_*.js).
+- Bugs found: ribbons invisible (view-space quads can face away: DoubleSide); whole view black after painting water
+  (computeVertexNormals reuses a too-short normal buffer -> NaN -> spreads through the half-float bloom: delete
+  'normal' first); flare thumbnails black (2D canvas drops RGB of alpha-0 pixels: /api/fw/page?opaque=1).
+- WebGLRenderer needs stencil: true and the composer a stencil render target (reflections only where water is).

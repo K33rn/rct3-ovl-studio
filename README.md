@@ -75,8 +75,9 @@ The buttons at the top:
 - **Peeps** lists every guest, staff member and entertainer as a whole, animated character. In eating and drinking animations (WalkEatRHand, SitBenchDrinkL…) a **Hold** menu puts any of the game's foods or drinks in the right hand; the item follows the game's own hand attachment point.
 - **Thrill Rides** lists the flat rides (Pirate Ship, Top Spin, Ferris Wheel, Soaked! and Wild! rides, themed rides…) with their ride animations: Static, Start, Loop and Stop. Each ride opens playing its loop.
 - **Ride Designs** lists the game's 208 premade coasters and tracked rides (the `Coaster Designs` folder), grouped by ride type. Each is built from its track pieces into one 3D model, with its stats: excitement/intensity/nausea, top speed, length, drops, inversions and cost.
+- **Scenery** lists all 1,330 scenery items (trees and plants, scenery, animatronics, walls and roofs, fences, path extras, shops and stalls, entrances, ride events, pools, enclosures, terrain, effects), grouped by category and theme. Animated items are marked ⟳ and play their animation. The filter box narrows the list as you type.
 - **File types** opens the guide to every file type.
-- The four tabs (File types, Peeps, Thrill Rides, Ride Designs) sit under the title; the one in use is highlighted.
+- The five tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery) sit under the title; the one in use is highlighted.
 - Drag the thin divider on the right edge of either list column to make it wider or narrower (double-click a divider to reset it). Widths are remembered.
 - **Download** saves what you're looking at: `.glb`, `.png`, `.wav` or `.json`.
 

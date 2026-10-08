@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from .characters import build_person, carried_items, describe_variant, variants
 from .designs import build_design, design_files
 from .rides import build_ride, list_rides, track_sets
+from .scenery import build_scenery, list_scenery
 from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
@@ -126,6 +127,16 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     with lock:
                         glb, info = build_design(lib, path)
                     return self.send(200, glb, 'model/gltf-binary', {'X-Info': json.dumps(info, default=str)[:60000]})
+                if u.path == '/api/scenery':
+                    with lock:
+                        return self.js([{k: s[k] for k in ('name', 'title', 'type', 'category', 'theme', 'animations')}
+                                        for s in list_scenery(lib)])
+                if u.path == '/api/scenery_item':
+                    with lock:
+                        res = build_scenery(lib, q['name'])
+                    if res is None:
+                        return self.js({'error': 'no model found for this scenery item'}, 404)
+                    return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)[:60000]})
                 if u.path == '/api/items':
                     with lock:
                         return self.js(carried_items(lib))

@@ -37,10 +37,14 @@
   .head .brand { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .head .brand .sub { margin-left: auto; }
   /* the four tabs: one even row (wraps to two when the column is narrow) */
-  .tabs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin: 8px 0 6px;
+  .tabs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin: 8px 0 6px;
           padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
   .head { container-type: inline-size; }
-  @container (min-width: 330px) { .tabs { grid-template-columns: repeat(4, 1fr); } }
+  /* narrow: 3 on top, 2 below (spanning 2 of 6 / 3 of 6 columns); wide: all 5 in one row */
+  .tabs button { grid-column: span 2; } .tabs button:nth-child(n+4) { grid-column: span 3; }
+  @container (min-width: 400px) { .tabs { grid-template-columns: repeat(5, 1fr); } .tabs button, .tabs button:nth-child(n+4) { grid-column: auto; } }
+  .subgroup { padding: 6px 12px 1px 18px; color: var(--dim); font-size: 11px; letter-spacing: .3px; }
+  .subgroup small { opacity: .7; }
   #rootinfo { overflow-wrap: anywhere; }
   .tabs button { border: 0; background: transparent; padding: 5px 4px; font-size: 12px; color: var(--dim);
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 6px; }
@@ -117,6 +121,7 @@
         <button id="b-people" title="Whole guests, staff and entertainers">Peeps</button>
         <button id="b-rides" title="Flat rides with their ride animations">Thrill Rides</button>
         <button id="b-designs" title="The game's premade roller coaster and tracked ride designs, built from their track pieces">Ride Designs</button>
+        <button id="b-scenery" title="Every scenery item's 3D model: trees, walls, animatronics, path extras, stalls… with their animations">Scenery</button>
       </nav>
       <div class="sub" id="rootinfo">loading…</div>
       <input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="margin-top:8px"></div>
@@ -259,7 +264,7 @@ let ovls = [], selOvl = null, tracksets = [];
 async function loadTree() {
   const t = await (await fetch('/api/tree')).json();
   ovls = t.ovls; $('rootinfo').textContent = `${ovls.length} OVL pairs · ${t.root}`;
-  renderTree(''); msg('Pick an OVL on the left, or a tab: Peeps, Thrill Rides, Ride Designs');
+  renderTree(''); msg('Pick an OVL on the left, or a tab: Peeps, Thrill Rides, Ride Designs, Scenery');
   // track pieces per ride arrive a moment later (the first time, the server scans the track files)
   fetch('/api/tracksets').then(r => r.json()).then(s => { tracksets = s; renderTree($('treefilter').value); }).catch(() => {});
 }
@@ -337,8 +342,21 @@ function renderRes() {
     return `<div class="res${ok ? '' : ' dim'}${selRes === r ? ' sel' : ''}" data-i="${resources.indexOf(r)}" title="${esc(r.loader)} · ${r.part}">${esc(r.name || '(unnamed ' + r.loader + ')')}</div>`;
   }).join('')).join('');
 }
-$('resfilter').oninput = renderRes;
-$('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return showTypes(hp.dataset.type); const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.design ? showDesign(d.dataset.design) : d.dataset.ride ? showRide(d.dataset.ride) : d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
+// tab lists (Peeps, Thrill Rides, Ride Designs, Scenery) aren't OVL resources: filter them in place, hiding empty groups
+function filterList() {
+  const f = $('resfilter').value.toLowerCase().trim();
+  let grp = null, sub = null, gn = 0, sn = 0;
+  const close = () => { if (sub) sub.style.display = sn ? '' : 'none'; };
+  for (const el of $('res').children) {
+    if (el.classList.contains('group')) { close(); if (grp) grp.style.display = gn ? '' : 'none'; grp = el; sub = null; gn = 0; sn = 0; continue; }
+    if (el.classList.contains('subgroup')) { close(); sub = el; sn = 0; continue; }
+    const hit = !f || el.textContent.toLowerCase().includes(f) || (el.title || '').toLowerCase().includes(f);
+    el.style.display = hit ? '' : 'none'; if (hit) { gn++; sn++; }
+  }
+  close(); if (grp) grp.style.display = gn ? '' : 'none';
+}
+$('resfilter').oninput = () => resources.length ? renderRes() : filterList();
+$('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return showTypes(hp.dataset.type); const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.scenery ? showScenery(d.dataset.scenery) : d.dataset.design ? showDesign(d.dataset.design) : d.dataset.ride ? showRide(d.dataset.ride) : d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
 
 // people list
 $('b-people').onclick = async () => {
@@ -393,6 +411,38 @@ async function showDesign(file) {
   const meta = JSON.parse(resp.headers.get('X-Info') || '{}');
   const buf = await resp.arrayBuffer(); if (my !== seq) return; msg('');
   return loadGlb(buf, file.replace(/\.trk$/i, '') + '.glb', meta, 'design', null, my);
+}
+
+// scenery: every scenery item (sid -> svd -> model + animations), by category, then theme
+$('b-scenery').onclick = async () => {
+  selOvl = null; document.querySelectorAll('.ovl.sel').forEach(d => d.classList.remove('sel'));
+  $('ovltitle').textContent = 'Scenery'; $('ovlsub').textContent = 'every scenery item, by category and theme (⟳ = animated)';
+  $('res').innerHTML = '<div class="res dim">loading… (the first time takes a little while)</div>';
+  const items = await (await fetch('/api/scenery')).json(); resources = [];
+  const cats = {}; for (const s of items) ((cats[s.category] ??= {})[s.theme] ??= []).push(s);
+  $('res').innerHTML = Object.keys(cats).map(c => {
+    const th = cats[c], n = Object.values(th).reduce((a, l) => a + l.length, 0);
+    return `<div class="group">${esc(c)} <small>${n}</small></div>` + Object.keys(th).map(tn =>
+      `<div class="subgroup">${esc(tn)} <small>${th[tn].length}</small></div>` + th[tn].map(s =>
+        `<div class="res" data-scenery="${esc(s.name)}" title="${esc(s.name)} · ${esc(s.type)}${s.animations.length ? ' · animated' : ''}">${esc(s.title)}${s.animations.length ? ' <span class="dim">⟳</span>' : ''}</div>`).join('')).join('');
+  }).join('');
+  filterList();
+};
+
+async function showScenery(name, anim) {
+  const my = ++seq; selRes = null; document.querySelectorAll('.res').forEach(d => d.classList.toggle('sel', d.dataset.scenery === name));
+  const title = document.querySelector(`.res[data-scenery="${CSS.escape(name)}"]`)?.textContent.replace(' ⟳', '') || name;
+  $('vtitle').textContent = title; info(null); msg('Loading ' + title + '…');
+  history.replaceState(null, '', '#scenery=' + encodeURIComponent(name));
+  const url = '/api/scenery_item?name=' + encodeURIComponent(name);
+  const resp = await fetch(url);
+  if (my !== seq) return;
+  if (!resp.ok) { msg((await resp.json()).error, true); return; }
+  animSrc = { url, name };
+  const meta = JSON.parse(resp.headers.get('X-Info') || '{}');
+  const buf = await resp.arrayBuffer(); if (my !== seq) return; msg('');
+  const loop = (meta.animations || []).find(a => /loop/i.test(a)) || (meta.animations || []).find(a => !/static/i.test(a));
+  return loadGlb(buf, name.split(':')[0] + '.glb', meta, 'scenery', anim || loop, my);
 }
 
 async function showRide(name, anim) {
@@ -503,8 +553,12 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
     const start = clips.find(c => c.name === wanted) || clips.find(c => /^walk$/i.test(c.name)) || clips.find(c => /walk|idle/i.test(c.name)) || clips[0];
     if (start) { sel.value = start.name; play(start.name); }
     gridTile = tag === 'design' ? 4 : 0; frame(current);
-    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (skinned, animated)', tks: 'Track piece', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person', ride: 'Thrill ride', design: 'Ride design' }[tag] || tag]];
+    const rows = [['Type', { shs: 'Static model', bsh: 'Skinned model', mdl: 'Wild! model (skinned, animated)', tks: 'Track piece', mms: 'Morph mesh (vertex-animated person part or animal)', ssk: 'Person head (skinned)', person: 'Whole person', ride: 'Thrill ride', design: 'Ride design', scenery: 'Scenery item' }[tag] || tag]];
     if (tag === 'ride' && meta.model) rows.push(['Model', esc(meta.model)]);
+    if (tag === 'scenery') {
+      rows.push(['Category', esc(meta.category) + ' <span class="dim">(' + esc(meta.type) + ')</span>'], ['Theme', esc(meta.theme)], ['Model', esc(meta.model)]);
+      if (meta.cost != null && meta.cost > 0) rows.push(['Cost', '$' + (meta.cost / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })]);
+    }
     if (tag === 'design') {
       const st = meta.stats || {}, f1 = x => x == null ? '?' : (+x).toFixed(1);
       if (meta.name) rows.push(['Name', esc(meta.name)]);
@@ -635,9 +689,9 @@ async function showTypes(tag) {
 $('b-types').onclick = () => showTypes();
 
 // tabs: highlight the one in use; opening an OVL from the tree clears it
-const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs'];
+const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs', 'b-scenery'];
 function setTab(id) { TABS.forEach(t => $(t).classList.toggle('active', t === id)); }
-TABS.forEach(id => $(id).addEventListener('click', () => setTab(id)));
+TABS.forEach(id => $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
 
 // column dividers: drag to resize the two list columns, double-click to reset; widths are remembered
 const COLS = { 1: ['--c1', 300], 2: ['--c2', 320] };
@@ -666,6 +720,7 @@ async function fromHash() {
   if (h.has('types')) return showTypes(h.get('types') || '');
   if (h.get('person')) { $('b-people').click(); return showPerson(h.get('person'), h.get('anim')); }
   if (h.get('ride')) { setTab('b-rides'); await $('b-rides').onclick(); return showRide(h.get('ride'), h.get('anim')); }
+  if (h.get('scenery')) { setTab('b-scenery'); await $('b-scenery').onclick(); return showScenery(h.get('scenery'), h.get('anim')); }
   if (h.get('design')) { setTab('b-designs'); await $('b-designs').onclick(); return showDesign(h.get('design')); }
   if (!h.get('ovl')) return;
   await openOvl(h.get('ovl'), false);

@@ -212,3 +212,13 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   into #stage, so the view grew past the window (1832 px in an 850 px window) and the model drew off-screen. Canvas is now
   absolutely positioned in #stage, #app rows minmax(0,1fr) + overflow hidden, #view min-height 0. Left column min
   220 px so the tab labels fit. tests/ui_resize_bug.py drags both dividers across and back and checks sizes.
+
+## 2026-10-07: Scenery tab
+- rct3ovl/scenery.py: every sid -> svd (import, else load_sid visuals, else '<name>:svd') -> LOD0 shs/bsh + ban anims.
+  Two sid layouts: base game Style\Vanilla\Scenery.common.ovl uses an older one (cost word 9, type word 12, numbered
+  like SID_TYPES except 6 = all path extras and one lower from 19 up); detected by word 12 < 64.
+- Categories from sid type; ride track, rides, supports, paths, litter, injection points left out. Theme from the
+  sid's / model's / visual's folder (Standard, Wild!, Soaked!, Themed: X). 1,330 items, 186 animated, all build.
+- List cached in ~/.rct3ovl/scenery2_<root>.json (keyed on the index file's mtime).
+- Viewer: 5th tab, /api/scenery + /api/scenery_item; category groups with theme subgroups; the resource filter now
+  filters tab lists in place (filterList). Tabs: 3+2 below 400 px column width, 5 in a row above.

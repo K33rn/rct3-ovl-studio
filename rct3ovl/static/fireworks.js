@@ -11,6 +11,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { createTerrain } from './fw_terrain.js';
 import { createRibbons, drawLaser, jetState, jetDir, defaultLaser, defaultJet } from './fw_effects.js';
 
@@ -18,7 +19,7 @@ const TILE = 4, GRAVITY = 9.81, MAX_PARTICLES = 40000, MAX_VOICES = 40, D2R = Ma
 const LAUNCHER_NAMES = { Mortarx1: 'Mortar ×1', Mortarx16: 'Mortar ×16', MortarWallx8: 'Wall ×8',
   CWFW: 'Cath. wheel', LazerDome: 'Laser dome', WaterJet: 'Water jet' };
 const KINDS = { firework: { tab: 'Fireworks', one: 'firework', icon: '' }, laser: { tab: 'Lasers', one: 'laser', icon: '✦ ' },
-                jet: { tab: 'Water Jets', one: 'water jet', icon: '≈ ' } };
+                jet: { tab: 'Water Jets', one: 'water jet', icon: '≈ ' }, scenery: { tab: 'Scenery', one: 'scenery cue', icon: '⟳ ' } };
 const fits = (kind, type) => kind === 'laser' ? type === 'LazerDome' : kind === 'jet' ? type === 'WaterJet' : type !== 'LazerDome' && type !== 'WaterJet';
 const BASE_FOR = { firework: 'Mortarx16', laser: 'LazerDome', jet: 'WaterJet' };
 const SMALL_BASES = new Set(['Mortarx1', 'LazerDome', 'WaterJet']);   // quarter-tile items (placed in a tile corner)
@@ -145,6 +146,8 @@ async function build() {
                  overflow: hidden; white-space: nowrap; cursor: grab; color: #0a0d14; font-weight: 600; box-shadow: inset 0 0 0 1px #0006; user-select: none; }
   #fw .tl .ent.k-laser { border-radius: 2px; background-image: linear-gradient(90deg, #ffffff40, transparent 30%); }
   #fw .tl .ent.k-jet { border-radius: 9px; }
+  #fw .tl .ent.k-scenery { border-radius: 3px; background-image: repeating-linear-gradient(135deg, #ffffff30 0 6px, transparent 6px 12px); }
+  #fw .fwk .tag { color: var(--dim); font-size: 10px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #fw .tl .ent .tail { position: absolute; right: 0; top: 0; bottom: 0; background: linear-gradient(90deg, transparent, #0005); pointer-events: none; }
   #fw .tl .ent.sel { box-shadow: 0 0 0 2px #fff, 0 0 10px #fff8; z-index: 2; }
   #fw .tl .ent.multi { box-shadow: 0 0 0 2px var(--accent), 0 0 8px #ffb02e88; z-index: 2; }
@@ -228,6 +231,7 @@ async function build() {
     <div class="colresize" data-v="--fwr" style="left:-4px"></div>
     <div class="scroll">
       <div id="fw-aimsec" style="display:none"><h3>Aiming control point</h3><div class="insp" id="fw-aim"></div></div>
+      <div id="fw-scnsec" style="display:none"><h3>Scenery piece</h3><div class="insp" id="fw-scn"></div></div>
       <h3>Selected effect</h3><div class="insp" id="fw-entry"></div>
       <h3>Show</h3><div class="insp" id="fw-showinfo"></div>
       <h3>Launchers</h3><div class="insp" id="fw-launchers"></div>
@@ -264,7 +268,7 @@ async function build() {
     for (const k of Object.keys(REG)) for (const [key, d] of Object.entries(mine[k] || {})) REG[k][key] = prepDef(k, d, key);
   }
   loadRegistry();
-  const fx = e => REG[e.kind || 'firework']?.[e.firework];
+  const fx = e => e.kind === 'scenery' ? cueDef(e) : REG[e.kind || 'firework']?.[e.firework];
   const fxDur = e => fx(e)?.duration || 3;
   const swatch = d => d ? (d.kind === 'firework' ? d.colour : d.colour_sw) : [0.5, 0.5, 0.5];
   function saveMine(kind, def, key) {
@@ -615,7 +619,7 @@ async function build() {
   }
   function placeLauncher(obj, l) {
     const [x, z] = worldOf(l);
-    obj.position.set(x, terrain.heightAt(x, z), z);
+    obj.position.set(x, surfaceAt(x, z), z);   // on the ground, or on top of the scenery there
   }
   // world point -> launcher placement. Grid on: big bases on tile centres, small ones in a tile corner (as the game
   // places them); grid off: anywhere (fractional tiles, no corner)
@@ -630,6 +634,90 @@ async function build() {
     const cx = ((l.corner ?? -1) >= 0 && SMALL_BASES.has(l.type)) ? [[-1, -1], [1, -1], [1, 1], [-1, 1]][l.corner & 3] : [0, 0];
     const x = (l.col - centre[0]) * TILE + cx[0], z = (l.row - centre[1]) * TILE + cx[1];
     return [x, z];
+  }
+  // ---- scenery pieces: any of the game's scenery, placed in the show, animated (looping, cued on the timeline, or still) --
+  let sceneryList = null;                      // the game's scenery items for the palette (loaded when the tab opens)
+  const sceneryModels = {};
+  const sceneryGroup = new THREE.Group(); scene.add(sceneryGroup);
+  let sceneryObjs = [], scnSeq = 0;
+  const selBox = new THREE.BoxHelper(undefined, 0xffb02e); selBox.visible = false; selBox.material.depthTest = false; selBox.renderOrder = 12; scene.add(selBox);
+  function sceneryModel(name) {
+    if (!sceneryModels[name]) sceneryModels[name] = fetch('/api/scenery_item?name=' + encodeURIComponent(name)).then(async r => {
+      if (!r.ok) return null;
+      const info = JSON.parse(r.headers.get('X-Info') || '{}');
+      return { gltf: await gltf.parseAsync(await r.arrayBuffer(), ''), info };
+    }).catch(() => null);
+    return sceneryModels[name];
+  }
+  async function rebuildScenery() {
+    const my = ++scnSeq, list = S.show.scenery || [];
+    const defs = await Promise.all(list.map(s => sceneryModel(s.name)));
+    if (my !== scnSeq) return;
+    for (const o of sceneryObjs) { sceneryGroup.remove(o.obj); o.mixer?.stopAllAction(); }
+    sceneryObjs = list.map((s, i) => {
+      const def = defs[i];
+      const obj = def ? cloneSkinned(def.gltf.scene) : new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2), new THREE.MeshLambertMaterial({ color: 0x666666 }));
+      obj.traverse(o => { o.userData.scenery = i; });
+      sceneryGroup.add(obj);
+      const clips = def?.gltf.animations || [];
+      return { obj, def, clips, mixer: clips.length ? new THREE.AnimationMixer(obj) : null, action: null, clip: null, free: 0 };
+    });
+    sceneryObjs.forEach((o, i) => placeScenery(i));
+    placeAll(); markScenery(); renderTimeline(); renderSceneryPanel();
+  }
+  function placeScenery(i) {
+    const s = S.show.scenery?.[i], o = sceneryObjs[i]; if (!s || !o) return;
+    const [x, z] = worldOf({ col: s.col, row: s.row, corner: -1, type: '' });
+    o.obj.position.set(x, surfaceAt(x, z, o.obj) + (s.lift || 0), z);
+    o.obj.rotation.set(0, -(s.dir || 0) * Math.PI / 2 + (s.angle || 0) * D2R, 0);
+    o.obj.updateMatrixWorld(true);
+  }
+  const downRay = new THREE.Raycaster();
+  function surfaceAt(x, z, exclude) {   // the highest ground or scenery surface under (x, z): things stand on top of scenery
+    let y = terrain.heightAt(x, z);
+    if (!sceneryGroup.children.length) return y;
+    downRay.set(new THREE.Vector3(x, 600, z), new THREE.Vector3(0, -1, 0));
+    for (const h of downRay.intersectObjects(sceneryGroup.children, true)) {
+      let o = h.object, mine = false;
+      while (o) { if (o === exclude) { mine = true; break; } o = o.parent; }
+      if (!mine) { y = Math.max(y, h.point.y); break; }   // nearest from above = highest
+    }
+    return y;
+  }
+  function markScenery() {
+    const o = S.selScenery != null ? sceneryObjs[S.selScenery] : null;
+    selBox.visible = !!o && S.pick === 'scenery';
+    if (o) selBox.setFromObject(o.obj);
+  }
+  // animation: the latest cue at or before the playhead plays its clip from the cue's time (once: then holds, or goes
+  // back to looping; repeat: loops for the cue's length); otherwise the piece loops its clip, or stands still
+  function animateScenery(dt) {
+    sceneryObjs.forEach((o, i) => {
+      if (!o.mixer || !o.clips.length) return;
+      const s = S.show.scenery[i]; if (!s) return;
+      const own = o.clips.find(c => c.name === s.clip) || o.clips[0];
+      let cue = null;
+      for (const e of S.show.entries) if (e.kind === 'scenery' && e.scenery === i && e.time <= S.t && (!cue || e.time >= cue.time)) cue = e;
+      let clip = null, time = 0;
+      if (cue) {
+        const c = o.clips.find(x => x.name === cue.clip) || o.clips[0], tt = S.t - cue.time;
+        if (cue.repeat ? tt <= (cue.length || 10) : tt <= c.duration) { clip = c; time = cue.repeat ? tt % c.duration : tt; }
+        else if ((s.anim || 'loop') !== 'loop') { clip = c; time = cue.repeat ? (cue.length || 10) % c.duration : c.duration; }
+      }
+      if (!clip) {
+        clip = own;
+        if ((s.anim || 'loop') === 'loop') { o.free += dt * (S.playing ? S.speed : 1); time = o.free % own.duration; }
+      }
+      if (o.clip !== clip) { o.mixer.stopAllAction(); o.action = o.mixer.clipAction(clip); o.action.play(); o.clip = clip; }
+      o.action.time = Math.min(time, clip.duration - 1e-4); o.mixer.update(0);
+    });
+    if (selBox.visible) markScenery();
+  }
+  function cueDef(e) {   // a scenery cue on the timeline, shaped like an effect
+    const s = S.show?.scenery?.[e.scenery], o = sceneryObjs[e.scenery];
+    const c = o?.clips.find(x => x.name === e.clip) || o?.clips[0];
+    return { kind: 'scenery', key: 'cue', title: `${s ? s.title || s.name.split(':')[0] : '(removed piece)'} #${(e.scenery ?? 0) + 1}: ${e.clip || c?.name || 'animation'}${e.repeat ? ' ↻' : ''}`,
+             duration: e.repeat ? (e.length || 10) : (c?.duration || 5), colour_sw: [0.55, 0.85, 0.55] };
   }
   function placeAll() { launcherObjs.forEach((o, i) => S.show.launchers[i] && placeLauncher(o.obj, S.show.launchers[i])); applyAims(S.t); }
   // base aiming: control points {t, yaw, pitch (degrees), launchers: [indices]} on the aiming bar. A launcher points
@@ -799,14 +887,14 @@ async function build() {
   $('#fw-scenebtn', root).onclick = ev => { const on = !$('#fw-scenep', root).classList.contains('on'); $('#fw-scenep', root).classList.toggle('on', on); ev.target.classList.toggle('on', on); };
 
   // ---- show model ---------------------------------------------------------------------------------------------
-  const blank = () => ({ name: 'My show', music: '', start_minutes: 1260, months: 65535, aim: [],
+  const blank = () => ({ name: 'My show', music: '', start_minutes: 1260, months: 65535, aim: [], scenery: [],
     launchers: [{ type: 'Mortarx16', row: 0, col: 0, dir: 0, corner: -1 }, { type: 'Mortarx1', row: 0, col: -3, dir: 0, corner: 0 },
       { type: 'Mortarx1', row: 0, col: 3, dir: 0, corner: 0 }, { type: 'LazerDome', row: -3, col: -6, dir: 0, corner: 0 },
       { type: 'LazerDome', row: -3, col: 6, dir: 0, corner: 0 }, { type: 'WaterJet', row: 3, col: -2, dir: 0, corner: 0 },
       { type: 'WaterJet', row: 3, col: 2, dir: 0, corner: 0 }], entries: [] });
   const clone = o => JSON.parse(JSON.stringify(o));
   function normShow(sh) {
-    sh.aim = sh.aim || []; sh.months ??= 65535; sh.start_minutes ??= 1260;
+    sh.aim = sh.aim || []; sh.scenery = sh.scenery || []; sh.months ??= 65535; sh.start_minutes ??= 1260;
     for (const e of sh.entries) { e.kind = e.kind || 'firework'; }
     for (const k of Object.keys(REG)) for (const [key, d] of Object.entries(sh.custom?.[k] || {})) if (!REG[k][key]) REG[k][key] = prepDef(k, clone(d), key);
     return sh;
@@ -825,7 +913,7 @@ async function build() {
     terrain.setData(show.terrain || null); applyScene();
     if (!keepT) seek(0);
     setMusic(show.music || '');
-    rebuildLaunchers(true); renderAll();
+    rebuildLaunchers(true).then(rebuildScenery); S.selScenery = null; renderAll();
     fitCamera($('#fw-cam', root).value);
   }
   function withCustom(sh) {   // the show plus the definitions of your own effects it uses (so it opens anywhere)
@@ -837,7 +925,7 @@ async function build() {
   }
   function changed(label) { store.set('rct3fw.autosave', withCustom(S.show)); if (label) toast(label); }
   function snapshot() { S.undo.push(clone(S.show)); if (S.undo.length > 120) S.undo.shift(); S.redo = []; }
-  function restore(sh) { S.show = normShow(sh); select([]); S.selAim = null; terrain.setData(sh.terrain || null); applyScene(); rebuildLaunchers(false); renderAll(); }
+  function restore(sh) { S.show = normShow(sh); select([]); S.selAim = null; terrain.setData(sh.terrain || null); applyScene(); rebuildLaunchers(false).then(rebuildScenery); renderAll(); }
   function undo() { if (!S.undo.length) return; S.redo.push(clone(S.show)); restore(S.undo.pop()); changed('Undo'); }
   function redo() { if (!S.redo.length) return; S.undo.push(clone(S.show)); restore(S.redo.pop()); changed('Redo'); }
 
@@ -923,6 +1011,25 @@ async function build() {
   function renderLib() {
     const f = $('#fw-search', root).value.toLowerCase(), kind = S.tab;
     root.querySelectorAll('#fw-ptabs button').forEach(b => b.classList.toggle('on', b.dataset.k === kind));
+    if (kind === 'scenery') {   // any scenery piece: drag into the 3D view
+      if (!sceneryList) {
+        $('#fw-create', root).innerHTML = '';
+        lib.innerHTML = '<div class="libgrp">Loading scenery… (the first time takes a little while)</div>';
+        if (!renderLib.loading) renderLib.loading = fetch('/api/scenery').then(r => r.json()).then(l => { sceneryList = l; if (S.tab === 'scenery') renderLib(); });
+        return;
+      }
+      const cats = [...new Set(sceneryList.map(s => s.category))];
+      $('#fw-create', root).innerHTML = `<select id="fw-scat" style="flex:1;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px">
+        <option value="">All categories (${sceneryList.length})</option>${cats.map(c => `<option${c === S.scat ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+        <option value="__anim"${S.scat === '__anim' ? ' selected' : ''}>⟳ Animated only</option></select>`;
+      $('#fw-scat', root).onchange = ev => { S.scat = ev.target.value; renderLib(); };
+      const all = sceneryList.filter(s => (!S.scat || (S.scat === '__anim' ? s.animations.length : s.category === S.scat)) && (!f || s.title.toLowerCase().includes(f) || s.theme.toLowerCase().includes(f)));
+      const shown = all.slice(0, 400);
+      lib.innerHTML = `<div class="libgrp">Drag into the 3D view · ${all.length} pieces${all.length > shown.length ? ' (first 400: search to narrow)' : ''}</div>` +
+        shown.map(s => `<div class="fwk" draggable="true" data-scn="${esc(s.name)}" title="${esc(s.title)} · ${esc(s.category)} · ${esc(s.theme)}${s.animations.length ? ' · animated' : ''}">
+          <span class="sw" style="background:#7a8a7a;color:#0000"></span><span class="nm">${esc(s.title)}${s.animations.length ? ' ⟳' : ''}</span><span class="tag">${esc(s.theme.replace('Themed: ', ''))}</span></div>`).join('');
+      return;
+    }
     if (kind === 'base') {   // MixMaster bases: drag into the 3D view to place
       $('#fw-create', root).innerHTML = `<button disabled style="opacity:.8">Drag a base into the 3D view · ${S.grid ? 'snaps to the grid' : 'free placement'}</button>`;
       lib.innerHTML = data.launchers.filter(b => !f || (LAUNCHER_NAMES[b] || b).toLowerCase().includes(f)).map(b =>
@@ -948,10 +1055,13 @@ async function build() {
   lib.addEventListener('click', e => {
     const row = e.target.closest('.fwk'); if (!row) return;
     lib.querySelectorAll('.fwk.sel').forEach(x => x.classList.remove('sel')); row.classList.add('sel');
+    if (row.dataset.scn) return;
     if (e.target.closest('.ed')) return openEditor(S.tab, row.dataset.f);
     if (e.target.closest('.pv') || e.detail === 2) preview(S.tab, row.dataset.f);
   });
   lib.addEventListener('dragstart', e => {
+    const scn = e.target.closest('[data-scn]');
+    if (scn) { const s = sceneryList.find(x => x.name === scn.dataset.scn); dragState = { scenery: s.name, title: s.title }; e.dataTransfer.setData('text/x-scenery', s.name); e.dataTransfer.effectAllowed = 'copy'; dragImage(e); return; }
     const base = e.target.closest('.base');
     if (base) { dragState = { base: base.dataset.base }; e.dataTransfer.setData('text/x-base', base.dataset.base); e.dataTransfer.effectAllowed = 'copy'; dragImage(e); return; }
     const row = e.target.closest('.fwk');
@@ -962,7 +1072,8 @@ async function build() {
   function dragImage(e) {
     const c = document.createElement('div');
     c.style.cssText = 'position:fixed;left:-500px;top:0;padding:6px 10px;border-radius:8px;background:#0b0f18;border:1px solid #ffb02e;color:#fff;font:600 12px system-ui;display:flex;gap:8px;align-items:center';
-    if (dragState.base) c.innerHTML = `<img src="${baseThumbs[dragState.base] || ''}" style="width:40px;height:40px">${esc(LAUNCHER_NAMES[dragState.base])}`;
+    if (dragState.scenery) c.innerHTML = `⟳ ${esc(dragState.title)}`;
+    else if (dragState.base) c.innerHTML = `<img src="${baseThumbs[dragState.base] || ''}" style="width:40px;height:40px">${esc(LAUNCHER_NAMES[dragState.base])}`;
     else { const d = REG[dragState.kind][dragState.key]; c.innerHTML = `<span style="width:14px;height:14px;border-radius:3px;background:${hex(swatch(d))};box-shadow:0 0 8px ${hex(swatch(d))}"></span>${KINDS[dragState.kind].icon}${esc(d?.title)}`; }
     document.body.appendChild(c); e.dataTransfer.setDragImage(c, 20, 20); setTimeout(() => c.remove(), 0);
   }
@@ -1082,7 +1193,7 @@ async function build() {
         ${clipRow}
         <div class="row"><button data-a="prev" title="F: fire them with their own timing">▶ Preview</button><button data-a="dup" title="Ctrl+D: copy right after">Duplicate</button><button data-a="del" title="Delete">Delete</button><button data-a="none" title="Esc">Deselect</button></div>
         <label>Move<span class="row"><button data-a="m-1">−1 s</button><button data-a="m-0.1">−0.1</button><button data-a="m0.1">+0.1</button><button data-a="m1">+1 s</button></span></label>
-        ${k1 ? `<label>${esc(KINDS[k1].one[0].toUpperCase() + KINDS[k1].one.slice(1))}<select data-k="b-firework"><option value="">(keep each)</option>${Object.values(REG[k1]).map(f => `<option value="${esc(f.key)}">${esc(f.title)}</option>`).join('')}</select></label>
+        ${k1 && REG[k1] ? `<label>${esc(KINDS[k1].one[0].toUpperCase() + KINDS[k1].one.slice(1))}<select data-k="b-firework"><option value="">(keep each)</option>${Object.values(REG[k1]).map(f => `<option value="${esc(f.key)}">${esc(f.title)}</option>`).join('')}</select></label>
         <label>Launcher<select data-k="b-launcher"><option value="">(keep each)</option>${ls.map((l, i) => fits(k1, l.type) ? `<option value="${i}">#${i + 1} ${esc(LAUNCHER_NAMES[l.type] || l.type)}</option>` : '').join('')}</select></label>` : ''}
         <label>Colour<span class="row"><input type="color" data-k="b-tint" value="#ffffff" title="Colour all selected effects"><button data-a="b-notint">Original</button></span></label>
         <label>Strength<input type="range" data-k="b-strength" min="0.25" max="2" step="0.05" value="1" title="Strength modifier for all selected fireworks"></label>
@@ -1090,6 +1201,19 @@ async function build() {
       return;
     }
     const kind = e.kind || 'firework', def = fx(e);
+    if (kind === 'scenery') {   // a scenery animation cue
+      const o = sceneryObjs[e.scenery], clips = o?.clips || [];
+      box.innerHTML = `
+        <label>Scenery<select data-k="scenery">${(S.show.scenery || []).map((s, i) => `<option value="${i}"${i === e.scenery ? ' selected' : ''}>#${i + 1} ${esc(s.title)}</option>`).join('')}</select></label>
+        <label>Animation<select data-k="clip">${clips.map(c => `<option${c.name === e.clip ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+        <label>Time (s)<input type="number" data-k="time" min="0" step="0.1" value="${e.time.toFixed(2)}"></label>
+        <label>Track<input type="number" data-k="track" min="0" step="1" value="${e.track + 1}"></label>
+        <label>Repeat<span class="row"><input type="checkbox" data-k="repeat" ${e.repeat ? 'checked' : ''}>${e.repeat ? `for <input type="number" data-k="length" min="0.5" step="0.5" value="${e.length || 10}" style="width:70px"> s` : '<span class="muted">plays once</span>'}</span></label>
+        <div class="row"><button data-a="dup" title="Ctrl+D">Duplicate</button><button data-a="del">Delete</button><button data-a="piece">Select the piece</button></div>
+        ${clipRow}
+        <div class="muted">${esc(def.title)} · ${def.duration.toFixed(1)} s. Line fireworks up with this block to time them with the scenery.</div>`;
+      return;
+    }
     box.innerHTML = `
       <label>${esc(KINDS[kind].one[0].toUpperCase() + KINDS[kind].one.slice(1))}<select data-k="firework">${Object.values(REG[kind]).sort((a, b) => a.title.localeCompare(b.title)).map(f => `<option value="${esc(f.key)}"${f.key === e.firework ? ' selected' : ''}>${esc(f.title)}</option>`).join('')}</select></label>
       <label>Launcher<select data-k="launcher">${ls.map((l, i) => fits(kind, l.type) || i === e.launcher ? `<option value="${i}"${i === e.launcher ? ' selected' : ''}>#${i + 1} ${esc(LAUNCHER_NAMES[l.type] || l.type)}</option>` : '').join('')}</select></label>
@@ -1129,6 +1253,10 @@ async function build() {
     else if (k === 'track') e.track = Math.max(0, (+v || 1) - 1);
     else if (k === 'tint') e.tint = unhex(v);
     else if (k === 'strength') e.strength = +v;
+    else if (k === 'scenery') e.scenery = +v;
+    else if (k === 'clip') e.clip = v;
+    else if (k === 'repeat') { e.repeat = ev.target.checked; e.length = e.length || 10; }
+    else if (k === 'length') e.length = Math.max(0.5, +v || 10);
     changed(); renderAll();
   });
   $('#fw-entry', root).addEventListener('click', ev => {
@@ -1140,6 +1268,7 @@ async function build() {
     if (a === 'prev') return previewSel();
     if (a === 'none') { select([]); return markSel(); }
     if (a === 'edit') return openEditor(e.kind || 'firework', e.firework);
+    if (a === 'piece') { S.selScenery = e.scenery; S.pick = 'scenery'; markScenery(); return renderSceneryPanel(); }
     if (a.startsWith('m')) return nudge(+a.slice(1), 0);
     if (a === 'b-notint') { snapshot(); for (const x of selList()) delete x.tint; changed(); renderAll(); return; }
     if (a === 'fire') { audio(); fireNow(e); }
@@ -1199,6 +1328,64 @@ async function build() {
       changed('Launcher removed'); rebuildLaunchers().then(renderAll);
     }
   });
+
+  // ---- UI: the selected scenery piece -------------------------------------------------------------------------------
+  function renderSceneryPanel() {
+    const sec = $('#fw-scnsec', root), i = S.selScenery, s = i != null ? S.show.scenery?.[i] : null, o = sceneryObjs[i];
+    sec.style.display = s ? '' : 'none';
+    if (!s) return;
+    const clips = o?.clips || [], cues = S.show.entries.filter(e => e.kind === 'scenery' && e.scenery === i).length;
+    $('#fw-scn', root).innerHTML = `
+      <div><b>${esc(s.title)}</b> <span class="muted">#${i + 1}${clips.length ? ` · ${clips.length} animation${clips.length > 1 ? 's' : ''}` : ' · not animated'}</span></div>
+      ${clips.length ? `<label>Animation<select data-k="anim"><option value="loop"${(s.anim || 'loop') === 'loop' ? ' selected' : ''}>Loops all the time</option>
+        <option value="cues"${s.anim === 'cues' ? ' selected' : ''}>Only when cued</option><option value="still"${s.anim === 'still' ? ' selected' : ''}>Still (except cues)</option></select></label>
+      <label>Clip<select data-k="clip">${clips.map(c => `<option${c.name === (s.clip || clips[0].name) ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+      <div class="row"><button data-a="cue" title="Start the animation at the playhead (a block on the timeline you can line fireworks up with)">⟳ Cue at playhead</button><span class="muted">${cues} cue${cues === 1 ? '' : 's'} · ${(o.clips.find(c => c.name === (s.clip || clips[0].name))?.duration || 0).toFixed(1)} s</span></div>` : ''}
+      <label>Turn<span class="row"><button data-a="l">⟲</button><button data-a="r">⟳</button><span class="muted">${S.grid ? 'quarter turns' : '15° steps'} (R)</span></span></label>
+      <label>Raise (m)<input type="number" data-k="lift" step="0.5" value="${s.lift || 0}"></label>
+      <div class="row"><button data-a="dup">Duplicate</button><button data-a="del">Delete</button><button data-a="done">Done</button></div>
+      <div class="kbd">Drag it in the 3D view to move it; launchers standing on it move with it. Drop launchers or effects on top of it to put them there.</div>`;
+  }
+  $('#fw-scn', root).addEventListener('change', ev => {
+    const s = S.show.scenery[S.selScenery], k = ev.target.dataset.k; if (!s || !k) return;
+    snapshot();
+    if (k === 'lift') { s.lift = +ev.target.value || 0; placeScenery(S.selScenery); placeAll(); }
+    else s[k] = ev.target.value;
+    if (k === 'clip' || k === 'anim') { const o = sceneryObjs[S.selScenery]; if (o) o.clip = null; }
+    changed(); renderSceneryPanel(); renderTimeline();
+  });
+  $('#fw-scn', root).addEventListener('click', ev => {
+    const a = ev.target.dataset.a, i = S.selScenery, s = S.show.scenery[i]; if (!a || !s) return;
+    if (a === 'done') { S.selScenery = null; markScenery(); return renderSceneryPanel(); }
+    if (a === 'l' || a === 'r') return turnScenery(a === 'l' ? -1 : 1);
+    if (a === 'cue') return addCue(i);
+    snapshot();
+    if (a === 'dup') {
+      S.show.scenery.push({ ...clone(s), col: s.col + (S.grid ? 2 : 1.5) }); S.selScenery = S.show.scenery.length - 1;
+      changed('Duplicated'); rebuildScenery(); return;
+    }
+    if (a === 'del') {
+      S.show.scenery.splice(i, 1);
+      S.show.entries = S.show.entries.filter(e => !(e.kind === 'scenery' && e.scenery === i)).map(e => (e.kind === 'scenery' && e.scenery > i && e.scenery--, e));
+      select(selList()); S.selScenery = null; S.pick = null;
+      changed(`Removed ${s.title}`); rebuildScenery(); renderAll();
+    }
+  });
+  function turnScenery(sign) {
+    const s = S.show.scenery[S.selScenery]; if (!s) return;
+    snapshot();
+    if (S.grid) { s.dir = ((s.dir || 0) + (sign > 0 ? 1 : 3)) & 3; s.angle = 0; } else s.angle = ((s.angle || 0) + sign * 15) % 360;
+    placeScenery(S.selScenery); placeAll(); markScenery(); changed(`${s.title} turned`);
+  }
+  function addCue(i) {
+    const o = sceneryObjs[i], s = S.show.scenery[i]; if (!o?.clips.length) return;
+    const clip = s.clip || o.clips[0].name, dur = o.clips.find(c => c.name === clip)?.duration || 5, time = snap(S.t);
+    snapshot();
+    let track = 0; while (S.show.entries.some(x => x.track === track && x.time < time + dur && x.time + fxDur(x) > time)) track++;
+    const e = { kind: 'scenery', scenery: i, clip, time, track, launcher: 0, slot: 0 };
+    S.show.entries.push(e); select([e], e);
+    changed(`Cued ${s.title}: ${clip} at ${fmt(time)} (track ${track + 1})`); renderAll(); renderSceneryPanel();
+  }
 
   // ---- UI: aiming control points --------------------------------------------------------------------------------
   const aimbar = $('#fw-aimbar', root);
@@ -1302,7 +1489,7 @@ async function build() {
     heads.scrollTop = lanes.scrollTop; updateTime();
   }
   lanes.addEventListener('scroll', syncScroll);
-  function renderAll() { renderTimeline(); renderEntry(); renderShowInfo(); renderLaunchers(); renderAimPanel(); }
+  function renderAll() { renderTimeline(); renderEntry(); renderShowInfo(); renderLaunchers(); renderAimPanel(); renderSceneryPanel(); }
   const timeAt = clientX => (clientX - lanes.getBoundingClientRect().left + lanes.scrollLeft) / S.pps;
   const trackAt = clientY => Math.max(0, Math.floor((clientY - lanes.getBoundingClientRect().top + lanes.scrollTop) / S.rowH));
   const snap = (t, free) => free ? t : Math.round(t * 20) / 20;
@@ -1477,8 +1664,8 @@ async function build() {
     ghostType = type;
     if (ghost) { scene.remove(ghost); ghost = null; }
     if (!type) return;
-    const def = await launcherDef(type); if (ghostType !== type) return;
-    ghost = def ? def.gltf.scene.clone(true) : new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    const scn = type.startsWith('scn:'), def = await (scn ? sceneryModel(type.slice(4)) : launcherDef(type)); if (ghostType !== type) return;
+    ghost = def ? (scn ? cloneSkinned(def.gltf.scene) : def.gltf.scene.clone(true)) : new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
     ghost.traverse(o => { if (o.isMesh) { o.material = ghostMat; o.raycast = () => {}; } });
     const ring = new THREE.Mesh(new THREE.RingGeometry(1.6, 1.9, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7dffb0, transparent: true, opacity: 0.8, depthTest: false }));
     ring.position.y = 0.15; ring.renderOrder = 11; ghost.add(ring);
@@ -1495,12 +1682,20 @@ async function build() {
   view.addEventListener('dragover', e => {
     if (!dragState) return;
     e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
-    const p = groundHit(e);
+    const p = pointHit(e);
+    if (dragState.scenery) {
+      if (!p) return;
+      setGhost('scn:' + dragState.scenery);
+      const pl = placementAt('', p.x, p.z), [x, z] = worldOf({ ...pl, corner: -1 });
+      if (ghost) ghost.position.set(x, surfaceAt(x, z), z);
+      showCard(e, `Place <b>${esc(dragState.title)}</b> · ${S.grid ? `tile ${pl.col}, ${pl.row}` : 'free'}`);
+      return;
+    }
     if (dragState.base) {
       if (!p) return;
       setGhost(dragState.base);
       const pl = placementAt(dragState.base, p.x, p.z), [x, z] = worldOf(pl);
-      if (ghost) { ghost.position.set(x, terrain.heightAt(x, z), z); ghost.rotation.y = 0; }
+      if (ghost) { ghost.position.set(x, surfaceAt(x, z), z); ghost.rotation.y = 0; }
       showCard(e, `Place <b>${esc(LAUNCHER_NAMES[dragState.base])}</b> · ${S.grid ? `tile ${pl.col}, ${pl.row}` : 'free'}`);
       return;
     }
@@ -1513,15 +1708,22 @@ async function build() {
     if (!p) return;
     setGhost(BASE_FOR[kind]);
     const pl = placementAt(BASE_FOR[kind], p.x, p.z), [x, z] = worldOf(pl);
-    if (ghost) ghost.position.set(x, terrain.heightAt(x, z), z);
+    if (ghost) ghost.position.set(x, surfaceAt(x, z), z);
     showCard(e, `${KINDS[kind].icon}<b>${esc(d?.title)}</b> on a new ${esc(LAUNCHER_NAMES[BASE_FOR[kind]])} at ${fmt(S.t)}`);
   });
   view.addEventListener('dragleave', e => { if (!view.contains(e.relatedTarget)) { setGhost(null); showCard(null); } });
   view.addEventListener('drop', async e => {
     if (!dragState) return;
     e.preventDefault();
-    const st = dragState, p = groundHit(e), target = dropTarget;
+    const st = dragState, p = pointHit(e), target = dropTarget;
     endDrag3d();
+    if (st.scenery) {
+      if (!p) return;
+      const pl = placementAt('', p.x, p.z);
+      snapshot(); S.show.scenery.push({ name: st.scenery, title: st.title, col: pl.col, row: pl.row, dir: 0, anim: 'loop' });
+      S.selScenery = S.show.scenery.length - 1; S.pick = 'scenery';
+      changed(`Placed ${st.title} (scenery #${S.selScenery + 1})`); await rebuildScenery(); renderAll(); return;
+    }
     if (st.base) {
       if (!p) return;
       snapshot(); S.show.launchers.push({ type: st.base, dir: 0, ...placementAt(st.base, p.x, p.z) });
@@ -1550,6 +1752,16 @@ async function build() {
   const ndc = e => { const r = renderer.domElement.getBoundingClientRect(); return new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); };
   let tool = null, painting = false, brushPt = null, flatTarget = 0, aimDrag = null, moveDrag = null;
   const groundHit = e => { ray.setFromCamera(ndc(e), camera); return ray.intersectObject(terrain.ground)[0]?.point || null; };
+  // the point under the mouse on scenery or the ground (so things can be put on top of scenery); `exclude`: a piece being moved
+  function pointHit(e, exclude) {
+    ray.setFromCamera(ndc(e), camera);
+    for (const h of ray.intersectObjects([...sceneryGroup.children, terrain.ground], true)) {
+      let o = h.object, mine = false; while (o) { if (o === exclude) { mine = true; break; } o = o.parent; }
+      if (!mine) return h.point;
+    }
+    return null;
+  }
+  const sceneryUnder = e => { ray.setFromCamera(ndc(e), camera); const h = ray.intersectObjects(sceneryGroup.children, true)[0]; return h ? h.object.userData.scenery ?? null : null; };
   view.addEventListener('pointerdown', e => {   // capture phase: before the orbit controls see it
     if (e.target !== renderer.domElement || e.button !== 0) return;
     if (tool) {
@@ -1565,14 +1777,35 @@ async function build() {
     }
     if (li != null && S.show.launchers[li]) {   // press on a launcher: drag to move it (a click still just selects it)
       controls.enabled = false; moveDrag = { li, x: e.clientX, y: e.clientY, moved: false };
+      renderer.domElement.setPointerCapture(e.pointerId); return;
+    }
+    const si = sceneryUnder(e);
+    if (si != null && S.show.scenery[si]) {   // press on a scenery piece: drag to move it, with the launchers standing on it
+      controls.enabled = false; moveDrag = { si, x: e.clientX, y: e.clientY, moved: false };
       renderer.domElement.setPointerCapture(e.pointerId);
     }
   }, true);
   renderer.domElement.addEventListener('pointermove', e => {
     if (tool) { const p = groundHit(e); terrain.showRing(p?.x, p?.z, +$('#fw-bsize', root).value); if (painting && p) brushPt = p; }
+    if (moveDrag && moveDrag.si != null) {
+      if (!moveDrag.moved && Math.hypot(e.clientX - moveDrag.x, e.clientY - moveDrag.y) < 5) return;
+      const o = sceneryObjs[moveDrag.si], s = S.show.scenery[moveDrag.si]; if (!o || !s) return;
+      const p = pointHit(e, o.obj); if (!p) return;
+      if (!moveDrag.moved) {
+        snapshot(); moveDrag.moved = true; S.selScenery = moveDrag.si; S.pick = 'scenery';
+        // launchers standing on this piece ride along
+        moveDrag.riders = S.show.launchers.map((l, i) => i).filter(i => { const [x, z] = worldOf(S.show.launchers[i]); return surfaceAt(x, z, o.obj) < surfaceAt(x, z) - 0.05; });
+        moveDrag.c0 = s.col; moveDrag.r0 = s.row; moveDrag.lpos = moveDrag.riders.map(i => [S.show.launchers[i].col, S.show.launchers[i].row]);
+      }
+      const pl = placementAt('', p.x, p.z); s.col = pl.col; s.row = pl.row;
+      moveDrag.riders.forEach((i, k) => { const l = S.show.launchers[i]; l.col = +(moveDrag.lpos[k][0] + s.col - moveDrag.c0).toFixed(3); l.row = +(moveDrag.lpos[k][1] + s.row - moveDrag.r0).toFixed(3); });
+      placeScenery(moveDrag.si); placeAll(); markScenery();
+      showCard(e, `${esc(s.title)} · ${S.grid ? `tile ${s.col}, ${s.row}` : 'free'}${moveDrag.riders.length ? ` · carrying ${moveDrag.riders.length} launcher${moveDrag.riders.length > 1 ? 's' : ''}` : ''}`);
+      return;
+    }
     if (moveDrag) {
       if (!moveDrag.moved && Math.hypot(e.clientX - moveDrag.x, e.clientY - moveDrag.y) < 5) return;
-      const p = groundHit(e); if (!p) return;
+      const p = pointHit(e); if (!p) return;
       if (!moveDrag.moved) { snapshot(); moveDrag.moved = true; S.selLauncher = moveDrag.li; obj3dMarkSel(); }
       const l = S.show.launchers[moveDrag.li]; Object.assign(l, placementAt(l.type, p.x, p.z));
       placeLauncher(launcherObjs[moveDrag.li].obj, l); applyAims(S.t);
@@ -1590,7 +1823,7 @@ async function build() {
     if (aimDrag) { aimDrag = null; controls.enabled = true; changed(); }
     if (moveDrag) {
       const m = moveDrag; moveDrag = null; controls.enabled = true; showCard(null);
-      if (m.moved) { changed(`Moved launcher #${m.li + 1}`); renderLaunchers(); return 'moved'; }
+      if (m.moved) { changed(m.si != null ? `Moved ${S.show.scenery[m.si]?.title}` : `Moved launcher #${m.li + 1}`); renderLaunchers(); renderSceneryPanel(); return 'moved'; }
     }
   };
   renderer.domElement.addEventListener('pointerup', e => {
@@ -1599,7 +1832,10 @@ async function build() {
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
     ray.setFromCamera(ndc(e), camera);
     const hit = ray.intersectObjects(launcherGroup.children, true)[0];
-    if (hit && hit.object.userData.launcher != null) { S.selLauncher = hit.object.userData.launcher; obj3dMarkSel(); renderLaunchers(); renderAimBar(); toast(`Launcher #${S.selLauncher + 1} selected`); }
+    if (hit && hit.object.userData.launcher != null) { S.selLauncher = hit.object.userData.launcher; S.pick = 'launcher'; obj3dMarkSel(); markScenery(); renderLaunchers(); renderAimBar(); toast(`Launcher #${S.selLauncher + 1} selected`); return; }
+    const si = sceneryUnder(e);
+    S.selScenery = si; S.pick = si != null ? 'scenery' : null; markScenery(); renderSceneryPanel();
+    if (si != null) toast(`${S.show.scenery[si]?.title} selected · drag to move · R to turn · Delete to remove`);
   });
   renderer.domElement.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
   S.grid = store.get('rct3fw.grid') ?? true;
@@ -1631,6 +1867,7 @@ async function build() {
       <ul>${other ? `<li>${other} lasers / water jets are left out (the game's display files here have no place for them).</li>` : ''}
         ${sh.aim.length ? '<li>Base aiming is left out.</li>' : ''}${terrain.getData() ? '<li>The landscape and water are left out (shape them in the park).</li>' : ''}
         ${fw.some(e => e.tint || (e.strength ?? 1) !== 1) ? '<li>Colour and strength changes are left out.</li>' : ''}
+        ${sh.scenery?.length ? `<li>The ${sh.scenery.length} scenery piece${sh.scenery.length > 1 ? 's' : ''} and their cues stay here (a display has no scenery: place it in the park).</li>` : ''}
         ${sh.launchers.some(l => l.col % 1 || l.row % 1 || l.angle) ? '<li>Freely placed or turned launchers are snapped to the nearest tile and facing.</li>' : ''}
         ${String(sh.music).startsWith('blob:') ? '<li>The music file you chose is left out (only the game\'s music can be named).</li>' : ''}
         ${myFw.length ? `<li>Your ${myFw.length} own firework${myFw.length > 1 ? 's are' : ' is'} saved into the game's Fireworks folder too.</li>` : ''}</ul>
@@ -1711,6 +1948,7 @@ async function build() {
     const k = e.key.toLowerCase();
     if (k === ' ') { e.preventDefault(); play(); }
     else if (k === 'escape') { if (S.selAim) { S.selAim = null; renderAimBar(); renderAimPanel(); } else if (S.multi.size) { select([]); markSel(); } else close(); }
+    else if ((k === 'delete' || k === 'backspace') && S.pick === 'scenery' && S.selScenery != null && !S.multi.size) { e.preventDefault(); $('#fw-scn [data-a="del"]', root)?.click(); }
     else if (k === 'delete' || k === 'backspace') { e.preventDefault(); removeSel(); }
     else if (k === 'home') { seek(0); lanes.scrollLeft = 0; }
     else if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
@@ -1725,6 +1963,7 @@ async function build() {
     else if (k === '+' || k === '=') zoom(1.5);
     else if (k === '-') zoom(1 / 1.5);
     else if (k === 'f' && S.multi.size) previewSel();
+    else if (k === 'r' && S.pick === 'scenery' && S.selScenery != null && !e.ctrlKey) turnScenery(e.shiftKey ? -1 : 1);
     else if (k === 'r' && S.show.launchers[S.selLauncher] && !e.ctrlKey) {   // turn the selected launcher: a quarter on the grid, 15° free
       const l = S.show.launchers[S.selLauncher]; snapshot();
       if (S.grid) { l.dir = ((l.dir || 0) + (e.shiftKey ? 3 : 1)) & 3; l.angle = 0; } else l.angle = ((l.angle || 0) + (e.shiftKey ? -15 : 15)) % 360;
@@ -1784,6 +2023,7 @@ async function build() {
     while (acc >= 1 / 60 && n++ < 8) { if (S.playing) effectsStep(S.t, 1 / 60); else effectsStep(-1e9, 1 / 60); step(1 / 60); acc -= 1 / 60; }
     if (n >= 8) acc = 0;
     for (const o of launcherObjs) o.mixer?.update(dt * (S.playing ? S.speed : 0.3));
+    animateScenery(dt);
     if (camMode === 'orbit') { const a = 0.08 * dt, p = camera.position, c = controls.target; const x = p.x - c.x, z = p.z - c.z; p.x = c.x + x * Math.cos(a) - z * Math.sin(a); p.z = c.z + x * Math.sin(a) + z * Math.cos(a); }
     if (camMode === 'auto') autolook(dt);
     controls.update();
@@ -1801,7 +2041,8 @@ async function build() {
   const auto = store.get('rct3fw.autosave');
   if (auto) { showSel.value = 'auto'; setShow(auto); } else { showSel.value = 'd' + Math.max(0, data.displays.findIndex(d => /stratosphere/i.test(d.name))); openChoice(showSel.value); }
   window.__fwdebug = {   // for tests
-    count: () => parts.length, parts: () => parts, step, launch, FW, REG, descInfo, S, ribbons, terrain, openEditor, ctx, seek, applyAims, renderAll };
+    count: () => parts.length, parts: () => parts, step, launch, FW, REG, descInfo, S, ribbons, terrain, openEditor, ctx, seek, applyAims, renderAll,
+    sceneryObjs: () => sceneryObjs };
   return { root, resize, start, stop, onBack: null };
 }
 

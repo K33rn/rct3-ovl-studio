@@ -289,3 +289,15 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   Terrain_NN textures (no names in the game; named by look) repeating every 2 tiles, the outer ground too, optional
   tile-line overlay. /api/fw/tex?name= serves any game texture. Day: bloom threshold 0.92 (else the sky washed white).
 - tests/ui_place.py.
+
+## 2026-10-07: MixMaster scenery
+- Scenery palette tab (from /api/scenery, 1,330 items; first 400 shown, search/category/animated filter). Models from
+  /api/scenery_item (GLB with its bone animations), cloned with SkeletonUtils.clone (skinned meshes need it).
+- show.scenery [{name, title, col, row, dir, angle, lift, anim: loop|cues|still, clip}]. surfaceAt(x, z, exclude):
+  raycast down from 600 m through the scenery group -> highest surface; launchers and pieces stand on it. Dragging a
+  piece carries the launchers standing on it (found by comparing surfaceAt with and without the piece).
+- Cues: entries {kind: 'scenery', scenery, clip, time, track, repeat, length} drawn like effects (cueDef). Each frame
+  the latest cue at or before the playhead sets the clip time (S.t - cue.time; repeat: modulo for `length`); without
+  one the piece loops (own clock) or holds still. Deterministic, so scrubbing matches playback.
+- Export notes that scenery stays in the editor. tests/ui_scenery_mix.py (stacking, riders, cue timing 2.0 s cue:
+  3.5 s -> 1.5 s clip time).

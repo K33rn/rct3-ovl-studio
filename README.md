@@ -93,6 +93,11 @@ The buttons at the top:
   - **Grid snap** (top bar): on, bases snap to park tiles, and the small ones (single mortar, laser dome, water jet) to tile corners, as in the game; R turns a quarter. Off, bases go anywhere and R turns 15°. Export to RCT3 snaps free placements to the nearest tile.
   - **Scene** (top bar): time of day (Day, Sunset, Night) with the game's sky colours, clouds and stars; a skyline backdrop (Hill, City, Desert, Island, Mountain, Snow, Spooky, Space); tile grid lines on or off; and the ground texture (plain night grass, or any of the game's 32 ground textures). Kept with the show.
   - **$** (palette footer) shows or hides all prices.
+  - **Scenery:** the **Scenery** palette tab lists all 1,330 of the game's scenery pieces (search, filter by category or *animated only*, ⟳ = animated). Drag one into the 3D view (a see-through preview follows the mouse) to place it.
+    - Click a piece to select it (orange box); drag it to move it, **R** turns it, **Delete** removes it; the right-hand panel also raises, duplicates or removes it.
+    - Pieces and launchers stand on the highest surface under them. Drop launchers or effects onto a piece to put them on top. Move the piece and the launchers on it go with it.
+    - **Animations:** a piece loops its animation all the time, only plays when cued, or stands still. Pick its clip in the panel.
+    - **Timing:** *Cue at playhead* puts a ⟳ block on the timeline that starts the piece's animation at that moment, as long as the animation (or repeating for a set time). Line fireworks, lasers and water jets up with it. Playing or scrubbing shows the animation exactly where it would be at that time. Cue blocks can be moved, copied and pasted like any effect.
   - **Show settings:** name, daily start time, the months it plays, and music (the game's tracks or any music file).
   - **Playback:** play, pause, stop and rewind, scrub the ruler, ¼× to 2× speed. Change the time scale with − / +.
   - **Cameras:** crowd view, autolook (follows the bursts), close up, top down, slow orbit and freelook.

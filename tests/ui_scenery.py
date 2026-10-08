@@ -15,7 +15,7 @@ with sync_playwright() as p:
     errors = []
     pg.on('pageerror', lambda e: errors.append(str(e)))
     pg.goto(base + '/')
-    pg.evaluate("localStorage.clear()")
+    pg.evaluate("localStorage.clear(); [`main`, `mixmaster`, `afe`, `laser-designer`, `jet-designer`].forEach(k => localStorage.setItem(`rct3ovl.tour.` + k, `1`))")
     pg.wait_for_function("document.getElementById('rootinfo').textContent.includes('OVL pairs')", timeout=180000)
     print('tabs:', pg.eval_on_selector_all('.tabs button', 'bs => bs.map(b => b.textContent)'))
     pg.click('#b-scenery'); pg.wait_for_selector('.res[data-scenery]', timeout=600000)

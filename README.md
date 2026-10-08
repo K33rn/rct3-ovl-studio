@@ -117,7 +117,7 @@ The buttons at the top:
     - Save to your lasers / water jets, to the game (`.las` / `.wjt`) or as a download.
   - **Game files:** files written into the game folder are built from the game's own files of the same kind, so they load like the originals. The game's own files are never overwritten.
   - The game's `.wma` music is converted once with ffmpeg; `rct3ovl-viewer.bat` includes it (`--with imageio-ffmpeg`).
-- **Walkthrough:** a guided tour starts the first time you open the viewer. It highlights each part of the screen, explains it and opens examples on every tab. The MixMaster, the Advanced Firework Editor and the laser / water jet designers have their own tours the first time they open. **? Tour** (top left in the viewer, next to MixMaster in the MixMaster) replays them. ← → or Enter move, Esc stops.
+- **Walkthrough:** a guided tour starts the first time you open the viewer. It highlights each part of the screen, explains it and opens examples on every tab. The MixMaster has its own tour the first time it opens, and it opens and walks through the Advanced Firework Editor, the laser designer and the water jet designer on the way. **? Tour** (top left in the viewer, next to MixMaster in the MixMaster) replays it; pressed while the firework editor or a designer is open, it explains that editor. ← → or Enter move, Esc stops.
 - **File types** opens the guide to every file type.
 - The six tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks) sit under the title; the one in use is highlighted.
 - Drag the thin divider on the right edge of either list column to make it wider or narrower (double-click a divider to reset it). Widths are remembered.

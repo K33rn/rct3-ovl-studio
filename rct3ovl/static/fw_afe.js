@@ -448,7 +448,11 @@ export function openAFE(ctx, def, key) {
   touched(true);
   ctx.toast('Advanced firework editor: edits fire in the 3D view');
   raf = requestAnimationFrame(tick);
-  setTimeout(() => runTour('afe', [
+  setTimeout(() => runTour('afe', afeTourSteps()), 900);
+}
+
+// the walkthrough of this editor (also part of the MixMaster tour)
+export const afeTourSteps = () => [
     { title: 'The Advanced Firework Editor',
       html: `<p>A firework is a <b>tree of particles</b>: the base releases particles through <b>emitters</b>, and each particle can have emitters of its own:
         trails while it flies, bursts when it ends. Every number here is a setting from the game's firework files. The firework keeps firing in the 3D view
@@ -473,5 +477,4 @@ export function openAFE(ctx, def, key) {
       html: `<p><b>New</b> starts a simple firework, <b>Load firework…</b> opens any game firework (as a copy) or one of yours.
         <b>Save firework</b> adds it to your fireworks in the palette; <b>Save to game</b> writes a <code>.frw</code> into the game's Fireworks folder;
         <b>Download .frw</b> saves the file. <b>← MixMaster</b> goes back. <kbd>Ctrl+Z</kbd> undoes, <kbd>F</kbd> fires.</p>` },
-  ]), 900);
-}
+];

@@ -307,3 +307,12 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   target, waits up to 8 s for targets, owns the keyboard in the capture phase so app shortcuts don't fire, remembers
   seen tours in localStorage rct3ovl.tour.<id>). Tours: main (17 steps, opens real examples on every tab), mixmaster
   (24), afe (7), designers (3); each starts on first open, "? Tour" replays. tests/ui_tours.py walks all of them.
+- Drag lag: every dragover ran full-mesh raycasts (20k-triangle ground + every launcher model) and rebuilt the drag
+  card. Now: terrain.raycast() marches the height grid (0.011 ms vs 1.06 ms per hit), launchers are picked through an
+  invisible box each, the drag preview runs at most once per frame (requestAnimationFrame) and the card is only
+  rewritten when its text changes.
+- Tours: steps fade out while the next one prepares (tab / panel / editor), wait until the target stops moving, then
+  appear in place (no sliding, no wrong highlight). The MixMaster tour (39 steps) opens and walks through the AFE and
+  both designers (afeTourSteps / designerTourSteps exported; ensureEditor() keeps the right one open, also going back)
+  and marks their own tours seen. "? Tour" runs the tour of whatever is open. tests/ui_tours.py checks no spotlight
+  moves after appearing. Other UI tests mark the tours seen first.

@@ -14,7 +14,7 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { createTerrain } from './fw_terrain.js';
 import { createRibbons, drawLaser, jetState, jetDir, defaultLaser, defaultJet } from './fw_effects.js';
-import { runTour } from './tour.js';
+import { runTour, markSeen, tourRunning } from './tour.js';
 
 const TILE = 4, GRAVITY = 9.81, MAX_PARTICLES = 40000, MAX_VOICES = 40, D2R = Math.PI / 180;
 const LAUNCHER_NAMES = { Mortarx1: 'Mortar ×1', Mortarx16: 'Mortar ×16', MortarWallx8: 'Wall ×8',
@@ -583,7 +583,7 @@ async function build() {
 
   // ---- launchers ----------------------------------------------------------------------------------------------
   const gltf = new GLTFLoader(), launcherDefs = {}, launcherGroup = new THREE.Group(); scene.add(launcherGroup);
-  let launcherObjs = [];
+  let launcherObjs = [], pickers = [];
   function launcherDef(type) {
     if (!launcherDefs[type]) launcherDefs[type] = fetch('/api/fw/launcher?name=' + encodeURIComponent(type)).then(async r => {
       if (!r.ok) return null;
@@ -616,8 +616,13 @@ async function build() {
       let mixer = null;
       if (def?.gltf.animations?.length) { mixer = new THREE.AnimationMixer(obj); mixer.clipAction(def.gltf.animations[0]).play(); }
       obj.traverse(o => { o.userData.launcher = i; });
+      // an invisible box around it for picking (testing the model's own triangles made dragging over the view lag)
+      const bb = new THREE.Box3().setFromObject(obj), size = bb.getSize(new THREE.Vector3()).max(new THREE.Vector3(1.2, 1.2, 1.2));
+      const pick = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), new THREE.MeshBasicMaterial({ visible: false }));
+      bb.getCenter(pick.position); pick.userData.launcher = i; obj.add(pick); pick.updateMatrixWorld(true);
       return { obj, def, label, mixer };
     });
+    pickers = launcherObjs.map(o => o.obj.children.find(c => c.isMesh && c.material.visible === false)).filter(Boolean);
     placeAll(); obj3dMarkSel();
   }
   function placeLauncher(obj, l) {
@@ -1676,15 +1681,25 @@ async function build() {
   }
   function launcherUnder(e) {
     ray.setFromCamera(ndc(e), camera);
-    const hit = ray.intersectObjects(launcherGroup.children, true)[0];
+    const hit = ray.intersectObjects(pickers, false)[0];
     return hit ? hit.object.userData.launcher ?? -1 : -1;
   }
   const card = $('#fw-dragcard', root);
-  function showCard(e, html) { if (!html) { card.style.display = 'none'; return; } card.innerHTML = html; card.style.display = 'block'; card.style.left = e.clientX + 16 + 'px'; card.style.top = e.clientY + 14 + 'px'; }
-  function endDrag3d() { dragState = null; setGhost(null); showCard(null); dropTarget = -1; obj3dMarkSel(); }
+  let cardHtml = '';
+  function showCard(e, html) {
+    if (!html) { card.style.display = 'none'; cardHtml = ''; return; }
+    if (html !== cardHtml) { card.innerHTML = html; cardHtml = html; }
+    card.style.display = 'block'; card.style.transform = `translate(${e.clientX + 16}px, ${e.clientY + 14}px)`; card.style.left = '0'; card.style.top = '0';
+  }
+  function endDrag3d() { dragState = null; dragEv = null; cancelAnimationFrame(dragRaf); dragRaf = 0; dragMove.lastTarget = undefined; setGhost(null); showCard(null); dropTarget = -1; obj3dMarkSel(); }
+  let dragEv = null, dragRaf = 0;
   view.addEventListener('dragover', e => {
     if (!dragState) return;
     e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+    dragEv = { clientX: e.clientX, clientY: e.clientY };
+    if (!dragRaf) dragRaf = requestAnimationFrame(() => { dragRaf = 0; if (dragState && dragEv) dragMove(dragEv); });
+  });
+  function dragMove(e) {   // the drop preview: ghost model, target launcher, card (at most once per frame)
     const p = pointHit(e);
     if (dragState.scenery) {
       if (!p) return;
@@ -1706,14 +1721,14 @@ async function build() {
     const kind = dragState.kind, li = launcherUnder(e), d = REG[kind][dragState.key];
     const ok = li >= 0 && fits(kind, S.show.launchers[li]?.type);
     dropTarget = ok ? li : -1;
-    launcherObjs.forEach((o, i) => o.label.element.classList.toggle('sel', i === dropTarget));
+    if (dropTarget !== dragMove.lastTarget) { dragMove.lastTarget = dropTarget; launcherObjs.forEach((o, i) => o.label.element.classList.toggle('sel', i === dropTarget)); }
     if (ok) { setGhost(null); showCard(e, `${KINDS[kind].icon}<b>${esc(d?.title)}</b> → launcher #${li + 1} at ${fmt(S.t)}`); return; }
     if (!p) return;
     setGhost(BASE_FOR[kind]);
     const pl = placementAt(BASE_FOR[kind], p.x, p.z), [x, z] = worldOf(pl);
     if (ghost) ghost.position.set(x, surfaceAt(x, z), z);
     showCard(e, `${KINDS[kind].icon}<b>${esc(d?.title)}</b> on a new ${esc(LAUNCHER_NAMES[BASE_FOR[kind]])} at ${fmt(S.t)}`);
-  });
+  }
   view.addEventListener('dragleave', e => { if (!view.contains(e.relatedTarget)) { setGhost(null); showCard(null); } });
   view.addEventListener('drop', async e => {
     if (!dragState) return;
@@ -1754,15 +1769,17 @@ async function build() {
   const ray = new THREE.Raycaster(); let downAt = null;
   const ndc = e => { const r = renderer.domElement.getBoundingClientRect(); return new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); };
   let tool = null, painting = false, brushPt = null, flatTarget = 0, aimDrag = null, moveDrag = null;
-  const groundHit = e => { ray.setFromCamera(ndc(e), camera); return ray.intersectObject(terrain.ground)[0]?.point || null; };
+  const groundHit = e => { ray.setFromCamera(ndc(e), camera); return terrain.raycast(ray.ray); };
   // the point under the mouse on scenery or the ground (so things can be put on top of scenery); `exclude`: a piece being moved
   function pointHit(e, exclude) {
     ray.setFromCamera(ndc(e), camera);
-    for (const h of ray.intersectObjects([...sceneryGroup.children, terrain.ground], true)) {
+    const g = terrain.raycast(ray.ray), gd = g ? g.distanceTo(ray.ray.origin) : Infinity;
+    if (sceneryGroup.children.length) for (const h of ray.intersectObjects(sceneryGroup.children, true)) {
+      if (h.distance > gd) break;
       let o = h.object, mine = false; while (o) { if (o === exclude) { mine = true; break; } o = o.parent; }
       if (!mine) return h.point;
     }
-    return null;
+    return g;
   }
   const sceneryUnder = e => { ray.setFromCamera(ndc(e), camera); const h = ray.intersectObjects(sceneryGroup.children, true)[0]; return h ? h.object.userData.scenery ?? null : null; };
   view.addEventListener('pointerdown', e => {   // capture phase: before the orbit controls see it
@@ -1773,7 +1790,7 @@ async function build() {
       renderer.domElement.setPointerCapture(e.pointerId); return;
     }
     ray.setFromCamera(ndc(e), camera);
-    const hit = ray.intersectObjects(launcherGroup.children, true)[0], li = hit ? hit.object.userData.launcher : null;
+    const hit = ray.intersectObjects(pickers, false)[0], li = hit ? hit.object.userData.launcher : null;
     if (S.selAim && li != null && S.selAim.launchers.includes(li)) {
       controls.enabled = false; aimDrag = { x: e.clientX, y: e.clientY, yaw: S.selAim.yaw, pitch: S.selAim.pitch }; snapshot();
       renderer.domElement.setPointerCapture(e.pointerId); return;
@@ -1834,7 +1851,7 @@ async function build() {
     if (wasPaint || tool || res === 'moved') return;
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
     ray.setFromCamera(ndc(e), camera);
-    const hit = ray.intersectObjects(launcherGroup.children, true)[0];
+    const hit = ray.intersectObjects(pickers, false)[0];
     if (hit && hit.object.userData.launcher != null) { S.selLauncher = hit.object.userData.launcher; S.pick = 'launcher'; obj3dMarkSel(); markScenery(); renderLaunchers(); renderAimBar(); toast(`Launcher #${S.selLauncher + 1} selected`); return; }
     const si = sceneryUnder(e);
     S.selScenery = si; S.pick = si != null ? 'scenery' : null; markScenery(); renderSceneryPanel();
@@ -2094,19 +2111,7 @@ async function build() {
         <ul><li><b>▶</b> previews an effect in the 3D view, <b>✎</b> edits it (a game effect is copied first).</li>
         <li><b>Drag</b> an effect onto the timeline, or into the 3D view onto a launcher (or onto open ground: a matching launcher is placed there).</li>
         <li>The search box filters the list; <b>$</b> at the bottom shows or hides prices; <b>↻ Reload</b> picks up new files in the game folder.</li></ul>` },
-    { target: '#fw-create', title: 'The Advanced Firework Editor',
-      before: async () => { await tab('firework'); },
-      html: `<p>RCT3's hidden firework designer. It shows a firework's whole tree of particles and every setting, with the firework firing as you edit.
-        Make your own fireworks, then save them to your list, into the game, or as a file. It has its own short tour when you open it.</p>` },
-    { target: '#fw-create', title: 'Lasers and the Advanced Laser Designer',
-      before: async () => { await tab('laser'); },
-      html: `<p>The game's lasers: cones of light, planes of light and drawn images. They fire from <b>laser domes</b>.</p>
-        <p><b>Advanced laser designer</b> makes your own: type, duration, power, beams, trails, and timelines for colour, rotation speed, elevation
-        and beam width; image lasers get a sketch pad.</p>` },
-    { target: '#fw-create', title: 'Water jets and their designer',
-      before: async () => { await tab('jet'); },
-      html: `<p>The game's water jets fire from <b>water jet bases</b>. The <b>Advanced water jet designer</b> sets pressure (how high), elevation (tilt),
-        jet radius and colour over time.</p>` },
+    'EDITORS',
     { target: '#fw-lib', title: 'Scenery',
       before: async () => { await tab('scenery'); await wait(800); },
       html: `<p>Any of the game's 1,330 scenery pieces. Drag one into the 3D view to place it (a see-through preview follows the mouse). Filter by category or
@@ -2157,7 +2162,53 @@ async function build() {
       html: `<p>A good first try: press <b>Play</b> on a game show, or start a <b>New</b> show, drag a few fireworks onto the timeline and press Play.</p>
         <p><b>? Tour</b> at the top replays this walkthrough.</p>` },
   ];
-  function tour(force) { if (root.style.display !== 'none' && !root.classList.contains('afe')) runTour('mixmaster', FW_TOUR, { force, onEnd: closePanels }); }
+  // open / close the advanced editors as the tour needs them (each step makes sure the right one is open, also going back)
+  const waitSel = async (sel, ms = 8000) => { for (let k = 0; k < ms; k += 100) { if (root.querySelector(sel)) return; await wait(100); } };
+  async function ensureEditor(kind) {
+    const afeOpen = root.classList.contains('afe'), win = root.querySelector('.fwd-win');
+    if (kind === 'firework') {
+      win?._close();
+      if (!afeOpen) { await openEditor('firework', null); await waitSel('.afe-tree .afe-node'); await wait(300); }
+      return;
+    }
+    if (afeOpen) { root.querySelector('.afe-top [data-a="close"]')?.click(); await wait(250); }
+    if (kind === 'laser' || kind === 'jet') {
+      if (win && win.dataset.kind !== kind) win._close();
+      if (!root.querySelector('.fwd-win')) { await tab(kind); await openEditor(kind, null); await waitSel('.fwd-win .kt'); await wait(300); }
+      return;
+    }
+    win?._close();
+  }
+  const inEditor = (kind, steps) => steps.map(s => ({ ...s, before: async () => { closePanels(); await ensureEditor(kind); await s.before?.(); } }));
+  const outside = s => ({ ...s, before: async () => { await ensureEditor(null); await s.before?.(); } });
+  async function fullTour() {
+    const [afe, des] = await Promise.all([import('./fw_afe.js'), import('./fw_designers.js')]);
+    const editors = [
+      { target: '#fw-create', title: 'The Advanced Firework Editor', before: async () => { await tab('firework'); },
+        html: `<p>RCT3's hidden firework designer. Next the tour opens it and goes through it. You open it with this button, or <b>✎</b> on any firework
+          (a game firework is copied first).</p>` },
+      ...inEditor('firework', afe.afeTourSteps()),
+      { target: '#fw-create', title: 'Lasers', before: async () => { await tab('laser'); },
+        html: `<p>The game's lasers: cones of light, planes of light and drawn images. They fire from <b>laser domes</b>. Next: the
+          <b>Advanced laser designer</b>, opened with this button or <b>✎</b> on a laser.</p>` },
+      ...inEditor('laser', des.designerTourSteps('laser')),
+      { target: '#fw-create', title: 'Water jets', before: async () => { await tab('jet'); },
+        html: `<p>The game's water jets fire from <b>water jet bases</b>. Next: the <b>Advanced water jet designer</b>.</p>` },
+      ...inEditor('jet', des.designerTourSteps('jet')),
+    ];
+    return FW_TOUR.flatMap(s => s === 'EDITORS' ? editors.map(outside) : [outside(s)]);
+  }
+  // "? Tour": the walkthrough of what is open (the firework editor, a designer, or the whole MixMaster)
+  async function tour(force) {
+    if (root.style.display === 'none' || tourRunning()) return;
+    const des = root.querySelector('.fwd-win');
+    if (root.classList.contains('afe')) { const m = await import('./fw_afe.js'); runTour('afe', m.afeTourSteps(), { force }); return; }
+    if (des) { const m = await import('./fw_designers.js'); runTour(des.dataset.kind + '-designer', m.designerTourSteps(des.dataset.kind), { force }); return; }
+    runTour('mixmaster', await fullTour(), { force, onEnd: async () => {
+      closePanels(); await ensureEditor(null);
+      ['afe', 'laser-designer', 'jet-designer'].forEach(markSeen);   // covered by this tour
+    } });
+  }
   $('#fw-tour', root).onclick = () => tour(true);
 
   window.__fwdebug = {   // for tests

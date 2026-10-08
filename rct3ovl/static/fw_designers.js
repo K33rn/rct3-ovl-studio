@@ -147,6 +147,7 @@ function designer(ctx, kind, def, key, cfg) {
   const ext = kind === 'laser' ? 'las' : 'wjt';
   let handle = ctx.previewEffect(kind, def, { loop: true }), raf = 0;
   const w = makeWindow(ctx, cfg.title, () => { handle?.stop(); cancelAnimationFrame(raf); });
+  w.dataset.kind = kind;
   const body = w.querySelector('.body');
   const list = () => Object.values(ctx.REG[kind]).sort((a, b) => a.title.localeCompare(b.title));
   body.innerHTML = `
@@ -211,17 +212,7 @@ function designer(ctx, kind, def, key, cfg) {
   const tick = () => { lines.forEach(l => l.draw()); cfg.tick?.(def, body, handle); raf = requestAnimationFrame(tick); };
   raf = requestAnimationFrame(tick);
   cfg.after?.(def, body);
-  setTimeout(() => runTour('designers', [
-    { target: () => w.querySelector('[data-d="fields"]'), title: 'Designer settings',
-      html: `<p>The effect's name, type and length, and its basic settings. For lasers: <b>power</b> (how far the beams reach), <b>no. beams</b>,
-        <b>trail persistence</b> (afterglow) and, for image lasers, the image scale. Your changes play straight away in the 3D view.</p>` },
-    { target: () => w.querySelector('[data-d="lines"]'), title: 'Timelines of control points',
-      html: `<p>Each line changes one thing over the effect's run (colour, rotation speed, elevation, beam width / pressure, jet radius…).
-        Click an empty spot to add a point, drag a point to move it, right-click to delete it, and set the selected point's value underneath.</p>` },
-    { target: () => w.querySelector('.row'), title: 'Load and save',
-      html: `<p><b>Load</b> any game effect (as a copy) or one of yours, <b>New</b> starts fresh. <b>Save</b> adds it to your palette, <b>Save to game</b>
-        writes the game file, <b>Download</b> saves it. The window can be dragged by its title bar.</p>` },
-  ]), 700);
+  setTimeout(() => runTour(kind + '-designer', designerTourSteps(kind)), 700);
   return w;
 }
 
@@ -348,4 +339,34 @@ function sketchPad(ctx, im, done) {
     if (a === 'ok') { Object.assign(im, work); close(); done(); }
   });
   paint();
+}
+
+// the walkthrough of a designer window (also part of the MixMaster tour)
+export function designerTourSteps(kind) {
+  const q = s => () => document.querySelector('#fw .fwd-win ' + s);
+  const laser = kind === 'laser';
+  return [
+    { target: () => document.querySelector('#fw .fwd-win header'), title: laser ? 'The Advanced Laser Designer' : 'The Advanced WaterJet Designer',
+      html: laser ? `<p>Designs a laser effect. While this window is open the laser plays on a laser dome in the 3D view (or in the middle of the scene),
+        looping, so you see every change straight away. Drag the window by its title bar.</p>`
+        : `<p>Designs a water jet. It plays on a water jet base in the 3D view while you edit. Drag the window by its title bar.</p>` },
+    { target: q('[data-d="fields"]'), title: 'Settings',
+      html: laser ? `<ul><li><b>Type:</b> <i>Cone of Light</i> (beams around a turning cone), <i>Plane of Light</i> (a fan of beams) or
+        <i>Persisting Image</i> (draws pictures).</li><li><b>Duration</b> in seconds; <b>Power</b>: how far the beams reach (m);
+        <b>Trail Persist.</b>: afterglow behind moving beams; <b>No. beams</b>.</li>
+        <li><b>Scale settings with duration</b> stretches the timelines when you change the length. Image lasers add <b>Scale</b> and
+        <b>Centralise image projection</b>, and a row of picture frames: click one to draw it on a sketch pad (or load one of the game's drawings),
+        right-click to delete it.</li></ul>`
+        : `<p>Name, <b>duration</b> and type. <b>Scale settings with duration</b> stretches the timelines when you change the length.</p>` },
+    { target: q('[data-d="lines"]'), title: 'Timelines of control points',
+      html: laser ? `<p><b>Color</b> (with brightness), <b>Rotation speed</b>, <b>Elevation</b> (angle above the horizon) and <b>Beam width</b>, each
+        changing over the laser's run. Click an empty spot to add a point, drag a point to move it (up / down changes its value), right-click to delete
+        it, and type exact values underneath. The red line shows where the preview is.</p>`
+        : `<p><b>Pressure</b> (how fast the water leaves the nozzle, so how high it goes), <b>Elevation</b> (tilt from straight up, for sweeping
+        sprinklers), <b>Jet radius</b> and <b>Color</b> over the jet's run. Click to add a point, drag to move, right-click to delete.</p>` },
+    { target: q('.row'), title: 'Load and save',
+      html: `<p><b>Load</b> any game ${laser ? 'laser' : 'water jet'} (as a copy) or one of yours; <b>New</b> starts fresh. <b>Save</b> adds it to your
+        palette, <b>Save to game</b> writes a <code>.${laser ? 'las' : 'wjt'}</code> into the game folder, <b>Download</b> saves the file, and
+        <b>Delete selected</b> removes one of yours. ✕ closes the window.</p>` },
+  ];
 }

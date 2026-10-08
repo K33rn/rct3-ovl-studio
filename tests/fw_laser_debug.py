@@ -5,7 +5,7 @@ with sync_playwright() as p:
     pg = b.new_page(viewport={'width': 1300, 'height': 800})
     logs = []
     pg.on('console', lambda m: m.type in ('error', 'warning') and logs.append(m.text[:400]))
-    pg.goto(sys.argv[1] + '/'); pg.evaluate('localStorage.clear()'); pg.goto(sys.argv[1] + '/#fireworks')
+    pg.goto(sys.argv[1] + '/'); pg.evaluate('localStorage.clear(); [`main`, `mixmaster`, `afe`, `laser-designer`, `jet-designer`].forEach(k => localStorage.setItem(`rct3ovl.tour.` + k, `1`))'); pg.goto(sys.argv[1] + '/#fireworks')
     pg.wait_for_selector('#fw .ent', timeout=180000); pg.wait_for_timeout(1500)
     pg.evaluate("window.__fwdebug.ctx.previewEffect('laser', window.__fwdebug.REG.laser['SpinMaster.las'], {loop: true})")
     pg.wait_for_timeout(3000)

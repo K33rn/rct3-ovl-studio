@@ -13,7 +13,7 @@ with sync_playwright() as p:
     errors = []
     pg.on('pageerror', lambda e: errors.append('pageerror: ' + str(e)))
     pg.on('response', lambda r: r.status >= 400 and 'favicon' not in r.url and errors.append(f'{r.status} {r.url}'))
-    pg.goto(base + '/'); pg.evaluate('localStorage.clear()'); pg.goto(base + '/#fireworks')
+    pg.goto(base + '/'); pg.evaluate('localStorage.clear(); [`main`, `mixmaster`, `afe`, `laser-designer`, `jet-designer`].forEach(k => localStorage.setItem(`rct3ovl.tour.` + k, `1`))'); pg.goto(base + '/#fireworks')
     pg.wait_for_selector('#fw .ent', timeout=180000); pg.wait_for_timeout(1500)
     D = 'window.__fwdebug'
     pg.once('dialog', lambda d: d.accept()); pg.click('#fw-new'); pg.wait_for_timeout(2000)

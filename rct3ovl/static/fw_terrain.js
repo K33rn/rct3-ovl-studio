@@ -176,7 +176,33 @@ export function createTerrain(scene) {
     refreshGround();
   }
 
-  return { ground, heightAt, setGround, waterAt, brush, getData, setData, mirrorLevel, showRing, hasWater: () => mask.visible };
+  // where a ray meets the ground, worked out from the height grid (much cheaper than testing the 20,000-triangle mesh,
+  // which made dragging things over the view lag): march along the ray, then halve the last step a few times
+  function raycast(ray) {
+    const o = ray.origin, d = ray.direction, above = t => o.y + d.y * t - heightAt(o.x + d.x * t, o.z + d.z * t);
+    // the stretch of the ray over the landscape square
+    let t0 = 0, t1 = 3000;
+    for (const [p, v] of [[o.x, d.x], [o.z, d.z]]) {
+      if (Math.abs(v) < 1e-9) { if (p < -HALF || p > HALF) { t1 = -1; break; } continue; }
+      let a = (-HALF - p) / v, b = (HALF - p) / v; if (a > b) [a, b] = [b, a];
+      t0 = Math.max(t0, a); t1 = Math.min(t1, b);
+    }
+    if (t1 > t0 && above(t0) > 0) {
+      let prev = t0;
+      for (let t = t0 + 1; t <= t1 + 1; t += 1) {
+        if (above(Math.min(t, t1)) <= 0) {
+          let lo = prev, hi = Math.min(t, t1);
+          for (let k = 0; k < 10; k++) { const m = (lo + hi) / 2; if (above(m) > 0) lo = m; else hi = m; }
+          return new THREE.Vector3(o.x + d.x * hi, o.y + d.y * hi, o.z + d.z * hi);
+        }
+        prev = t;
+      }
+    }
+    if (d.y < -1e-6) { const t = -o.y / d.y; if (t > 0 && t < 3000) return new THREE.Vector3(o.x + d.x * t, 0, o.z + d.z * t); }   // the flat ground beyond
+    return null;
+  }
+
+  return { ground, heightAt, raycast, setGround, waterAt, brush, getData, setData, mirrorLevel, showRing, hasWater: () => mask.visible };
 }
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));

@@ -231,8 +231,11 @@ the models to match.
 ### `psi`: ParticleSkin (41)
 - **What it is:** the look of one kind of particle.
 - **In the game:** sparks, flares, smoke, splashes, fountain spray and fireworks.
-- **Inside:** blending settings and the particle picture sheet it draws from (`ParticlePage01`…).
-- **You get:** the sheet as a PNG via its `tex`; the record as `data/psi/*.fields.json`.
+- **Inside:** a rectangle on a particle picture sheet (`ParticlePage01`…): u0, v0, u1, v1, with v measured from the
+  bottom. Firework flares keep their glow in the colour channels with alpha 0; the game adds them onto the
+  scene.
+- **You get:** the sheet as a PNG via its `tex`; the record as `data/psi/*.fields.json`. The Fireworks editor
+  draws its sparks with these.
 - **Found in:** `Particles`.
 
 ## People
@@ -575,3 +578,25 @@ Variant names:
 | VF, VM | VIP female / male |
 
 Other variants are staff and specials.
+
+## Fireworks (outside the OVLs)
+Fireworks and firework shows are plain files next to the OVLs. They use the same self-describing save format as
+the premade ride designs (`.trk`), without the header. The viewer's **Fireworks** tab reads both.
+
+### `.frw`: a firework (28, `Fireworks\`)
+- **What it is:** one firework type, e.g. Green Peony or Titan Missile.
+- **Inside:** a tree of particles. The base releases particles; each particle can release more while it lives
+  (trails) or as it dies (the burst). Each emitter releases a number of particles between two points of its
+  parent's life, at a speed along the parent's heading, plus random scatter (in a sphere for round bursts, in a ring
+  for wagon wheels) and part of the parent's speed. Each particle has a lifetime, start and end size, drag,
+  gravity, stretch along its motion, colour curves, a `psi` sprite and an optional sound (`snd`). The
+  in-game name (`%%FireworkNameNN`) is a `txt`.
+
+### `.fwd`: a firework show (4, `FireworkDisplays\`)
+- **What it is:** a premade display, e.g. Stratosphere.
+- **Inside:** the launchers placed for it (type, tile column and row, facing) and a list of launches: firework,
+  launcher, tube, time and timeline track. Also its music (`Music\*.wma`), its start time of day and the months it
+  runs.
+- **Launchers:** the mortars (`Mortarx1`, `Mortarx16`, `MortarWallx8`), the Catherine wheel (`CWFW`), the laser
+  dome and the water jet. Each tube runs from a `fireworkstartNN` point to a `fireworkendNN` point in the
+  launcher's model; on the spinning Catherine wheel these points are bones.

@@ -222,3 +222,21 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - List cached in ~/.rct3ovl/scenery2_<root>.json (keyed on the index file's mtime).
 - Viewer: 5th tab, /api/scenery + /api/scenery_item; category groups with theme subgroups; the resource filter now
   filters tab lists in place (filterList). Tabs: 3+2 below 400 px column width, 5 in a row above.
+
+## 2026-10-07: Fireworks tab (full-window show editor)
+- .frw / .fwd = the trk save format with no header (type count at offset 0); Trk(start=None) detects it.
+- .frw: ParticleBaseDesc -> ParticleEmitterDescs -> ParticleDesc -> ... Emitter Start/EndTime are fractions of the
+  parent's life; NumParticles, ParticleSpeed along the parent's heading (the tube for the base), SpeedRandom
+  (sphere), SpeedRandomCircle (ring), ParentSpeedFactor, PositionRandom(Circle), TimeRandom, Spin*, ParticleRelative.
+  Particles: Lifetime(+Random), Start/EndSize, SizeRandom, Drag, GravityScale, VelStretch, ColourR/G/B curves
+  (times 0..1 of life), ColourA constant 0 (additive glow) or 1 (blended), TextureNameReduced -> psi, SoundName -> snd.
+  Names %%FireworkNameNN -> FireworkNameNN:txt.
+- .fwd SavedFireworkDisplay: Entries {Name, SceneryEntry, SlotIndex, Time, Track (int bits in a float32)},
+  SceneryEntries {Row, Col, Dir, Corner, SID -> SIDDatabaseEntry.SYMBOLNAME}, MusicSelection (Music\*.wma).
+- psi ParticleSkin: u32 1, rect* -> {ptr, u0, v0, u1, v1} (v from bottom), +8 texture import (ParticlePage01).
+  Flare sprites: RGB glow, alpha 0 everywhere -> draw with one+one blending (multiplying by alpha made them black).
+- Launchers: tube N = effect points fireworkstartNN -> fireworkendNN (shs); bones on the animated CWFW.
+- fireworks.py + /api/fw/*; static/fireworks.js: instanced stretched quads, fixed-step sim, bloom, CSS2D labels,
+  WebAudio sounds by distance, music via ffmpeg (imageio-ffmpeg added to the .bat) cached as ogg in ~/.rct3ovl/music.
+- Bug found by tests/fw_debug.py: the server dropped emitters' NumParticles when trimming fields -> nothing burst.
+- Double-click on the timeline is detected in pointerdown (the redraw between clicks swallowed dblclick).

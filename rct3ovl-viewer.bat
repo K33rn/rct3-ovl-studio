@@ -37,5 +37,5 @@ if errorlevel 1 (
 
 echo Starting the viewer for "%GAME%"
 echo (the first start indexes the game, which takes about a minute)
-uv run --no-project --with numpy --with pillow python -m rct3ovl view "%GAME%"
+uv run --no-project --with numpy --with pillow --with imageio-ffmpeg python -m rct3ovl view "%GAME%"
 pause

@@ -41,8 +41,8 @@
           padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
   .head { container-type: inline-size; }
   /* narrow: 3 on top, 2 below (spanning 2 of 6 / 3 of 6 columns); wide: all 5 in one row */
-  .tabs button { grid-column: span 2; } .tabs button:nth-child(n+4) { grid-column: span 3; }
-  @container (min-width: 400px) { .tabs { grid-template-columns: repeat(5, 1fr); } .tabs button, .tabs button:nth-child(n+4) { grid-column: auto; } }
+  .tabs button { grid-column: span 2; }   /* narrow: 3 per row, two rows; wide: all 6 in one row */
+  @container (min-width: 520px) { .tabs button { grid-column: span 1; } }
   .subgroup { padding: 6px 12px 1px 18px; color: var(--dim); font-size: 11px; letter-spacing: .3px; }
   .subgroup small { opacity: .7; }
   #rootinfo { overflow-wrap: anywhere; }
@@ -122,6 +122,7 @@
         <button id="b-rides" title="Flat rides with their ride animations">Thrill Rides</button>
         <button id="b-designs" title="The game's premade roller coaster and tracked ride designs, built from their track pieces">Ride Designs</button>
         <button id="b-scenery" title="Every scenery item's 3D model: trees, walls, animatronics, path extras, stalls… with their animations">Scenery</button>
+        <button id="b-fireworks" title="Fireworks show editor: the game's firework displays and fireworks, simulated in 3D (opens full window)">Fireworks</button>
       </nav>
       <div class="sub" id="rootinfo">loading…</div>
       <input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="margin-top:8px"></div>
@@ -180,7 +181,8 @@ const clock = new THREE.Clock();
 
 function resize() { const r = stage.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(1, r.height); camera.updateProjectionMatrix(); }
 new ResizeObserver(resize).observe(stage); resize();
-renderer.setAnimationLoop(() => { const dt = clock.getDelta(); if (mixer && playing) mixer.update(dt); controls.update(); renderer.render(scene, camera); });
+const viewerLoop = () => { const dt = clock.getDelta(); if (mixer && playing) mixer.update(dt); controls.update(); renderer.render(scene, camera); };
+renderer.setAnimationLoop(viewerLoop);
 
 let gridTile = 0;   // 4 for ride designs: draw RCT3 tiles
 function frame(obj) {
@@ -264,7 +266,7 @@ let ovls = [], selOvl = null, tracksets = [];
 async function loadTree() {
   const t = await (await fetch('/api/tree')).json();
   ovls = t.ovls; $('rootinfo').textContent = `${ovls.length} OVL pairs · ${t.root}`;
-  renderTree(''); msg('Pick an OVL on the left, or a tab: Peeps, Thrill Rides, Ride Designs, Scenery');
+  renderTree(''); msg('Pick an OVL on the left, or a tab: Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks');
   // track pieces per ride arrive a moment later (the first time, the server scans the track files)
   fetch('/api/tracksets').then(r => r.json()).then(s => { tracksets = s; renderTree($('treefilter').value); }).catch(() => {});
 }
@@ -689,9 +691,26 @@ async function showTypes(tag) {
 $('b-types').onclick = () => showTypes();
 
 // tabs: highlight the one in use; opening an OVL from the tree clears it
-const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs', 'b-scenery'];
+const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs', 'b-scenery', 'b-fireworks'];
 function setTab(id) { TABS.forEach(t => $(t).classList.toggle('active', t === id)); }
-TABS.forEach(id => $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
+TABS.forEach(id => id !== 'b-fireworks' && $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
+
+// Fireworks: a full-window editor (static/fireworks.js) over the three columns; Back returns to what was open
+$('b-fireworks').onclick = async () => {
+  const before = TABS.find(t => $(t).classList.contains('active')) || null, hash = location.hash;
+  $('b-fireworks').textContent = 'Loading…';
+  try {
+    const { openFireworks } = await import('/fireworks.js');
+    renderer.setAnimationLoop(null);                       // the viewer's 3D view sleeps while the editor is open
+    document.getElementById('app').style.display = 'none';
+    await openFireworks({ onBack: () => {
+      document.getElementById('app').style.display = '';
+      renderer.setAnimationLoop(viewerLoop); clock.getDelta(); resize();
+      setTab(before); history.replaceState(null, '', hash === '#fireworks' ? '#' : hash || '#');
+    } });
+  } catch (e) { msg('Could not open the fireworks editor: ' + e, true); document.getElementById('app').style.display = ''; renderer.setAnimationLoop(viewerLoop); }
+  $('b-fireworks').textContent = 'Fireworks';
+};
 
 // column dividers: drag to resize the two list columns, double-click to reset; widths are remembered
 const COLS = { 1: ['--c1', 300], 2: ['--c2', 320] };
@@ -720,6 +739,7 @@ async function fromHash() {
   if (h.has('types')) return showTypes(h.get('types') || '');
   if (h.get('person')) { $('b-people').click(); return showPerson(h.get('person'), h.get('anim')); }
   if (h.get('ride')) { setTab('b-rides'); await $('b-rides').onclick(); return showRide(h.get('ride'), h.get('anim')); }
+  if (location.hash === '#fireworks') return $('b-fireworks').onclick();
   if (h.get('scenery')) { setTab('b-scenery'); await $('b-scenery').onclick(); return showScenery(h.get('scenery'), h.get('anim')); }
   if (h.get('design')) { setTab('b-designs'); await $('b-designs').onclick(); return showDesign(h.get('design')); }
   if (!h.get('ovl')) return;

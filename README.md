@@ -76,8 +76,18 @@ The buttons at the top:
 - **Thrill Rides** lists the flat rides (Pirate Ship, Top Spin, Ferris Wheel, Soaked! and Wild! rides, themed rides…) with their ride animations: Static, Start, Loop and Stop. Each ride opens playing its loop.
 - **Ride Designs** lists the game's 208 premade coasters and tracked rides (the `Coaster Designs` folder), grouped by ride type. Each is built from its track pieces into one 3D model, with its stats: excitement/intensity/nausea, top speed, length, drops, inversions and cost.
 - **Scenery** lists all 1,330 scenery items (trees and plants, scenery, animatronics, walls and roofs, fences, path extras, shops and stalls, entrances, ride events, pools, enclosures, terrain, effects), grouped by category and theme. Animated items are marked ⟳ and play their animation. The filter box narrows the list as you type.
+- **Fireworks** opens a full-window show editor; **← Back** (or Esc) returns to the viewer.
+  - It opens the game's firework shows (Haunted Skies, Lunar Lights, Pirate Pyrotechnics, Stratosphere), or a new show of your own.
+  - The 28 fireworks are simulated from the game's own particle data and drawn with its sprites, sounds and a glow effect.
+  - Preview any firework with ▶. Drag fireworks onto the timeline, or double-click an empty spot to add the one picked in the list.
+  - Drag a launch to move it in time or to another track. Pick its launcher, tube and colour in the right-hand panel.
+  - Set up launchers (mortars, mortar wall, Catherine wheel, laser dome, water jet) on park tiles. You can also click a launcher in 3D to pick it.
+  - Play, pause, scrub the timeline ruler, ¼× to 2× speed, the game's music (or any music file), and camera views.
+  - Keys: Space play, Delete remove, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+D duplicate, F fire the selected launch, +/- zoom.
+  - Your show is autosaved in the browser; **Save** downloads it as a `.fireworks.json` to **Open…** later.
+  - The game's `.wma` music is converted once with ffmpeg; `rct3ovl-viewer.bat` includes it (`--with imageio-ffmpeg`).
 - **File types** opens the guide to every file type.
-- The five tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery) sit under the title; the one in use is highlighted.
+- The six tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks) sit under the title; the one in use is highlighted.
 - Drag the thin divider on the right edge of either list column to make it wider or narrower (double-click a divider to reset it). Widths are remembered.
 - **Download** saves what you're looking at: `.glb`, `.png`, `.wav` or `.json`.
 

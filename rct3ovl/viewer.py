@@ -14,6 +14,7 @@ from .characters import build_person, carried_items, describe_variant, variants
 from .designs import build_design, design_files
 from .rides import build_ride, list_rides, track_sets
 from .scenery import build_scenery, list_scenery
+from . import fireworks as fw
 from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
@@ -48,6 +49,32 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
             try:
                 if u.path in ('/', '/index.html'):
                     return self.send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html; charset=utf-8')
+                if u.path == '/fireworks.js':
+                    return self.send(200, open(os.path.join(STATIC, 'fireworks.js'), 'rb').read(), 'text/javascript; charset=utf-8')
+                if u.path == '/api/fw/data':
+                    with lock:
+                        return self.js({'fireworks': fw.list_fireworks(lib), 'displays': fw.list_displays(lib),
+                                        'sprites': fw.sprites(lib), 'music': fw.music_list(lib),
+                                        'can_play_music': fw._ffmpeg() is not None, 'launchers': fw.LAUNCHERS})
+                if u.path == '/api/fw/page':
+                    with lock:
+                        png = fw.page_png(lib, q['name'])
+                    return self.send(200, png, 'image/png') if png else self.js({'error': 'no such page'}, 404)
+                if u.path == '/api/fw/sound':
+                    with lock:
+                        wav = fw.sound(lib, q['name'])
+                    return self.send(200, wav, 'audio/wav') if wav else self.js({'error': 'no such sound'}, 404)
+                if u.path == '/api/fw/launcher':
+                    with lock:
+                        res = fw.launcher(lib, q['name'])
+                    if res is None:
+                        return self.js({'error': 'no such launcher'}, 404)
+                    return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1])})
+                if u.path == '/api/fw/music':
+                    data = fw.music(lib, q['name'])          # may take a few seconds the first time (conversion)
+                    if data is None:
+                        return self.js({'error': 'could not convert the music (needs ffmpeg: start the viewer with --with imageio-ffmpeg)'}, 404)
+                    return self.send(200, data, 'audio/ogg')
                 if u.path == '/filetypes.md':
                     return self.send(200, open(os.path.join(STATIC, 'filetypes.md'), 'rb').read(), 'text/markdown; charset=utf-8')
                 if u.path == '/api/tree':

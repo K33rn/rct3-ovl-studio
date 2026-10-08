@@ -25,8 +25,11 @@ class _Field:
 
 
 class Trk:
-    def __init__(self, data: bytes):
+    def __init__(self, data: bytes, start: int | None = None):
+        """start: offset of the type count; designs (.trk) have an 80-byte header first, firework files (.frw,
+        .fwd) start with it. Found automatically when not given."""
         self.b = data
+        self.start = start if start is not None else (0 if 0 < struct.unpack_from('<I', data, 0)[0] < 400 else 80)
         self.types: list[tuple[str, list[_Field]]] = []
         self.objects: dict[int, tuple[str, dict]] = {}
         self.order: list[int] = []
@@ -53,9 +56,9 @@ class Trk:
 
     def _parse(self):
         b = self.b
-        p = 84
+        p = self.start + 4
         ntypes = self._u32(p - 4)
-        if not 0 < ntypes < 200:
+        if not 0 < ntypes < 400:
             raise TrkError('not a design file')
         for _ in range(ntypes):
             name, p = self._lstr(p)

@@ -268,3 +268,6 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   'normal' first); flare thumbnails black (2D canvas drops RGB of alpha-0 pixels: /api/fw/page?opaque=1).
 - WebGLRenderer needs stencil: true and the composer a stencil render target (reflections only where water is).
 - AFE unlocked: no name prompt any more (afeUnlocked() always true); the button shows ✎ and opens the editor directly.
+- Fix: AFE view stretched sideways. setAfeMode hid the side panels before the AFE panes were added, so the view sat in
+  the 280 px left column when resize() ran; it then returned to its old size, so the ResizeObserver never fired and the
+  canvas stayed 280 px wide (aspect 0.40 for a 1.86 view). Now resizes two frames later. tests/fw_afe_aspect.py.

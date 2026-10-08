@@ -897,7 +897,9 @@ async function build() {
       return fireNow({ kind, firework: null, launcher: li, slot: opts.slot ?? 0, tint: null }, { def, loop: opts.loop });
     },
     previewLauncher: kind => compatibleLauncher(kind),
-    setAfeMode(on) { root.classList.toggle('afe', on); resize(); },
+    // resize once the AFE's own panels are in place: in between, the view briefly sits in the narrow left column, and
+    // as it ends up the same size as before, the resize observer never fires (the view stayed squeezed: stretched look)
+    setAfeMode(on) { root.classList.toggle('afe', on); requestAnimationFrame(() => requestAnimationFrame(resize)); },
     reload: () => $('#fw-reload', root).onclick(),
     newLaser: defaultLaser, newJet: defaultJet,
     particleCount: () => parts.length,

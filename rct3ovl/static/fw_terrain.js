@@ -23,10 +23,20 @@ export function createTerrain(scene) {
   c2.strokeStyle = 'rgba(0,0,0,0.28)'; c2.lineWidth = 2; c2.strokeRect(0, 0, 64, 64);
   const gridTex = new THREE.CanvasTexture(cv); gridTex.wrapS = gridTex.wrapT = THREE.RepeatWrapping; gridTex.repeat.set(N, N);
   gridTex.anisotropy = 8; gridTex.colorSpace = THREE.SRGBColorSpace;
-  const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, map: gridTex }));
+  const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: gridTex });
+  const ground = new THREE.Mesh(geo, groundMat);
   ground.receiveShadow = false; ground.name = 'terrain';
   scene.add(ground);
-  const outer = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x0a130d }));
+  // tile lines drawn over a textured ground (switchable)
+  const lc = document.createElement('canvas'); lc.width = lc.height = 64;
+  const l2 = lc.getContext('2d'); l2.strokeStyle = 'rgba(255,255,255,0.55)'; l2.lineWidth = 2; l2.strokeRect(0, 0, 64, 64);
+  const lineTex = new THREE.CanvasTexture(lc); lineTex.wrapS = lineTex.wrapT = THREE.RepeatWrapping; lineTex.repeat.set(N, N); lineTex.anisotropy = 8;
+  const lines = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: lineTex, transparent: true, opacity: 0.35, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  lines.renderOrder = 0.5; lines.visible = false; scene.add(lines);
+  let textured = false;
+  const outerMat = new THREE.MeshLambertMaterial({ color: 0x0a130d });
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2), outerMat);
   outer.position.y = -0.05; scene.add(outer);
 
   // ---- water: a mask (stencil 1 where water is) and the surface ----
@@ -54,10 +64,14 @@ export function createTerrain(scene) {
       const k = vi(i, j), y = h[k];
       pos.setY(k, y);
       const sl = Math.min(1, (Math.abs(h[vi(Math.min(i + 1, N), j)] - h[vi(Math.max(i - 1, 0), j)]) + Math.abs(h[vi(i, Math.min(j + 1, N))] - h[vi(i, Math.max(j - 1, 0))])) / 6);
-      let r = 0.05, g = 0.11, b = 0.06;                                         // night grass
-      r += sl * 0.08; g += sl * 0.02; b += sl * 0.02;                          // steeper: earth
-      if (y > 12) { const k2 = Math.min(1, (y - 12) / 20); r += k2 * 0.08; g += k2 * 0.06; b += k2 * 0.07; }   // high: rock
-      if (y < -0.5) { r = 0.09; g = 0.08; b = 0.05; }                          // dug out: mud / sand
+      let r, g, b;
+      if (textured) { const s = 1 - sl * 0.35; r = g = b = s; }                 // a game ground texture: light shading only
+      else {
+        r = 0.05; g = 0.11; b = 0.06;                                          // plain night grass
+        r += sl * 0.08; g += sl * 0.02; b += sl * 0.02;                        // steeper: earth
+        if (y > 12) { const k2 = Math.min(1, (y - 12) / 20); r += k2 * 0.08; g += k2 * 0.06; b += k2 * 0.07; }   // high: rock
+        if (y < -0.5) { r = 0.09; g = 0.08; b = 0.05; }                        // dug out: mud / sand
+      }
       col.setXYZ(k, r, g, b);
     }
     pos.needsUpdate = col.needsUpdate = true; geo.computeVertexNormals(); geo.computeBoundingSphere();
@@ -144,7 +158,25 @@ export function createTerrain(scene) {
     ring.visible = true; ring.scale.setScalar(radiusTiles * TILE); ring.position.set(x, heightAt(x, z) + 0.3, z);
   }
 
-  return { ground, heightAt, waterAt, brush, getData, setData, mirrorLevel, showRing, hasWater: () => mask.visible };
+  // ground look: tex = a THREE.Texture of the game's ground (repeating every 2 tiles) or null for plain night grass
+  // with tile lines; gridLines draws tile lines over a textured ground
+  function setGround(tex, gridLines) {
+    textured = !!tex;
+    if (tex) { tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(N / 2, N / 2); tex.anisotropy = 8; tex.colorSpace = THREE.SRGBColorSpace; }
+    groundMat.map = tex || gridTex; groundMat.needsUpdate = true;
+    // the ground beyond the landscape: the same texture (no seam at the edge), or plain dark grass
+    if (tex) { const o = tex.clone(); o.repeat.set(500, 500); o.needsUpdate = true; outerMat.map = o; outerMat.color.setScalar(0.9); }
+    else { outerMat.map = null; outerMat.color.set(0x0a130d); }
+    outerMat.needsUpdate = true;
+    lines.visible = !!tex && gridLines;
+    // the plain ground's own tile lines follow the same switch
+    c2.fillStyle = '#ffffff'; c2.fillRect(0, 0, 64, 64);
+    if (gridLines) { c2.strokeStyle = 'rgba(0,0,0,0.28)'; c2.strokeRect(0, 0, 64, 64); }
+    gridTex.needsUpdate = true;
+    refreshGround();
+  }
+
+  return { ground, heightAt, setGround, waterAt, brush, getData, setData, mirrorLevel, showRing, hasWater: () => mask.visible };
 }
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));

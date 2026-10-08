@@ -87,6 +87,12 @@ The buttons at the top:
   - **Per launch:** time, track, launcher and tube, colour (the game's colour modifier), and strength for fireworks (more or fewer particles, the game's strength modifier).
   - **Base aiming controls:** click the *Aiming* bar above the tracks to add an angle control point for the selected launcher. Set its turn and tilt in the right-hand panel, or drag a green-highlighted launcher in 3D. One point can control several launchers (tick them). Right-click a point to remove it.
   - **Landscape:** raise, lower, smooth and flatten the ground, and paint water at a level. Fireworks and lasers reflect in the water.
+  - **Placing things in 3D:** the **Bases** tab shows the six MixMaster bases with pictures. Drag one into the 3D view: a see-through preview follows the mouse and it is placed where you let go.
+    - Drag a firework, laser or water jet into the 3D view as well. Drop it on a matching launcher, or on the ground to place a new matching base there. It is added at the playhead on a free track.
+    - Drag a launcher in the 3D view to move it. **R** turns the selected launcher (Shift+R the other way).
+  - **Grid snap** (top bar): on, bases snap to park tiles, and the small ones (single mortar, laser dome, water jet) to tile corners, as in the game; R turns a quarter. Off, bases go anywhere and R turns 15°. Export to RCT3 snaps free placements to the nearest tile.
+  - **Scene** (top bar): time of day (Day, Sunset, Night) with the game's sky colours, clouds and stars; a skyline backdrop (Hill, City, Desert, Island, Mountain, Snow, Spooky, Space); tile grid lines on or off; and the ground texture (plain night grass, or any of the game's 32 ground textures). Kept with the show.
+  - **$** (palette footer) shows or hides all prices.
   - **Show settings:** name, daily start time, the months it plays, and music (the game's tracks or any music file).
   - **Playback:** play, pause, stop and rewind, scrub the ruler, ¼× to 2× speed. Change the time scale with − / +.
   - **Cameras:** crowd view, autolook (follows the bursts), close up, top down, slow orbit and freelook.

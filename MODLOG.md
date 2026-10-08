@@ -273,3 +273,19 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   canvas stayed 280 px wide (aspect 0.40 for a 1.86 view). Now resizes two frames later. tests/fw_afe_aspect.py.
 - Fix: landscape panel sliders ran past the panel (range inputs' intrinsic width grew the 1fr column): minmax(0, 1fr)
   + width 100% / min-width 0. tests/fw_land_panel.py checks every control is inside.
+
+## 2026-10-07: MixMaster placement, prices, scene
+- Prices toggle ($): CSS class noprices hides every .price (palette, inspector, show totals); remembered.
+- Bases tab: the 6 launchers with pictures rendered once in an offscreen WebGLRenderer. HTML5 drag into the 3D view
+  (dragState kept in JS: dataTransfer data is unreadable during dragover): ghost model + ring follows the ground
+  (snapped), drag card shows what/where. Effects dropped on a matching launcher, or on the ground (new matching base),
+  at the playhead on the first free track. Launchers move by dragging in 3D; R / Shift+R turn them.
+- Grid snap: big bases on tile centres, small ones (Mortarx1, LazerDome, WaterJet) in tile corners (corner 0-3);
+  off: fractional col/row, corner -1, free angle (l.angle, 15° steps). The view centre is fixed once a show opens
+  (re-centring on every change made placed things jump). Export rounds to tiles / quarter turns.
+- Scene: sky dome shader on Sky\skycolour (x = time of day: 0.2 day, 0.72 sunset, 0.985 night; y = zenith..horizon,
+  sampled with sqrt(height)), clouds and stars textures (must repeat: clamped they smeared into bright bands), skyline
+  backdrop = background<name>1 + 2 joined in a canvas around a cylinder (separate panels left gaps). Ground: the 32
+  Terrain_NN textures (no names in the game; named by look) repeating every 2 tiles, the outer ground too, optional
+  tile-line overlay. /api/fw/tex?name= serves any game texture. Day: bloom threshold 0.92 (else the sky washed white).
+- tests/ui_place.py.

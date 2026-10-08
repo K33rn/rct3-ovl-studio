@@ -21,6 +21,17 @@ const KINDS = { firework: { tab: 'Fireworks', one: 'firework', icon: '' }, laser
                 jet: { tab: 'Water Jets', one: 'water jet', icon: '≈ ' } };
 const fits = (kind, type) => kind === 'laser' ? type === 'LazerDome' : kind === 'jet' ? type === 'WaterJet' : type !== 'LazerDome' && type !== 'WaterJet';
 const BASE_FOR = { firework: 'Mortarx16', laser: 'LazerDome', jet: 'WaterJet' };
+const SMALL_BASES = new Set(['Mortarx1', 'LazerDome', 'WaterJet']);   // quarter-tile items (placed in a tile corner)
+const BASE_INFO = { Mortarx16: 'Rack of 16 tubes for fireworks', Mortarx1: 'One firework tube (quarter tile)', MortarWallx8: 'Wall of 8 tubes for fireworks',
+  CWFW: 'Spinning Catherine wheel for fireworks', LazerDome: 'Fires lasers (quarter tile)', WaterJet: 'Fires water jets (quarter tile)' };
+// the game's 32 ground textures (Terrain_00..31), named by look
+const GROUNDS = ['Cracked dirt', 'Patchy grass', 'Sand', 'Dirt', 'Striped lawn', 'Checked lawn', 'Grass', 'Wild grass', 'Moss', 'Brown earth',
+  'Daisy meadow', 'Rough grass', 'Dry mud', 'Gravel', 'Rock', 'Pink marble', 'Red earth', 'Grey rock', 'Dark slate', 'Ice', 'Snow', 'Fresh snow',
+  'Snowy rock', 'Red brick', 'Paving slabs', 'Cobbles', 'Pebbly sand', 'Crazy paving', 'Stone tiles', 'Rippled sand', 'Beach sand', 'Dark rock'];
+const BACKDROPS = ['Hill', 'City', 'Desert', 'Island', 'Mountain', 'Snow', 'Spooky', 'Space'];
+// time of day: column of the game's sky colour ramp (night -> day -> sunset -> night across), light levels, glow
+const SKIES = { day: { u: 0.2, hemi: 1.9, sun: 2.4, bloom: 0.35, thr: 0.92, stars: 0, fog: null }, sunset: { u: 0.72, hemi: 1.1, sun: 1.3, bloom: 0.7, thr: 0.6, stars: 0.25, fog: null },
+                night: { u: 0.985, hemi: 0.9, sun: 1.2, bloom: 1.1, thr: 0.12, stars: 1, fog: 0x03050b } };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -85,6 +96,18 @@ async function build() {
   #fw .land .tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
   #fw .land .tools button { padding: 4px 2px; font-size: 12px; } #fw .land .tools button.on { background: var(--sel); border-color: var(--accent); }
   #fw .land label { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 6px; color: var(--dim); }
+  #fw .scenep { left: auto; right: 10px; width: 300px; max-height: calc(100% - 20px); overflow: auto; }
+  #fw .grounds { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+  #fw .grounds button { padding: 0; height: 36px; border-radius: 6px; background-size: cover; background-position: center; border: 2px solid transparent; }
+  #fw .grounds button.on { border-color: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  #fw .grounds button.plain { background: #0d1a10; color: var(--dim); font-size: 10px; }
+  #fw .segs { display: flex; gap: 4px; } #fw .segs button { flex: 1; padding: 4px 2px; font-size: 12px; } #fw .segs button.on { background: var(--sel); border-color: var(--accent); color: var(--accent); }
+  #fw.noprices .price { display: none !important; }
+  #fw .base { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center; padding: 6px; border-radius: 8px; cursor: grab; user-select: none; border: 1px solid transparent; }
+  #fw .base:hover { background: var(--panel2); border-color: var(--line); }
+  #fw .base img { width: 64px; height: 64px; border-radius: 6px; background: radial-gradient(#2a3242, #0c0f16); }
+  #fw .base b { display: block; } #fw .base small { color: var(--dim); }
+  #fw .dragcard { position: fixed; z-index: 90; pointer-events: none; background: #0b0f18ee; border: 1px solid var(--accent); border-radius: 8px; padding: 4px 8px; font-size: 12px; display: none; white-space: nowrap; }
   #fw .land label > input { width: 100%; min-width: 0; margin: 0; box-sizing: border-box; }   /* sliders stay inside the panel */
   #fw .insp { padding: 4px 12px 14px; display: grid; gap: 7px; }
   #fw .insp label { display: grid; grid-template-columns: 82px 1fr; align-items: center; gap: 6px; color: var(--dim); font-size: 12px; }
@@ -165,17 +188,19 @@ async function build() {
     <input type="file" id="fw-mfile" accept="audio/*" hidden>
     <label title="Volume" style="display:flex;align-items:center;gap:4px;color:var(--dim);font-size:12px">🔊<input type="range" id="fw-vol" min="0" max="1" step="0.05" value="0.7" style="width:80px"></label>
     <span class="grow"></span>
+    <button id="fw-grid" class="on" title="Grid placement: launchers snap to park tiles (off: place anywhere, turn freely)">Grid snap</button>
     <button id="fw-land" title="Shape the ground and add water">Landscape</button>
+    <button id="fw-scenebtn" title="Time of day, backdrop, ground texture and grid lines">Scene</button>
     <button id="fw-bloom" class="on" title="Glow effect">Glow</button>
     <select id="fw-cam" title="Camera"><option value="crowd">Crowd view</option><option value="auto">Autolook</option><option value="close">Close up</option><option value="top">Top down</option><option value="orbit">Slow orbit</option><option value="free">Freelook</option></select>
   </div>
   <div class="side">
-    <div class="ptabs" id="fw-ptabs">${Object.entries(KINDS).map(([k, v]) => `<button data-k="${k}">${v.tab}</button>`).join('')}</div>
+    <div class="ptabs" id="fw-ptabs">${Object.entries(KINDS).map(([k, v]) => `<button data-k="${k}">${v.tab}</button>`).join('')}<button data-k="base" title="MixMaster bases: drag one into the 3D view to place it">Bases</button></div>
     <div class="create" id="fw-create"></div>
     <div style="padding:0 10px 6px"><input type="search" id="fw-search" placeholder="Search" style="width:100%"></div>
     <div class="scroll"><div class="lib" id="fw-lib"></div></div>
     <div style="padding:8px 12px;color:var(--dim);font-size:11px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center">
-      <span style="flex:1">▶ preview · ✎ edit · drag onto the timeline</span><button id="fw-reload" title="Reload all effects (new files in the game folder)" style="font-size:11px;padding:2px 6px">↻ Reload</button></div>
+      <span style="flex:1">▶ preview · ✎ edit · drag onto the timeline or into the 3D view</span><button id="fw-prices" class="on" title="Show or hide prices" style="font-size:11px;padding:2px 6px">$</button><button id="fw-reload" title="Reload all effects (new files in the game folder)" style="font-size:11px;padding:2px 6px">↻ Reload</button></div>
     <div class="colresize" data-v="--fwl" style="right:-4px"></div>
   </div>
   <div class="view" id="fw-view"><div class="stats" id="fw-stats"></div>
@@ -190,6 +215,13 @@ async function build() {
       <label>Water level<input type="number" id="fw-wlevel" value="0" step="0.5" style="width:100%"></label>
       <div class="row" style="display:flex;gap:6px"><button id="fw-flatall" style="flex:1">Flatten all</button><button id="fw-dryall" style="flex:1">Remove water</button></div>
       <div style="color:var(--dim);font-size:11px">Left-drag on the ground to use the tool · right-drag to pan · click the tool again to stop</div>
+    </div>
+    <div class="land scenep" id="fw-scenep">
+      <b>Scene</b>
+      <div><div style="color:var(--dim);margin-bottom:4px">Time of day</div><div class="segs" id="fw-sky"><button data-s="day">☀ Day</button><button data-s="sunset">Sunset</button><button data-s="night">☾ Night</button></div></div>
+      <label>Backdrop<select id="fw-backdrop"><option value="">None</option>${BACKDROPS.map(b => `<option>${b}</option>`).join('')}</select></label>
+      <label style="grid-template-columns:auto 1fr"><input type="checkbox" id="fw-gridlines" checked> Show tile grid lines</label>
+      <div><div style="color:var(--dim);margin-bottom:4px">Ground <span id="fw-groundname"></span></div><div class="grounds" id="fw-grounds"></div></div>
     </div>
     <div class="hint" id="fw-hint">Drag to orbit · right-drag to pan · wheel to zoom · click a launcher to select it</div><div class="toast" id="fw-toast"></div></div>
   <div class="side right">
@@ -209,7 +241,8 @@ async function build() {
     <div class="aimbar" id="fw-aimbar"></div>
     <div class="heads" id="fw-heads"></div>
     <div class="lanes" id="fw-lanes"><div class="canvas" id="fw-canvas"></div></div>
-  </div>`;
+  </div>
+  <div class="dragcard" id="fw-dragcard"></div>`;
   document.body.appendChild(root);
 
   // ---- data: the game's effects and yours (kept in this browser, and embedded in shows that use them) -----------
@@ -260,16 +293,52 @@ async function build() {
   const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 4000);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.495;
-  scene.add(new THREE.HemisphereLight(0x8090c0, 0x101810, 0.9));
+  const hemi = new THREE.HemisphereLight(0x8090c0, 0x101810, 0.9); scene.add(hemi);
   const moon = new THREE.DirectionalLight(0xbfd0ff, 1.2); moon.position.set(-60, 120, 80); scene.add(moon);
   const terrain = createTerrain(scene);
-  {
-    const n = 1500, pos = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, e = Math.random() * 1.3 + 0.08, r = 1500;
-      pos.set([Math.cos(a) * Math.cos(e) * r, Math.sin(e) * r, Math.sin(a) * Math.cos(e) * r], i * 3); }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xaab4ff, size: 1.6, sizeAttenuation: false, fog: false })));
+  // ---- sky: the game's sky colour ramp, clouds, stars and skyline backdrops ------------------------------------------
+  const texLoader = new THREE.TextureLoader(), gameTex = {};
+  function gtex(name, repeat) {
+    if (!gameTex[name]) { const tx = texLoader.load('/api/fw/tex?name=' + encodeURIComponent(name)); tx.colorSpace = THREE.SRGBColorSpace; gameTex[name] = tx; }
+    if (repeat) gameTex[name].wrapS = gameTex[name].wrapT = THREE.RepeatWrapping;   // (clamped, stars / clouds smeared into bright bands)
+    return gameTex[name];
   }
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: { ramp: { value: gtex('skycolour') }, stars: { value: gtex('stars', true) }, clouds: { value: gtex('clouds', true) }, u: { value: 0.985 }, starAmt: { value: 1 }, cloudAmt: { value: 0 }, time: { value: 0 } },
+    vertexShader: `varying vec3 vDir; void main() { vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+    fragmentShader: `uniform sampler2D ramp, stars, clouds; uniform float u, starAmt, cloudAmt, time; varying vec3 vDir;
+      void main() {
+        float h = clamp(vDir.y, 0.0, 1.0);
+        vec3 c = texture2D(ramp, vec2(u, mix(0.02, 0.98, sqrt(h)))).rgb;   // sqrt: the blue reaches lower, as in the game
+        vec2 su = vec2(atan(vDir.z, vDir.x) / 6.2832, h) * vec2(6.0, 3.0);
+        c += texture2D(stars, su).rgb * starAmt * smoothstep(0.0, 0.15, h);
+        if (vDir.y > 0.02) { vec2 cu = vDir.xz / (vDir.y + 0.25) * 1.6 + vec2(time * 0.004, 0.0); vec4 cl = texture2D(clouds, cu);
+          c = mix(c, mix(c, vec3(1.0), 0.85), cl.a * cloudAmt * smoothstep(0.02, 0.25, vDir.y)); }
+        gl_FragColor = vec4(c, 1.0);
+        #include <colorspace_fragment>
+      }`, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false });
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(3000, 48, 24), skyMat); sky.renderOrder = -10; sky.frustumCulled = false; scene.add(sky);
+  const backdrop = new THREE.Group(); scene.add(backdrop);
+  // skyline backdrop: the game's two halves (background<name>1, 2) joined into one strip, wrapped around a cylinder
+  let backdropSeq = 0;
+  async function setBackdrop(name) {
+    const my = ++backdropSeq;
+    backdrop.clear();
+    if (!name) return;
+    const load = n => fetch('/api/fw/tex?name=background' + name.toLowerCase() + n).then(r => r.blob()).then(createImageBitmap);
+    const [a, b] = await Promise.all([load(1), load(2)]).catch(() => [null, null]);
+    if (my !== backdropSeq || !a || !b) return;
+    const cv = document.createElement('canvas'); cv.width = a.width + b.width; cv.height = a.height;
+    const g = cv.getContext('2d'); g.drawImage(a, 0, 0); g.drawImage(b, a.width, 0);
+    const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace; tx.wrapS = THREE.RepeatWrapping; tx.repeat.set(5, 1);
+    const R = 1400, H = 420;
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(R, R, H, 96, 1, true),
+      new THREE.MeshBasicMaterial({ map: tx, transparent: true, alphaTest: 0.05, fog: false, depthWrite: false, side: THREE.BackSide }));
+    cyl.position.y = H / 2 - 60; cyl.renderOrder = -9;
+    backdrop.add(cyl);
+    backdrop.children.forEach(m => m.material.color.setScalar(S.show?.scene?.sky === 'night' ? 0.18 : S.show?.scene?.sky === 'sunset' ? 0.6 : 1));
+  }
+
   // the composer's buffers need a stencil: reflections are drawn only where the water mask wrote 1
   const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, stencilBuffer: true }));
   composer.addPass(new RenderPass(scene, camera));
@@ -525,9 +594,9 @@ async function build() {
     return [Math.round((x0 + x1) / 2), Math.round((z0 + z1) / 2)];
   }
   let centre = [0, 0], buildSeq = 0;
-  async function rebuildLaunchers() {
+  async function rebuildLaunchers(recentre = false) {
     const my = ++buildSeq;
-    centre = layoutCentre();
+    if (recentre) centre = layoutCentre();   // only when a show is opened: placing or moving a launcher keeps the view still
     const defs = await Promise.all(S.show.launchers.map(l => launcherDef(l.type)));
     if (my !== buildSeq) return;
     for (const o of launcherObjs) { launcherGroup.remove(o.obj); o.label?.element.remove(); o.mixer?.stopAllAction(); }
@@ -545,9 +614,22 @@ async function build() {
     placeAll(); obj3dMarkSel();
   }
   function placeLauncher(obj, l) {
-    const cx = ((l.corner ?? -1) >= 0 && /mortarx1$|waterjet|lazerdome/i.test(l.type)) ? [[-1, -1], [1, -1], [1, 1], [-1, 1]][l.corner & 3] : [0, 0];
-    const x = (l.col - centre[0]) * TILE + cx[0], z = (l.row - centre[1]) * TILE + cx[1];
+    const [x, z] = worldOf(l);
     obj.position.set(x, terrain.heightAt(x, z), z);
+  }
+  // world point -> launcher placement. Grid on: big bases on tile centres, small ones in a tile corner (as the game
+  // places them); grid off: anywhere (fractional tiles, no corner)
+  function placementAt(type, x, z) {
+    const tx = x / TILE + centre[0], tz = z / TILE + centre[1];
+    if (!S.grid) return { col: +tx.toFixed(3), row: +tz.toFixed(3), corner: -1 };
+    if (!SMALL_BASES.has(type)) return { col: Math.round(tx), row: Math.round(tz), corner: -1 };
+    const col = Math.round(tx), row = Math.round(tz), dx = tx - col, dz = tz - row;
+    return { col, row, corner: dz < 0 ? (dx < 0 ? 0 : 1) : (dx < 0 ? 3 : 2) };
+  }
+  function worldOf(l) {
+    const cx = ((l.corner ?? -1) >= 0 && SMALL_BASES.has(l.type)) ? [[-1, -1], [1, -1], [1, 1], [-1, 1]][l.corner & 3] : [0, 0];
+    const x = (l.col - centre[0]) * TILE + cx[0], z = (l.row - centre[1]) * TILE + cx[1];
+    return [x, z];
   }
   function placeAll() { launcherObjs.forEach((o, i) => S.show.launchers[i] && placeLauncher(o.obj, S.show.launchers[i])); applyAims(S.t); }
   // base aiming: control points {t, yaw, pitch (degrees), launchers: [indices]} on the aiming bar. A launcher points
@@ -566,7 +648,7 @@ async function build() {
     launcherObjs.forEach((o, i) => {
       const l = S.show.launchers[i]; if (!l) return;
       const a = aimAt(i, t);
-      o.obj.rotation.set(a.pitch * D2R, -(l.dir || 0) * Math.PI / 2 + a.yaw * D2R, 0, 'YXZ');
+      o.obj.rotation.set(a.pitch * D2R, -(l.dir || 0) * Math.PI / 2 + ((l.angle || 0) + a.yaw) * D2R, 0, 'YXZ');
       o.obj.updateMatrixWorld(true);
     });
   }
@@ -689,6 +771,33 @@ async function build() {
     for (const m of [ribbons.mirror, layers.add.mirror, layers.blend.mirror]) { m.visible = on; if (on) m.material.uniforms.level.value = lvl; }
   }
 
+  // ---- scene: time of day, backdrop, ground, grid lines (kept with the show) ------------------------------------------
+  const defScene = () => ({ sky: 'night', backdrop: '', ground: -1, gridLines: true });
+  function applyScene() {
+    const sc = S.show.scene = Object.assign(defScene(), S.show.scene || {}), k = SKIES[sc.sky] || SKIES.night;
+    skyMat.uniforms.u.value = k.u; skyMat.uniforms.starAmt.value = k.stars; skyMat.uniforms.cloudAmt.value = sc.sky === 'night' ? 0 : 1;
+    hemi.intensity = k.hemi; moon.intensity = k.sun;
+    hemi.color.set(sc.sky === 'day' ? 0xdfe8ff : sc.sky === 'sunset' ? 0xffc89a : 0x8090c0);
+    moon.color.set(sc.sky === 'day' ? 0xfff4e0 : sc.sky === 'sunset' ? 0xffa060 : 0xbfd0ff);
+    bloom.strength = k.bloom; bloom.threshold = k.thr;
+    scene.fog = k.fog ? new THREE.Fog(k.fog, 250, 900) : new THREE.Fog(sc.sky === 'day' ? 0xb8cce4 : 0x8a6a70, 400, 2200);
+    setBackdrop(sc.backdrop);
+    backdrop.children.forEach(m => m.material.color.setScalar(sc.sky === 'night' ? 0.18 : sc.sky === 'sunset' ? 0.6 : 1));
+    terrain.setGround(sc.ground >= 0 ? gtex('terrain_' + String(sc.ground).padStart(2, '0')) : null, sc.gridLines);
+    root.querySelectorAll('#fw-sky button').forEach(b => b.classList.toggle('on', b.dataset.s === sc.sky));
+    $('#fw-backdrop', root).value = sc.backdrop; $('#fw-gridlines', root).checked = sc.gridLines;
+    root.querySelectorAll('#fw-grounds button').forEach(b => b.classList.toggle('on', +b.dataset.g === sc.ground));
+    $('#fw-groundname', root).textContent = '(' + (sc.ground >= 0 ? GROUNDS[sc.ground] : 'plain night grass') + ')';
+  }
+  $('#fw-grounds', root).innerHTML = `<button class="plain" data-g="-1" title="Plain night grass">plain</button>` +
+    GROUNDS.map((g, i) => `<button data-g="${i}" title="${g}" style="background-image:url('/api/fw/tex?name=terrain_${String(i).padStart(2, '0')}')"></button>`).join('');
+  const setSceneVal = (k, v) => { snapshot(); S.show.scene = { ...(S.show.scene || defScene()), [k]: v }; applyScene(); changed(); };
+  $('#fw-sky', root).onclick = e => { const b = e.target.closest('button'); if (b) setSceneVal('sky', b.dataset.s); };
+  $('#fw-backdrop', root).onchange = e => setSceneVal('backdrop', e.target.value);
+  $('#fw-gridlines', root).onchange = e => setSceneVal('gridLines', e.target.checked);
+  $('#fw-grounds', root).onclick = e => { const b = e.target.closest('button'); if (b) setSceneVal('ground', +b.dataset.g); };
+  $('#fw-scenebtn', root).onclick = ev => { const on = !$('#fw-scenep', root).classList.contains('on'); $('#fw-scenep', root).classList.toggle('on', on); ev.target.classList.toggle('on', on); };
+
   // ---- show model ---------------------------------------------------------------------------------------------
   const blank = () => ({ name: 'My show', music: '', start_minutes: 1260, months: 65535, aim: [],
     launchers: [{ type: 'Mortarx16', row: 0, col: 0, dir: 0, corner: -1 }, { type: 'Mortarx1', row: 0, col: -3, dir: 0, corner: 0 },
@@ -713,10 +822,10 @@ async function build() {
   const tracks = () => Math.max(12, ...S.show.entries.map(e => e.track + 2));
   function setShow(show, keepT) {
     S.show = normShow(show); select([]); S.selLauncher = 0; S.selAim = null;
-    terrain.setData(show.terrain || null);
+    terrain.setData(show.terrain || null); applyScene();
     if (!keepT) seek(0);
     setMusic(show.music || '');
-    rebuildLaunchers(); renderAll();
+    rebuildLaunchers(true); renderAll();
     fitCamera($('#fw-cam', root).value);
   }
   function withCustom(sh) {   // the show plus the definitions of your own effects it uses (so it opens anywhere)
@@ -728,7 +837,7 @@ async function build() {
   }
   function changed(label) { store.set('rct3fw.autosave', withCustom(S.show)); if (label) toast(label); }
   function snapshot() { S.undo.push(clone(S.show)); if (S.undo.length > 120) S.undo.shift(); S.redo = []; }
-  function restore(sh) { S.show = normShow(sh); select([]); S.selAim = null; terrain.setData(sh.terrain || null); rebuildLaunchers(); renderAll(); }
+  function restore(sh) { S.show = normShow(sh); select([]); S.selAim = null; terrain.setData(sh.terrain || null); applyScene(); rebuildLaunchers(false); renderAll(); }
   function undo() { if (!S.undo.length) return; S.redo.push(clone(S.show)); restore(S.undo.pop()); changed('Undo'); }
   function redo() { if (!S.redo.length) return; S.undo.push(clone(S.show)); restore(S.redo.pop()); changed('Redo'); }
 
@@ -808,16 +917,26 @@ async function build() {
   // ---- UI: palette (Fireworks / Lasers / Water Jets) ---------------------------------------------------------------
   const lib = $('#fw-lib', root);
   const afeUnlocked = () => true;
+  let prices = store.get('rct3fw.prices') ?? true;
+  root.classList.toggle('noprices', !prices); $('#fw-prices', root).classList.toggle('on', prices);
+  $('#fw-prices', root).onclick = ev => { prices = !prices; store.set('rct3fw.prices', prices); root.classList.toggle('noprices', !prices); ev.target.classList.toggle('on', prices); renderLib(); toast(prices ? 'Prices shown' : 'Prices hidden'); };
   function renderLib() {
     const f = $('#fw-search', root).value.toLowerCase(), kind = S.tab;
     root.querySelectorAll('#fw-ptabs button').forEach(b => b.classList.toggle('on', b.dataset.k === kind));
+    if (kind === 'base') {   // MixMaster bases: drag into the 3D view to place
+      $('#fw-create', root).innerHTML = `<button disabled style="opacity:.8">Drag a base into the 3D view · ${S.grid ? 'snaps to the grid' : 'free placement'}</button>`;
+      lib.innerHTML = data.launchers.filter(b => !f || (LAUNCHER_NAMES[b] || b).toLowerCase().includes(f)).map(b =>
+        `<div class="base" draggable="true" data-base="${esc(b)}" title="Drag into the 3D view"><img src="${baseThumbs[b] || ''}" alt="" data-thumb="${esc(b)}"><div><b>${esc(LAUNCHER_NAMES[b] || b)}</b><small>${esc(BASE_INFO[b] || '')}</small></div></div>`).join('');
+      makeThumbs();
+      return;
+    }
     $('#fw-create', root).innerHTML = kind === 'firework'
       ? `<button data-c="afe" title="Advanced firework editor">${afeUnlocked() ? '✎' : '🔒'} Advanced firework editor</button>`
       : `<button data-c="${kind}" title="Advanced ${KINDS[kind].one} editor">✎ Advanced ${kind === 'laser' ? 'laser' : 'water jet'} designer</button>`;
     const all = Object.values(REG[kind]).filter(x => !f || x.title.toLowerCase().includes(f)).sort((a, b) => a.title.localeCompare(b.title));
-    const row = x => `<div class="fwk" draggable="true" data-f="${esc(x.key)}" title="${esc(x.title)}${x.cost != null ? ` · $${(x.cost / 100).toFixed(2)}` : ''} · ${x.duration.toFixed(1)} s">
+    const row = x => `<div class="fwk" draggable="true" data-f="${esc(x.key)}" title="${esc(x.title)}${x.cost != null && prices ? ` · $${(x.cost / 100).toFixed(2)}` : ''} · ${x.duration.toFixed(1)} s">
         <span class="sw" style="background:${hex(swatch(x))};color:${hex(swatch(x))}"></span><span class="nm">${esc(x.title)}</span>
-        ${x.cost != null ? `<span class="cost">$${(x.cost / 100).toFixed(2)}</span>` : `<span class="cost">${x.duration.toFixed(0)} s</span>`}
+        ${x.cost != null ? `<span class="cost price">$${(x.cost / 100).toFixed(2)}</span>` : `<span class="cost">${x.duration.toFixed(0)} s</span>`}
         <button class="ed" title="Edit (makes your own copy of a game ${KINDS[kind].one})">✎</button><button class="pv" title="Preview">▶</button></div>`;
     const yours = all.filter(x => x.key.startsWith('my:')), game = all.filter(x => !x.key.startsWith('my:'));
     lib.innerHTML = (yours.length ? `<div class="libgrp">Yours (${yours.length})</div>` + yours.map(row).join('') : '') +
@@ -832,7 +951,41 @@ async function build() {
     if (e.target.closest('.ed')) return openEditor(S.tab, row.dataset.f);
     if (e.target.closest('.pv') || e.detail === 2) preview(S.tab, row.dataset.f);
   });
-  lib.addEventListener('dragstart', e => { const row = e.target.closest('.fwk'); if (row) { e.dataTransfer.setData('text/x-firework', S.tab + '|' + row.dataset.f); e.dataTransfer.effectAllowed = 'copy'; } });
+  lib.addEventListener('dragstart', e => {
+    const base = e.target.closest('.base');
+    if (base) { dragState = { base: base.dataset.base }; e.dataTransfer.setData('text/x-base', base.dataset.base); e.dataTransfer.effectAllowed = 'copy'; dragImage(e); return; }
+    const row = e.target.closest('.fwk');
+    if (row) { dragState = { kind: S.tab, key: row.dataset.f }; e.dataTransfer.setData('text/x-firework', S.tab + '|' + row.dataset.f); e.dataTransfer.effectAllowed = 'copy'; dragImage(e); }
+  });
+  lib.addEventListener('dragend', () => endDrag3d());
+  // the browser's drag picture: a small card with the item's colour / picture and name
+  function dragImage(e) {
+    const c = document.createElement('div');
+    c.style.cssText = 'position:fixed;left:-500px;top:0;padding:6px 10px;border-radius:8px;background:#0b0f18;border:1px solid #ffb02e;color:#fff;font:600 12px system-ui;display:flex;gap:8px;align-items:center';
+    if (dragState.base) c.innerHTML = `<img src="${baseThumbs[dragState.base] || ''}" style="width:40px;height:40px">${esc(LAUNCHER_NAMES[dragState.base])}`;
+    else { const d = REG[dragState.kind][dragState.key]; c.innerHTML = `<span style="width:14px;height:14px;border-radius:3px;background:${hex(swatch(d))};box-shadow:0 0 8px ${hex(swatch(d))}"></span>${KINDS[dragState.kind].icon}${esc(d?.title)}`; }
+    document.body.appendChild(c); e.dataTransfer.setDragImage(c, 20, 20); setTimeout(() => c.remove(), 0);
+  }
+  // pictures of the bases, rendered once from their models
+  const baseThumbs = {};
+  let thumbing = null;
+  function makeThumbs() {
+    if (thumbing || data.launchers.every(b => baseThumbs[b])) return;
+    thumbing = (async () => {
+      const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); r.setSize(128, 128); r.outputColorSpace = THREE.SRGBColorSpace;
+      const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2)); const dl = new THREE.DirectionalLight(0xffffff, 2); dl.position.set(3, 5, 4); sc.add(dl);
+      const cam = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+      for (const b of data.launchers) {
+        const def = await launcherDef(b); if (!def) continue;
+        const o = def.gltf.scene.clone(true); sc.add(o);
+        const box = new THREE.Box3().setFromObject(o), c = box.getCenter(new THREE.Vector3()), s = box.getSize(new THREE.Vector3()).length();
+        cam.position.copy(c).add(new THREE.Vector3(0.9, 0.7, 1.2).normalize().multiplyScalar(s * 1.5)); cam.lookAt(c);
+        r.render(sc, cam); baseThumbs[b] = r.domElement.toDataURL(); sc.remove(o);
+        lib.querySelectorAll(`img[data-thumb="${b}"]`).forEach(im => { im.src = baseThumbs[b]; });
+      }
+      r.dispose(); r.forceContextLoss?.();
+    })();
+  }
   function compatibleLauncher(kind) {
     const ls = S.show.launchers;
     if (ls[S.selLauncher] && fits(kind, ls[S.selLauncher].type)) return S.selLauncher;
@@ -925,7 +1078,7 @@ async function build() {
       const cost = sel.reduce((a, x) => a + (fx(x)?.cost || 0), 0), kinds = new Set(sel.map(x => x.kind));
       const k1 = kinds.size === 1 ? [...kinds][0] : null;
       box.innerHTML = `
-        <div><b>${sel.length} effects selected</b><div class="muted">${fmt(t0)} – ${fmt(t1)} · tracks ${Math.min(...sel.map(x => x.track)) + 1}–${Math.max(...sel.map(x => x.track)) + 1} · $${(cost / 100).toFixed(2)}</div></div>
+        <div><b>${sel.length} effects selected</b><div class="muted">${fmt(t0)} – ${fmt(t1)} · tracks ${Math.min(...sel.map(x => x.track)) + 1}–${Math.max(...sel.map(x => x.track)) + 1}<span class="price"> · $${(cost / 100).toFixed(2)}</span></div></div>
         ${clipRow}
         <div class="row"><button data-a="prev" title="F: fire them with their own timing">▶ Preview</button><button data-a="dup" title="Ctrl+D: copy right after">Duplicate</button><button data-a="del" title="Delete">Delete</button><button data-a="none" title="Esc">Deselect</button></div>
         <label>Move<span class="row"><button data-a="m-1">−1 s</button><button data-a="m-0.1">−0.1</button><button data-a="m0.1">+0.1</button><button data-a="m1">+1 s</button></span></label>
@@ -949,7 +1102,7 @@ async function build() {
         <span class="muted" style="width:34px">${(e.strength ?? 1).toFixed(2)}</span></span></label>` : ''}
       <div class="row"><button data-a="fire">▶ Fire now</button><button data-a="dup" title="Ctrl+D">Duplicate</button><button data-a="del" title="Delete">Delete</button><button data-a="edit" title="Open in the ${kind === 'firework' ? 'advanced firework editor' : 'designer'}">✎ Edit</button></div>
       ${clipRow}
-      <div class="muted">${esc(def?.title)}${def?.cost != null ? ` · $${(def.cost / 100).toFixed(2)}` : ''} · lasts about ${(def?.duration || 0).toFixed(1)} s${!fits(kind, ls[e.launcher]?.type) ? ' · <span class="err">needs a ' + esc(LAUNCHER_NAMES[BASE_FOR[kind]]) + ' launcher</span>' : ''}</div>`;
+      <div class="muted">${esc(def?.title)}${def?.cost != null ? `<span class="price"> · $${(def.cost / 100).toFixed(2)}</span>` : ''} · lasts about ${(def?.duration || 0).toFixed(1)} s${!fits(kind, ls[e.launcher]?.type) ? ' · <span class="err">needs a ' + esc(LAUNCHER_NAMES[BASE_FOR[kind]]) + ' launcher</span>' : ''}</div>`;
   }
   $('#fw-entry', root).addEventListener('input', ev => {
     if (ev.target.dataset.k === 'strength' && S.sel) { const sp = ev.target.parentElement.querySelector('.muted'); if (sp) sp.textContent = (+ev.target.value).toFixed(2); }
@@ -1002,7 +1155,7 @@ async function build() {
       <label>Name<input type="text" id="fw-name" value="${esc(sh.name)}"></label>
       <label>Start time<input type="time" id="fw-start" value="${hh}:${mm}" title="Daily show time in the park"></label>
       <div><div class="muted" style="margin-bottom:4px">Months it plays</div><div class="months" id="fw-months">${MONTHS.map((m, i) => `<button data-m="${i}" class="${sh.months & (1 << i) ? 'on' : ''}">${m}</button>`).join('')}</div></div>
-      <div class="muted">${counts.map(([k, n]) => `${n} ${KINDS[k].one}${n > 1 ? 's' : ''}`).join(' · ') || 'empty'} · ${sh.launchers.length} launchers · ${fmt(showEnd())} long · fireworks cost $${(cost / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>`;
+      <div class="muted">${counts.map(([k, n]) => `${n} ${KINDS[k].one}${n > 1 ? 's' : ''}`).join(' · ') || 'empty'} · ${sh.launchers.length} launchers · ${fmt(showEnd())} long<span class="price"> · fireworks cost $${(cost / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></div>`;
     $('#fw-name', root).onchange = ev => { snapshot(); sh.name = ev.target.value || 'My show'; changed(); };
     $('#fw-start', root).onchange = ev => { const [h, m] = ev.target.value.split(':').map(Number); snapshot(); sh.start_minutes = (h || 0) * 60 + (m || 0); changed(); };
     $('#fw-months', root).onclick = ev => { const b = ev.target.closest('button'); if (!b) return; snapshot(); sh.months ^= 1 << +b.dataset.m; if (!(sh.months & 4095)) sh.months |= 1 << +b.dataset.m; changed(); renderShowInfo(); };
@@ -1014,16 +1167,16 @@ async function build() {
       sh.launchers.map((l, i) => `<div class="lnch${i === S.selLauncher ? ' sel' : ''}" data-i="${i}">
         <span class="n">#${i + 1}</span>
         <select data-k="type">${data.launchers.map(t => `<option value="${t}"${t === l.type ? ' selected' : ''}>${esc(LAUNCHER_NAMES[t] || t)}</option>`).join('')}</select>
-        <input type="number" data-k="col" value="${l.col}" step="1"><input type="number" data-k="row" value="${l.row}" step="1">
+        <input type="number" data-k="col" value="${l.col}" step="${S.grid ? 1 : 0.25}"><input type="number" data-k="row" value="${l.row}" step="${S.grid ? 1 : 0.25}">
         <select data-k="dir">${['N', 'E', 'S', 'W'].map((d, k) => `<option value="${k}"${k === (l.dir || 0) ? ' selected' : ''}>${d}</option>`).join('')}</select>
         <button class="x" data-a="dell" title="Remove launcher (its effects are removed too)">✕</button></div>`).join('') +
-      `<div class="row"><button data-a="addl">+ Add launcher</button></div><div class="muted">Col / Row are park tiles (4 m). Mortars and the Catherine wheel fire fireworks, laser domes lasers, water jet bases water jets.</div>`;
+      `<div class="row"><button data-a="addl">+ Add launcher</button></div><div class="muted">Col / Row are park tiles (4 m). Drag bases from the Bases tab into the 3D view, drag a launcher to move it, R turns the selected one. Mortars and the Catherine wheel fire fireworks, laser domes lasers, water jet bases water jets.</div>`;
   }
   $('#fw-launchers', root).addEventListener('change', ev => {
     const k = ev.target.dataset.k, row = ev.target.closest('.lnch'); if (!k || !row) return;
     snapshot();
     const l = S.show.launchers[+row.dataset.i], v = ev.target.value;
-    if (k === 'type') l.type = v; else l[k] = Math.round(+v || 0);
+    if (k === 'type') l.type = v; else if (k === 'dir') l.dir = +v; else l[k] = S.grid ? Math.round(+v || 0) : +(+v || 0).toFixed(3);
     changed(); rebuildLaunchers().then(renderAll);
   });
   function addLauncher(type) {
@@ -1316,10 +1469,86 @@ async function build() {
   $('#fw-zin', root).onclick = () => zoom(1.5); $('#fw-zout', root).onclick = () => zoom(1 / 1.5);
   lanes.addEventListener('wheel', e => { if (e.ctrlKey) { e.preventDefault(); zoom(e.deltaY < 0 ? 1.25 : 0.8); } }, { passive: false });
 
-  // ---- 3D: click a launcher to select it; aim with the mouse; landscape brushes ------------------------------------
+  // ---- 3D: drop bases and effects into the scene (with a see-through preview), move launchers --------------------------
+  let dragState = null, ghost = null, ghostType = null, dropTarget = -1;
+  const ghostMat = new THREE.MeshBasicMaterial({ color: 0x7dffb0, transparent: true, opacity: 0.45, depthWrite: false });
+  async function setGhost(type) {
+    if (ghostType === type) return;
+    ghostType = type;
+    if (ghost) { scene.remove(ghost); ghost = null; }
+    if (!type) return;
+    const def = await launcherDef(type); if (ghostType !== type) return;
+    ghost = def ? def.gltf.scene.clone(true) : new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+    ghost.traverse(o => { if (o.isMesh) { o.material = ghostMat; o.raycast = () => {}; } });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.6, 1.9, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7dffb0, transparent: true, opacity: 0.8, depthTest: false }));
+    ring.position.y = 0.15; ring.renderOrder = 11; ghost.add(ring);
+    scene.add(ghost);
+  }
+  function launcherUnder(e) {
+    ray.setFromCamera(ndc(e), camera);
+    const hit = ray.intersectObjects(launcherGroup.children, true)[0];
+    return hit ? hit.object.userData.launcher ?? -1 : -1;
+  }
+  const card = $('#fw-dragcard', root);
+  function showCard(e, html) { if (!html) { card.style.display = 'none'; return; } card.innerHTML = html; card.style.display = 'block'; card.style.left = e.clientX + 16 + 'px'; card.style.top = e.clientY + 14 + 'px'; }
+  function endDrag3d() { dragState = null; setGhost(null); showCard(null); dropTarget = -1; obj3dMarkSel(); }
+  view.addEventListener('dragover', e => {
+    if (!dragState) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+    const p = groundHit(e);
+    if (dragState.base) {
+      if (!p) return;
+      setGhost(dragState.base);
+      const pl = placementAt(dragState.base, p.x, p.z), [x, z] = worldOf(pl);
+      if (ghost) { ghost.position.set(x, terrain.heightAt(x, z), z); ghost.rotation.y = 0; }
+      showCard(e, `Place <b>${esc(LAUNCHER_NAMES[dragState.base])}</b> · ${S.grid ? `tile ${pl.col}, ${pl.row}` : 'free'}`);
+      return;
+    }
+    // an effect: onto a matching launcher, or onto the ground (a new matching base is placed there)
+    const kind = dragState.kind, li = launcherUnder(e), d = REG[kind][dragState.key];
+    const ok = li >= 0 && fits(kind, S.show.launchers[li]?.type);
+    dropTarget = ok ? li : -1;
+    launcherObjs.forEach((o, i) => o.label.element.classList.toggle('sel', i === dropTarget));
+    if (ok) { setGhost(null); showCard(e, `${KINDS[kind].icon}<b>${esc(d?.title)}</b> → launcher #${li + 1} at ${fmt(S.t)}`); return; }
+    if (!p) return;
+    setGhost(BASE_FOR[kind]);
+    const pl = placementAt(BASE_FOR[kind], p.x, p.z), [x, z] = worldOf(pl);
+    if (ghost) ghost.position.set(x, terrain.heightAt(x, z), z);
+    showCard(e, `${KINDS[kind].icon}<b>${esc(d?.title)}</b> on a new ${esc(LAUNCHER_NAMES[BASE_FOR[kind]])} at ${fmt(S.t)}`);
+  });
+  view.addEventListener('dragleave', e => { if (!view.contains(e.relatedTarget)) { setGhost(null); showCard(null); } });
+  view.addEventListener('drop', async e => {
+    if (!dragState) return;
+    e.preventDefault();
+    const st = dragState, p = groundHit(e), target = dropTarget;
+    endDrag3d();
+    if (st.base) {
+      if (!p) return;
+      snapshot(); S.show.launchers.push({ type: st.base, dir: 0, ...placementAt(st.base, p.x, p.z) });
+      S.selLauncher = S.show.launchers.length - 1;
+      changed(`Placed ${LAUNCHER_NAMES[st.base]} (#${S.selLauncher + 1})`); await rebuildLaunchers(); renderAll(); return;
+    }
+    let li = target;
+    snapshot();
+    if (li < 0) {
+      if (!p) return;
+      S.show.launchers.push({ type: BASE_FOR[st.kind], dir: 0, ...placementAt(BASE_FOR[st.kind], p.x, p.z) });
+      li = S.show.launchers.length - 1; await rebuildLaunchers();
+    }
+    S.selLauncher = li;
+    const d = REG[st.kind][st.key], time = snap(S.t), dur = d?.duration || 3;
+    let track = 0; while (S.show.entries.some(x => x.track === track && x.time < time + dur && x.time + fxDur(x) > time)) track++;
+    const used = new Set(S.show.entries.filter(x => x.launcher === li && Math.abs(x.time - time) < 3).map(x => x.slot));
+    let slot = 0; while (used.has(slot) && slot < tubeCount(li) - 1) slot++;
+    const ent = { kind: st.kind, firework: st.key, launcher: li, slot, time, track };
+    S.show.entries.push(ent); select([ent], ent);
+    changed(`Added ${d?.title} on launcher #${li + 1} at ${fmt(time)} (track ${track + 1})`); renderAll(); fireNow(ent);
+  });
+
+  // ---- 3D: click a launcher to select it; drag it to move it; aim with the mouse; landscape brushes --------------------
   const ray = new THREE.Raycaster(); let downAt = null;
   const ndc = e => { const r = renderer.domElement.getBoundingClientRect(); return new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); };
-  let tool = null, painting = false, brushPt = null, flatTarget = 0, aimDrag = null;
+  let tool = null, painting = false, brushPt = null, flatTarget = 0, aimDrag = null, moveDrag = null;
   const groundHit = e => { ray.setFromCamera(ndc(e), camera); return ray.intersectObject(terrain.ground)[0]?.point || null; };
   view.addEventListener('pointerdown', e => {   // capture phase: before the orbit controls see it
     if (e.target !== renderer.domElement || e.button !== 0) return;
@@ -1328,17 +1557,27 @@ async function build() {
       controls.enabled = false; painting = true; brushPt = p; flatTarget = terrain.heightAt(p.x, p.z); snapshot();
       renderer.domElement.setPointerCapture(e.pointerId); return;
     }
-    if (S.selAim) {
-      ray.setFromCamera(ndc(e), camera);
-      const hit = ray.intersectObjects(launcherGroup.children, true)[0];
-      if (hit && S.selAim.launchers.includes(hit.object.userData.launcher)) {
-        controls.enabled = false; aimDrag = { x: e.clientX, y: e.clientY, yaw: S.selAim.yaw, pitch: S.selAim.pitch }; snapshot();
-        renderer.domElement.setPointerCapture(e.pointerId);
-      }
+    ray.setFromCamera(ndc(e), camera);
+    const hit = ray.intersectObjects(launcherGroup.children, true)[0], li = hit ? hit.object.userData.launcher : null;
+    if (S.selAim && li != null && S.selAim.launchers.includes(li)) {
+      controls.enabled = false; aimDrag = { x: e.clientX, y: e.clientY, yaw: S.selAim.yaw, pitch: S.selAim.pitch }; snapshot();
+      renderer.domElement.setPointerCapture(e.pointerId); return;
+    }
+    if (li != null && S.show.launchers[li]) {   // press on a launcher: drag to move it (a click still just selects it)
+      controls.enabled = false; moveDrag = { li, x: e.clientX, y: e.clientY, moved: false };
+      renderer.domElement.setPointerCapture(e.pointerId);
     }
   }, true);
   renderer.domElement.addEventListener('pointermove', e => {
     if (tool) { const p = groundHit(e); terrain.showRing(p?.x, p?.z, +$('#fw-bsize', root).value); if (painting && p) brushPt = p; }
+    if (moveDrag) {
+      if (!moveDrag.moved && Math.hypot(e.clientX - moveDrag.x, e.clientY - moveDrag.y) < 5) return;
+      const p = groundHit(e); if (!p) return;
+      if (!moveDrag.moved) { snapshot(); moveDrag.moved = true; S.selLauncher = moveDrag.li; obj3dMarkSel(); }
+      const l = S.show.launchers[moveDrag.li]; Object.assign(l, placementAt(l.type, p.x, p.z));
+      placeLauncher(launcherObjs[moveDrag.li].obj, l); applyAims(S.t);
+      showCard(e, `#${moveDrag.li + 1} ${esc(LAUNCHER_NAMES[l.type])} · ${S.grid ? `tile ${l.col}, ${l.row}` : 'free'}`);
+    }
     if (aimDrag && S.selAim) {
       S.selAim.yaw = clamp(Math.round(aimDrag.yaw + (e.clientX - aimDrag.x) * 0.5), -180, 180);
       S.selAim.pitch = clamp(Math.round(aimDrag.pitch - (e.clientY - aimDrag.y) * 0.4), -80, 80);
@@ -1349,16 +1588,24 @@ async function build() {
   const endDrag = () => {
     if (painting) { painting = false; controls.enabled = true; S.show.terrain = terrain.getData(); placeAll(); changed(); }
     if (aimDrag) { aimDrag = null; controls.enabled = true; changed(); }
+    if (moveDrag) {
+      const m = moveDrag; moveDrag = null; controls.enabled = true; showCard(null);
+      if (m.moved) { changed(`Moved launcher #${m.li + 1}`); renderLaunchers(); return 'moved'; }
+    }
   };
   renderer.domElement.addEventListener('pointerup', e => {
-    const wasPaint = painting || aimDrag; endDrag();
-    if (wasPaint || tool) return;
+    const wasPaint = painting || aimDrag; const res = endDrag();
+    if (wasPaint || tool || res === 'moved') return;
     if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
     ray.setFromCamera(ndc(e), camera);
     const hit = ray.intersectObjects(launcherGroup.children, true)[0];
     if (hit && hit.object.userData.launcher != null) { S.selLauncher = hit.object.userData.launcher; obj3dMarkSel(); renderLaunchers(); renderAimBar(); toast(`Launcher #${S.selLauncher + 1} selected`); }
   });
   renderer.domElement.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
+  S.grid = store.get('rct3fw.grid') ?? true;
+  $('#fw-grid', root).classList.toggle('on', S.grid);
+  $('#fw-grid', root).onclick = ev => { S.grid = !S.grid; store.set('rct3fw.grid', S.grid); ev.target.classList.toggle('on', S.grid); renderLib(); renderLaunchers();
+    toast(S.grid ? 'Grid placement: bases snap to park tiles (small ones to tile corners)' : 'Free placement: put bases anywhere; R turns the selected one 15°'); };
   const landp = $('#fw-landp', root);
   $('#fw-land', root).onclick = ev => {
     const on = !landp.classList.contains('on'); landp.classList.toggle('on', on); ev.target.classList.toggle('on', on);
@@ -1384,6 +1631,7 @@ async function build() {
       <ul>${other ? `<li>${other} lasers / water jets are left out (the game's display files here have no place for them).</li>` : ''}
         ${sh.aim.length ? '<li>Base aiming is left out.</li>' : ''}${terrain.getData() ? '<li>The landscape and water are left out (shape them in the park).</li>' : ''}
         ${fw.some(e => e.tint || (e.strength ?? 1) !== 1) ? '<li>Colour and strength changes are left out.</li>' : ''}
+        ${sh.launchers.some(l => l.col % 1 || l.row % 1 || l.angle) ? '<li>Freely placed or turned launchers are snapped to the nearest tile and facing.</li>' : ''}
         ${String(sh.music).startsWith('blob:') ? '<li>The music file you chose is left out (only the game\'s music can be named).</li>' : ''}
         ${myFw.length ? `<li>Your ${myFw.length} own firework${myFw.length > 1 ? 's are' : ' is'} saved into the game's Fireworks folder too.</li>` : ''}</ul>
       <div class="row"><button data-x="cancel">Cancel</button><button data-x="dl">Download .fwd</button><button data-x="game" class="big">Save into the game</button></div>`);
@@ -1394,7 +1642,7 @@ async function build() {
         const map = {};
         if (x === 'game') for (const key of myFw) map[key] = (await saveToGame('frw', REG.firework[key], REG.firework[key].title)).file;
         const payload = { name: sh.name, music: String(sh.music).startsWith('blob:') ? '' : sh.music, start_minutes: sh.start_minutes, months: sh.months,
-          launchers: sh.launchers, entries: fw.map(e => ({ ...e, firework: map[e.firework] || e.firework })) };
+          launchers: sh.launchers.map(l => ({ ...l, col: Math.round(l.col), row: Math.round(l.row), dir: ((l.dir || 0) + Math.round((l.angle || 0) / 90)) & 3 })), entries: fw.map(e => ({ ...e, firework: map[e.firework] || e.firework })) };
         if (x === 'dl') await download('fwd', payload, sh.name);
         else { const r = await saveToGame('fwd', payload, sh.name); toast(`Saved ${r.file} into the game's FireworkDisplays folder`); }
         close();
@@ -1477,6 +1725,11 @@ async function build() {
     else if (k === '+' || k === '=') zoom(1.5);
     else if (k === '-') zoom(1 / 1.5);
     else if (k === 'f' && S.multi.size) previewSel();
+    else if (k === 'r' && S.show.launchers[S.selLauncher] && !e.ctrlKey) {   // turn the selected launcher: a quarter on the grid, 15° free
+      const l = S.show.launchers[S.selLauncher]; snapshot();
+      if (S.grid) { l.dir = ((l.dir || 0) + (e.shiftKey ? 3 : 1)) & 3; l.angle = 0; } else l.angle = ((l.angle || 0) + (e.shiftKey ? -15 : 15)) % 360;
+      applyAims(S.t); changed(`Launcher #${S.selLauncher + 1} turned`); renderLaunchers();
+    }
   }
   window.addEventListener('keydown', onKey);
 
@@ -1523,7 +1776,7 @@ async function build() {
       placeAll();
     }
     // previews run on their own clock (also while paused); looping ones restart, finished ones go
-    pclock += dt * S.speed;
+    pclock += dt * S.speed; skyMat.uniforms.time.value += dt;
     previews = previews.filter(pv => { const d = pv.def?.duration || 5; if (pclock - pv.t0 > d) { if (pv.loop) { pv.t0 = pclock + 0.6; return true; } return pv.kind === 'jet' && pclock - pv.t0 < d + 0.1; } return true; });
     // particles: fixed 1/60 s steps, scaled by playback speed (preview fireworks run even while paused)
     acc += dt * (S.playing ? S.speed : 1);

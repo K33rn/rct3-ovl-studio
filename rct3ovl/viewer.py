@@ -63,6 +63,17 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     with lock:
                         png = fw.page_png(lib, q['name'], q.get('opaque') == '1')
                     return self.send(200, png, 'image/png') if png else self.js({'error': 'no such page'}, 404)
+                if u.path == '/api/fw/tex':
+                    # any game texture by name (sky ramp, clouds, skylines, ground) for the fireworks scene
+                    name = q.get('name', '')
+                    if not name.replace('_', '').isalnum():
+                        return self.js({'error': 'bad name'}, 400)
+                    with lock:
+                        img = lib.texture_image(name + ':tex')
+                    if img is None:
+                        return self.js({'error': 'no such texture'}, 404)
+                    b = io.BytesIO(); img.save(b, 'PNG')
+                    return self.send(200, b.getvalue(), 'image/png')
                 if u.path == '/api/fw/sound':
                     with lock:
                         wav = fw.sound(lib, q['name'])

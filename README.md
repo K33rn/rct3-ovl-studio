@@ -125,9 +125,29 @@ The buttons at the top:
     - Save to your lasers / water jets, to the game (`.las` / `.wjt`) or as a download.
   - **Game files:** files written into the game folder are built from the game's own files of the same kind, so they load like the originals. The game's own files are never overwritten.
   - The game's `.wma` music is converted once with ffmpeg; `rct3ovl-viewer.bat` includes it (`--with imageio-ffmpeg`).
+- **Parks** opens every park the game ships with full-window: the 18 campaign scenarios, the 9 Soaked! and 12 Wild!
+  ones, Blank Landscape, Coaster Designer and the sandbox (`Campaigns\*.dat`). **← Back** (or Esc) returns to the viewer.
+  - **In 3D:** the landscape with the game's ground textures (land the park doesn't own shaded, land for sale yellow),
+    water and the sea around island parks, footpaths and queues, and every placed item at its tile, height and
+    direction: trees, buildings, walls, path extras, flat rides, shops, entrances and raised paths. Every coaster and
+    tracked ride is built from its track pieces, and the guests, staff, ducks and Wild! animals stand where they were
+    when the park was saved. Animated scenery, rides and animals play.
+  - Drag to turn, right-drag to move, wheel to zoom, arrows or WASD to move. Click anything to see what it is, which
+    tile it stands on and how high. **Whole park** frames the park's land; **Park camera** jumps to where the game's
+    camera was. The buttons along the top turn scenery, rides, paths, water, people, land shading, the tile grid
+    and animations on or off.
+  - **Information** (right): **Overview** (description, guests, rating, cash, loan, opening hours, land, weather,
+    the park rating breakdown and history), **Goals** (what to reach for **Apprentice**, **Entrepreneur** and
+    **Tycoon**: guests, park value, rating, income, coaster stats, VIP visits, repaying the loan, animal goals,
+    each with how long it must be held; plus the Soaked!/Wild! challenges with their story texts), **Rides** (ratings,
+    price, takings, trains; click one to fly to it), **Shops** (items, prices, sales), **People** (guests with
+    happiness, cash and rides; staff), **Money** (every money field, the monthly income and spending table, history
+    graphs), **Research**, **Scenery** (every item used, counted) and **Data** (all the park's settings and every
+    kind of object in the save).
+  - It has its own walkthrough, the first time it opens (**? Tour** replays it).
 - **Walkthrough:** a guided tour starts the first time you open the viewer. It highlights each part of the screen, explains it and opens examples on every tab. The MixMaster has its own tour the first time it opens, and it opens and walks through the Advanced Firework Editor, the laser designer and the water jet designer on the way. **? Tour** (top left in the viewer, next to MixMaster in the MixMaster) replays it; pressed while the firework editor or a designer is open, it explains that editor. ← → or Enter move, Esc stops.
 - **File types** opens the guide to every file type: the OVL resource types and the loose firework files (`.frw`, `.fwd`, `.las`, `.wjt`, `.lwr`, `.wma`). A firework file's summary has a **?** that jumps to its entry.
-- The six tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks) sit under the title; the one in use is highlighted.
+- The seven tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks, Parks) sit under the title; the one in use is highlighted.
 - Drag the thin divider on the right edge of either list column to make it wider or narrower (double-click a divider to reset it). Widths are remembered.
 - **Download** saves what you're looking at: `.glb`, `.png`, `.wav` or `.json`.
 

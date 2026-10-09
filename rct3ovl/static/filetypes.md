@@ -68,6 +68,7 @@ The counts are from a full RCT3 Gold install (base game + Soaked! + Wild!, 7,484
 | `.wjt` | A water jet effect | summary, WaterJet Designer |
 | `.lwr` | A picture a laser can draw | the drawing |
 | `.wma` | Music for the park and firework shows (`Music\`) | a player |
+| `.dat` | **A whole park**: a campaign scenario or the sandbox (`Campaigns\`) | the park in 3D with all its information (Parks tab) |
 
 ## The containers
 
@@ -641,3 +642,16 @@ instead). Picking one in the list shows a summary and every object in it, with b
   file name).
 - **You get:** a player in the viewer and the music under the MixMaster timeline. The first play converts it to
   Ogg, which needs the viewer started with `rct3ovl-viewer.bat` (it brings ffmpeg).
+
+## Parks (outside the OVLs)
+
+### `.dat`: a park (42, `Campaigns\`)
+- **What it is:** a whole saved park: the 18 campaign scenarios (`Campaigns\Base`), Soaked! (`Base\Soaked`) and Wild!
+  (`Base\Wild`) ones, Blank Landscape, Coaster Designer and the sandbox (`Campaigns\Sandbox`).
+- **Inside:** the same self-describing save format as ride designs, with about 150 types and thousands of objects:
+  the terrain (corner heights, ground texture and land ownership of every 4 m tile), water bodies, paths and
+  queues, every placed item with its tile, height and direction, every ride (track pieces, flat rides, stalls),
+  the guests, staff and animals with their positions, money, research, awards, weather, and the scenario goals:
+  one set of conditions per difficulty (Apprentice, Entrepreneur, Tycoon) plus Soaked!/Wild! challenges.
+- **You get:** the Parks tab shows the park in 3D with everything about it. The scenario's title and description
+  come from the game's text (`scenarioNN_lookup`).

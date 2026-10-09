@@ -49,9 +49,9 @@
   .tabs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin: 8px 0 6px;
           padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
   .head { container-type: inline-size; }
-  /* narrow: 3 on top, 2 below (spanning 2 of 6 / 3 of 6 columns); wide: all 5 in one row */
-  .tabs button { grid-column: span 2; }   /* narrow: 3 per row, two rows; wide: all 6 in one row */
-  @container (min-width: 520px) { .tabs button { grid-column: span 1; } }
+  /* narrow: 3 on top, then two rows of 2 (spanning 2 of 6 / 3 of 6 columns); wide: all 7 in one row */
+  .tabs button { grid-column: span 2; } .tabs button:nth-child(n+4) { grid-column: span 3; }
+  @container (min-width: 600px) { .tabs { grid-template-columns: repeat(7, 1fr); } .tabs button, .tabs button:nth-child(n+4) { grid-column: span 1; } }
   .subgroup { padding: 6px 12px 1px 18px; color: var(--dim); font-size: 11px; letter-spacing: .3px; }
   .subgroup small { opacity: .7; }
   #rootinfo { overflow-wrap: anywhere; }
@@ -132,6 +132,7 @@
         <button id="b-designs" title="The game's premade roller coaster and tracked ride designs, built from their track pieces">Ride Designs</button>
         <button id="b-scenery" title="Every scenery item's 3D model: trees, walls, animatronics, path extras, stalls… with their animations">Scenery</button>
         <button id="b-fireworks" title="Fireworks show editor: the game's firework displays and fireworks, simulated in 3D (opens full window)">Fireworks</button>
+        <button id="b-parks" title="Every campaign and sandbox park in full 3D, with everything about it: goals for each difficulty, rides, shops, guests, money (opens full window)">Parks</button>
       </nav>
       <div class="sub" id="rootinfo">loading…</div>
       <input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="margin-top:8px"></div>
@@ -804,9 +805,27 @@ async function showTypes(tag) {
 $('b-types').onclick = () => showTypes();
 
 // tabs: highlight the one in use; opening an OVL from the tree clears it
-const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs', 'b-scenery', 'b-fireworks'];
+const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs', 'b-scenery', 'b-fireworks', 'b-parks'];
 function setTab(id) { TABS.forEach(t => $(t).classList.toggle('active', t === id)); }
-TABS.forEach(id => id !== 'b-fireworks' && $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
+TABS.forEach(id => id !== 'b-fireworks' && id !== 'b-parks' && $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
+
+// Parks: full-window park viewer (static/parks.js); Back returns to what was open
+$('b-parks').onclick = () => openParksTab();
+async function openParksTab(open) {   // open: a park file (Campaigns\...\X.dat) to show
+  const before = TABS.find(t => $(t).classList.contains('active')) || null, hash = location.hash;
+  $('b-parks').textContent = 'Loading…';
+  try {
+    const { openParks } = await import('/parks.js');
+    renderer.setAnimationLoop(null);
+    document.getElementById('app').style.display = 'none';
+    await openParks({ open, onBack: () => {
+      document.getElementById('app').style.display = '';
+      renderer.setAnimationLoop(viewerLoop); clock.getDelta(); resize();
+      setTab(before); history.replaceState(null, '', hash.startsWith('#park=') ? '#' : hash || '#');
+    } });
+  } catch (e) { msg('Could not open the parks viewer: ' + e, true); document.getElementById('app').style.display = ''; renderer.setAnimationLoop(viewerLoop); }
+  $('b-parks').textContent = 'Parks';
+}
 
 // Fireworks: a full-window editor (static/fireworks.js) over the three columns; Back returns to what was open
 $('b-fireworks').onclick = () => openFw();
@@ -857,6 +876,7 @@ async function fromHash() {
   if (h.get('scenery')) { setTab('b-scenery'); await $('b-scenery').onclick(); return showScenery(h.get('scenery'), h.get('anim')); }
   if (h.get('design')) { setTab('b-designs'); await $('b-designs').onclick(); return showDesign(h.get('design')); }
   if (h.get('file')) return openGameFile(h.get('file'));
+  if (h.has('park')) return openParksTab(h.get('park') || undefined);
   if (!h.get('ovl')) return;
   await openOvl(h.get('ovl'), false);
   if (h.get('texts')) return show(resources.find(x => x.texts));
@@ -901,10 +921,11 @@ const TOUR = [
       <li><b>Download</b> saves the current thing as a file: a <code>.glb</code> 3D model (with textures and animations), a <code>.png</code> picture,
       a <code>.wav</code> sound or the record as <code>.json</code>.</li></ul>` },
   { target: '.tabs', title: '4. The tabs',
-    html: `<p>Besides browsing OVLs, six tabs collect things the game spreads over many files:</p>
+    html: `<p>Besides browsing OVLs, seven tabs collect things the game spreads over many files:</p>
       <ul><li><b>File types</b>: what every kind of file is and does.</li><li><b>Peeps</b>: whole guests, staff and entertainers.</li>
       <li><b>Thrill Rides</b>: flat rides with their ride animations.</li><li><b>Ride Designs</b>: the premade coasters and tracked rides.</li>
-      <li><b>Scenery</b>: every scenery item.</li><li><b>Fireworks</b>: the MixMaster show editor.</li></ul>
+      <li><b>Scenery</b>: every scenery item.</li><li><b>Fireworks</b>: the MixMaster show editor.</li>
+      <li><b>Parks</b>: every campaign and sandbox park in 3D, with its goals.</li></ul>
       <p>The tab you are on is highlighted. Next, each one in turn.</p>` },
   { target: '#doc', title: 'File types',
     before: async () => { document.getElementById('b-types').click(); await idle(500); },
@@ -935,17 +956,23 @@ const TOUR = [
   { target: '.resizer[data-col="1"]', title: 'Resizing the columns',
     html: `<p>Drag the thin line on the right edge of either list to make it wider or narrower. Double-click it to reset. The widths are remembered.</p>` },
   { target: '#b-fireworks', title: 'Fireworks: the MixMaster',
-    html: `<p>The last tab opens the <b>MixMaster</b>, a full-window editor for firework, laser and water-jet shows, with the game's own fireworks,
+    html: `<p><b>Fireworks</b> opens the <b>MixMaster</b>, a full-window editor for firework, laser and water-jet shows, with the game's own fireworks,
       the Advanced Firework Editor, landscaping, scenery and export back into RCT3.</p>
       <p>It has its own walkthrough, which starts the first time you open it. <b>← Back</b> in its top left returns here.</p>`,
     action: { label: 'Open the MixMaster', run: () => document.getElementById('b-fireworks').click() } },
+  { target: '#b-parks', title: 'Parks',
+    html: `<p>The last tab opens every <b>campaign</b> park (base game, Soaked! and Wild!) and the <b>sandbox</b> full-window in 3D: the landscape,
+      water, paths, every tree, building, ride, stall and coaster, and the guests where they stood.</p>
+      <p>Beside it is everything about the park: the <b>goals for Apprentice, Entrepreneur and Tycoon</b>, challenges, rides, shops, people,
+      money and research. It has its own walkthrough too.</p>`,
+    action: { label: 'Open the parks', run: () => document.getElementById('b-parks').click() } },
   { title: 'That\'s everything',
     html: `<p>Pick an OVL on the left or a tab to start. Replay this tour with <b>? Tour</b> at the top left any time.</p>` },
 ];
 document.getElementById('b-tour').onclick = () => import('/tour.js').then(m => m.runTour('main', TOUR, { force: true }));
 
 loadTree().then(fromHash).then(() => {
-  if (location.hash !== '#fireworks') import('/tour.js').then(m => m.runTour('main', TOUR)).catch(() => {});
+  if (location.hash !== '#fireworks' && !location.hash.startsWith('#park')) import('/tour.js').then(m => m.runTour('main', TOUR)).catch(() => {});
 }).catch(e => msg('Could not load index: ' + e, true));
 </script>
 </body>

@@ -15,6 +15,7 @@ from .designs import build_design, design_files
 from .rides import build_ride, list_rides, track_sets
 from .scenery import build_scenery, list_scenery
 from . import fireworks as fw
+from . import parks
 from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
@@ -49,7 +50,7 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
             try:
                 if u.path in ('/', '/index.html'):
                     return self.send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html; charset=utf-8')
-                if u.path in ('/fireworks.js', '/tour.js') or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
+                if u.path in ('/fireworks.js', '/tour.js', '/parks.js') or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
                                                  and os.path.exists(os.path.join(STATIC, u.path[1:]))):
                     return self.send(200, open(os.path.join(STATIC, u.path[1:]), 'rb').read(), 'text/javascript; charset=utf-8')
                 if u.path == '/api/fw/data':
@@ -93,6 +94,30 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     return self.send(200, open(os.path.join(STATIC, 'filetypes.md'), 'rb').read(), 'text/markdown; charset=utf-8')
                 if u.path == '/api/tree':
                     return self.js({'root': lib.root, 'ovls': lib.index['ovls'], 'files': fw.list_files(lib)})
+                if u.path == '/api/parks':
+                    with lock:
+                        return self.js(parks.list_parks(lib))
+                if u.path == '/api/park':
+                    with lock:
+                        if not parks.park_path(lib, q.get('file', '')):
+                            return self.js({'error': 'no such park'}, 404)
+                        return self.js(parks.finite({'info': parks.park_info(lib, q['file']), 'world': parks.park_world(lib, q['file'])}))
+                if u.path == '/api/park_model':
+                    with lock:
+                        res = parks.sid_model(lib, q['sid'], q.get('overlay', ''))
+                    if res is None:
+                        return self.js({'error': 'no model for this item'}, 404)
+                    return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
+                if u.path == '/api/park_animal':
+                    with lock:
+                        res = parks.animal_model(lib, q['mdl'])
+                    if res is None:
+                        return self.js({'error': 'no such animal model'}, 404)
+                    return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
+                if u.path == '/api/park_track':
+                    with lock:
+                        glb, info = parks.track_model(lib, q['file'], int(q['id']))
+                    return self.send(200, glb, 'model/gltf-binary', {'X-Info': json.dumps(info, default=str)})
                 if u.path == '/api/fw/file':
                     with lock:
                         d = fw.file_info(lib, q['path'])

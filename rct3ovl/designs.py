@@ -66,6 +66,19 @@ def load_design(path: str) -> dict:
     inst = t.of_type('TrackedRideInstance')
     inst = inst[0][1] if inst else {}
     pieces = {oid: v for oid, v in t.of_type('TrackPiece')}
+    chains = piece_chains(pieces)
+    tr = hdr.get('TestResults', {})
+    return {'ride': hdr.get('TrackedRideSymbolName', ''), 'name': inst.get('Name', ''), 'cost': hdr.get('Cost'),
+            'ratings': hdr.get('RideAssessmentResults', {}).get('AssessmentRatings'),
+            'stats': {k: tr.get(k) for k in ('MaxSpeed', 'AverageSpeed', 'RideLength', 'RideTime', 'HighestDropHeight',
+                                             'NInversions', 'NDrops', 'AirTime', 'MaxPositiveVerticalG', 'MaxLateralG')},
+            'trains': inst.get('NTrains'), 'cars_per_train': inst.get('NCarsPerTrain'),
+            'chains': [([pieces[o] for o in c], closed) for c, closed in chains],
+            'pieces': [pieces[o] for c, _ in chains for o in c], 'closed': any(cl for _, cl in chains)}
+
+
+def piece_chains(pieces: dict) -> list:
+    """{oid: TrackPiece} -> [([oid...], closed)]."""
     prev = {v['Next']: oid for oid, v in pieces.items() if v['Next'] in pieces}
     # a design can hold several separate tracks (Twin Thunder: two circuits): walk each chain on its own. Open
     # chains start at a piece nothing points to; circuits at a station piece (straight, one tile: its grid position
@@ -85,24 +98,48 @@ def load_design(path: str) -> dict:
         start = next((o for o in left if 'stationmiddle' in pieces[o]['SYMBOLNAME'].lower()),
                      next((o for o in left if 'station' in pieces[o]['SYMBOLNAME'].lower()), left[0]))
         c, closed = walk(start); chains.append((c, closed))
-    tr = hdr.get('TestResults', {})
-    return {'ride': hdr.get('TrackedRideSymbolName', ''), 'name': inst.get('Name', ''), 'cost': hdr.get('Cost'),
-            'ratings': hdr.get('RideAssessmentResults', {}).get('AssessmentRatings'),
-            'stats': {k: tr.get(k) for k in ('MaxSpeed', 'AverageSpeed', 'RideLength', 'RideTime', 'HighestDropHeight',
-                                             'NInversions', 'NDrops', 'AirTime', 'MaxPositiveVerticalG', 'MaxLateralG')},
-            'trains': inst.get('NTrains'), 'cars_per_train': inst.get('NCarsPerTrain'),
-            'chains': [([pieces[o] for o in c], closed) for c, closed in chains],
-            'pieces': [pieces[o] for c, _ in chains for o in c], 'closed': any(cl for _, cl in chains)}
+    return chains
 
 
 def build_design(lib: Library, path: str) -> tuple[bytes, dict]:
     d = load_design(path)
-    ride = d['ride'].lower()
+    merged, placed, gaps, missing, ts = lay_track(lib, d['ride'], d['chains'], os.path.basename(path)[:-4])
+    # move the ride from its park coordinates to the origin, lowest point at ground level. Pieces sit on 4 m tiles
+    # centred on multiples of 4 m (edges at 4n+2), so shift by a whole number of tiles plus half a tile: tile edges
+    # then land on multiples of 4 m, where the viewer draws its tile grid
+    allp = np.concatenate([m.positions for m in merged.meshes])
+    cx, cz = (allp[:, 0].min() + allp[:, 0].max()) / 2, (allp[:, 2].min() + allp[:, 2].max()) / 2
+    shift = np.array([-(4 * round(cx / 4) + 2), -allp[:, 1].min(), -(4 * round(cz / 4) + 2)], np.float32)
+    for m in merged.meshes:
+        m.positions = m.positions + shift
+    info = {k: d[k] for k in ('ride', 'name', 'cost', 'ratings', 'stats', 'trains', 'cars_per_train', 'closed')}
+    footprint = (allp[:, [0, 2]].max(0) - allp[:, [0, 2]].min(0)) / 4
+    info['footprint_tiles'] = f'{int(np.ceil(footprint[0] - 1e-3))} x {int(np.ceil(footprint[1] - 1e-3))}'
+    info['closure_gap'] = round(max(gaps), 3) if gaps else None
+    info.update({'pieces': len(d['pieces']), 'placed': placed, 'tracks': len(d['chains']),
+                 'missing_pieces': sorted(missing), 'track_files': ts['track_ovls']})
+    return track_glb(lib, merged), info
+
+
+def track_glb(lib: Library, merged: Shape) -> bytes:
+    lookup_ovl = {}
+
+    def tex(n):
+        return lib.texture_image(n, prefer=lookup_ovl.get(n))
+    for m in merged.meshes:
+        lookup_ovl.setdefault(m.texture, getattr(m, '_ovl', None))
+    return shape_to_glb(merged, tex)
+
+
+def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
+    """Track pieces placed end to end, chain by chain, in the grid's own coordinates (tile n centred on 4n m).
+    chains: [([TrackPiece fields], closed)]. -> (merged Shape, pieces placed, circuit gaps, missing pieces, track set)"""
+    ride = ride_symbol.lower()
     ts = next((s for s in track_sets(lib) if s['ride'] == ride), None)
     if not ts:
-        raise OvlError(f'no track pieces found for {d["ride"]}')
+        raise OvlError(f'no track pieces found for {ride_symbol}')
     where = {n.lower(): (o, n) for o, n in ts['pieces']}
-    merged = Shape(os.path.basename(path)[:-4], 'shs', ((0, 0, 0), (0, 0, 0)))
+    merged = Shape(name, 'shs', ((0, 0, 0), (0, 0, 0)))
     geo_cache, shape_cache, missing = {}, {}, set()
     placed, gaps = 0, []
 
@@ -119,7 +156,7 @@ def build_design(lib: Library, path: str) -> tuple[bytes, dict]:
             return None
         return geo_cache[key], shape_cache[key]
 
-    for chain, closed in d['chains']:                 # each separate track on its own
+    for chain, closed in chains:                      # each separate track on its own
         cur_pos = cur_dir = None
         first_in = out_first = None
         for ci, v in enumerate(chain):
@@ -168,28 +205,8 @@ def build_design(lib: Library, path: str) -> tuple[bytes, dict]:
         if closed and first_in is not None:
             gaps.append(float(min(np.linalg.norm(cur_pos - first_in), np.linalg.norm(cur_pos - out_first))))
     if not merged.meshes:
-        raise OvlError('none of the design\'s track pieces could be placed')
-    # move the ride from its park coordinates to the origin, lowest point at ground level. Pieces sit on 4 m tiles
-    # centred on multiples of 4 m (edges at 4n+2), so shift by a whole number of tiles plus half a tile: tile edges
-    # then land on multiples of 4 m, where the viewer draws its tile grid
-    allp = np.concatenate([m.positions for m in merged.meshes])
-    cx, cz = (allp[:, 0].min() + allp[:, 0].max()) / 2, (allp[:, 2].min() + allp[:, 2].max()) / 2
-    shift = np.array([-(4 * round(cx / 4) + 2), -allp[:, 1].min(), -(4 * round(cz / 4) + 2)], np.float32)
-    for m in merged.meshes:
-        m.positions = m.positions + shift
-    info = {k: d[k] for k in ('ride', 'name', 'cost', 'ratings', 'stats', 'trains', 'cars_per_train', 'closed')}
-    footprint = (allp[:, [0, 2]].max(0) - allp[:, [0, 2]].min(0)) / 4
-    info['footprint_tiles'] = f'{int(np.ceil(footprint[0] - 1e-3))} x {int(np.ceil(footprint[1] - 1e-3))}'
-    info['closure_gap'] = round(max(gaps), 3) if gaps else None
-    info.update({'pieces': len(d['pieces']), 'placed': placed, 'tracks': len(d['chains']),
-                 'missing_pieces': sorted(missing), 'track_files': ts['track_ovls']})
-    lookup_ovl = {}
-
-    def tex(n):
-        return lib.texture_image(n, prefer=lookup_ovl.get(n))
-    for m in merged.meshes:
-        lookup_ovl.setdefault(m.texture, getattr(m, '_ovl', None))
-    return shape_to_glb(merged, tex), info
+        raise OvlError('none of the track pieces could be placed')
+    return merged, placed, gaps, missing, ts
 
 
 def _piece_shape(lib, o, r):

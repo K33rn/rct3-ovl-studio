@@ -342,3 +342,34 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - filetypes.md: intro paragraph and quick-reference rows for .frw (fireworks + particle effects), .fwd, .las, .wjt,
   .lwr, .wma; new .wma entry; particle effects under .frw. Table links strip the leading dot to find the entry.
   A firework file's summary has a ? linking to its entry. tests/ui_filetypes.py.
+
+## 2026-10-09: Parks tab (campaign scenarios and sandbox in 3D, with goals)
+- Campaigns\Base\*.dat (18 + Blank Landscape + Coaster Designer), Base\Soaked (9), Base\Wild (12), Sandbox (1): whole
+  saves in the trk format (146 types, ~10k objects, 0.2-0.6 s to parse). rct3ovl/parks.py, static/parks.js
+  (full window, like the MixMaster). Order and titles from text: scenarioNN_lookup / aop0_ (Soaked) / aop1_ (Wild)
+  -> key -> <key>_filename, scenario<key>_title / _text.
+- RCT3Terrain.EngineTerrain: u8 cols, u8 rows, f32 x0, z0, tile x, z (4), then 24 B/tile: 4 f32 corner heights
+  (x0z0, x1z0, x0z1, x1z1, shared with neighbours), u8 texture (terrain_NN), u8 cliff, u8, u8 sloped flag, u8
+  ownership (2 owned, 1/4 construction rights, 32 entrance, 64 for sale), 3 B. Maps aren't always centred (Zoo
+  Rescue x0 -140, z0 -180). WaterManager: u8 cols, rows, u32 bodies, each f32 height, u32 n, n x (col, row, half, mask).
+- Placement (SceneryItemDataField; scenery, path pieces, platforms, flat rides, shops): tile (POSX col, POSZ row)
+  centred on x0 + 4c + 2; HEIGHT metres in terrain space (items on slopes sit on the slope). DIRECTION: the edge
+  an item faces, 0 -col, 1 +row, 2 +col, 3 -row (from paired benches); models keep their edge side at -x;
+  'path edge' items and walls move out to that edge, quarter-tile items to CORNER. Multi-tile (sid words 4/5:
+  squares) cover squares from the stored tile towards +col/+row, swapped at odd directions: checked on 23 flat rides
+  against their own entrances / exits. sid word 2 is the size in both sid layouts.
+- glTF mirrors z (gltf.py), so the client mirrors everything it builds (terrain, water, paths, placements, people,
+  camera) z -> -z with reversed winding; tracks are laid in grid space by designs.lay_track (split out of
+  build_design; design_closure unchanged, 165/189) and shifted by (x0 + 2, z0 + 2) before export.
+- Ground paths: path_<style>_grounda/b are 2x2 auto-tile atlases; the solid quarter is used for now.
+- Goals: Objective {Difficulty, Prize} + one object per condition (Value, Consistant months). CoasterCondition
+  Flags: stat (& 15, in the order of the exe's CoasterCondition_* strings: excitement, intensity, nausea, length,
+  -G, +G, lateral G, speed (m/s: 36 = the "80 mph" challenge), altitude, air time, inversions, drop) | 16 maximum
+  | 64 water slides. Challenges: IsChallengeCondtion; texts challenge_<prefix>N(title|comp), prefix spelled
+  freely (captbc, world_of_the_sea, foutainofyouth) -> matched by normalised name.
+- graphedValue: i32 -1, 64, 64 + 64 f32, newest first (GuestsInPark[0] = guest count). Some saves hold NaN
+  (BlankLandscape research timer): parks.finite() before JSON.
+- People: Guest / staff / Duck WorldMatrix; Wild! animals: WildAnimal.Entry -> WASDatabaseEntry species ->
+  adult/male/female/baby mdl (the elephant's was points at the transport ride's elephant: species name first),
+  WildAnimal.Visual -> WildAnimalVisual.WorldMatrix; /api/park_animal (mdl + its Stand animation).
+- Tests: ui_parks (park, tabs), ui_parks_all (all 42: no errors, every track built), ui_parks_tour.

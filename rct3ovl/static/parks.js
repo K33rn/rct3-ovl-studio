@@ -114,7 +114,7 @@ function build() {
         <button data-l="rides" class="on" title="Coaster tracks, flat rides and stalls">Rides</button>
         <button data-l="paths" class="on" title="Footpaths and queues">Paths</button>
         <button data-l="water" class="on" title="Lakes, rivers and pools of water">Water</button>
-        <button data-l="people" class="on" title="Guests (coloured), staff (blue), ducks and the zoo animals">People</button>
+        <button data-l="people" class="on" title="Guests, staff, ducks and the zoo animals">People</button>
         <button data-l="own" class="on" title="Shade land the park doesn't own (yellow: for sale)">Land</button>
         <button data-l="grid" title="Tile grid">Grid</button>
         <button data-l="anim" class="on" title="Play scenery and ride animations">Animate</button>
@@ -339,6 +339,8 @@ function build() {
     const pal = [0xe8463c, 0x2f7de1, 0xf2c53d, 0x3cb371, 0xb05cd6, 0xff8c2b, 0xf0f0f0, 0x23b5b5];
     const body = new THREE.CapsuleGeometry(0.22, 1.05, 3, 8); body.translate(0, 0.75, 0);
     const duck = new THREE.SphereGeometry(0.22, 10, 8); duck.scale(1.4, 0.8, 1); duck.translate(0, 0.15, 0);
+    // stand-ins until the person models arrive (buildPersonModels), and for anyone without part groups
+    const stand = p => p[5] == null || p[5] < 0;
     const kinds = { guest: world.people.filter(p => p[0] === 'guest'), staff: world.people.filter(p => p[0] === 'staff'), duck: world.people.filter(p => p[0] === 'duck') };
     const m4 = new THREE.Matrix4(), col = new THREE.Color();
     for (const [k, list] of Object.entries(kinds)) {
@@ -350,8 +352,91 @@ function build() {
       });
       im.computeBoundingSphere();
       im.userData.pick = { title: k === 'guest' ? 'Guest' : k === 'staff' ? 'Staff member' : 'Duck' };
+      if (k !== 'duck') im.userData.standIns = true;
       layers.people.add(im);
     }
+  }
+  // each part's texture is a grid of colour variants: move the person's UVs to their own tile (upper clothing for the
+  // body and its attachments, lower clothing for the legs, skin palette for the skin parts)
+  const PERSON_LOD = 0;
+  const dressTex = new Map();
+  function dress(o, grids, p) {
+    o.traverse(m => {
+      if (!m.isMesh || !m.material?.map) return;
+      const name = m.material.name || '', gr = grids[name];
+      if (!gr) return;
+      const [cols, rows, c0, r0] = gr, n = cols * rows;
+      if (n <= 1) return;
+      const pal = /^skin/i.test(name) ? p[9] : /^legs/i.test(name) ? p[8] : p[7];
+      const v = (pal || 0) % n, c = v % cols, r = Math.floor(v / cols);
+      const key = m.material.map.uuid + '|' + v;
+      let t = dressTex.get(key);
+      if (!t) { t = m.material.map.clone(); t.offset.set((c - c0) / cols, (r - r0) / rows); t.needsUpdate = true; dressTex.set(key, t); }
+      m.material = m.material.clone(); m.material.map = t;
+    });
+  }
+  // the guests and staff themselves: one model per combination of body, legs and head, walking or standing as they
+  // were; the stand-in figures go once they're all in
+  async function buildPersonModels(seq, progress) {
+    const by = new Map();
+    world.people.forEach(p => { if (p[5] != null && p[5] >= 0) { if (!by.has(p[5])) by.set(p[5], []); by.get(p[5]).push(p); } });
+    const order = [...by.keys()].sort((a, b) => by.get(b).length - by.get(a).length);
+    let done = 0;
+    const group = new THREE.Group(); group.visible = false; layers.people.add(group);
+    const work = async ci => {
+      try {
+        const r = await fetch(`/api/park_person?lod=${PERSON_LOD}&g=` + encodeURIComponent(world.person_combos[ci].join(',')));
+        if (!r.ok || seq !== loadSeq) return;
+        const grids = JSON.parse(r.headers.get('X-Info') || '{}').variants || {};
+        const g = await gltf.parseAsync(await r.arrayBuffer(), '');
+        if (seq !== loadSeq) return;
+        const clip = n => g.animations.find(a => a.name.toLowerCase().startsWith(n));
+        for (const p of by.get(ci)) {
+          const o = cloneSkinned(g.scene);
+          dress(o, grids, p);
+          o.position.set(p[1], p[2], Z(p[3])); o.rotation.y = -p[4];
+          o.userData.pick = { title: p[0] === 'guest' ? 'Guest' : 'Staff member', detail: world.person_combos[ci].map(s => s.split('_')[0].toUpperCase()).join(' / ') };
+          group.add(o);
+          const a = (p[6] ? clip('walk') : clip('idle')) || g.animations[0];
+          if (a) { const mx = new THREE.AnimationMixer(o), act = mx.clipAction(a); act.play(); act.time = Math.random() * a.duration; mixers.push(mx); }
+        }
+      } catch (e) {} finally { done++; progress(done, order.length); }
+    };
+    const queue = [...order];
+    await Promise.all(Array.from({ length: 3 }, async () => { while (queue.length && seq === loadSeq) await work(queue.shift()); }));
+    if (seq !== loadSeq) return;
+    layers.people.children.filter(o => o.userData.standIns).forEach(o => layers.people.remove(o));
+    group.visible = true;
+  }
+  // ride cars where the trains stood when the park was saved
+  async function buildCars(seq) {
+    const by = {};
+    for (const c of world.cars || []) (by[c[0]] ??= []).push(c);
+    for (const [mi, list] of Object.entries(by)) {
+      const [rit, overlay, slot] = world.car_models[mi];
+      try {
+        const r = await fetch(`/api/park_car?rit=${encodeURIComponent(rit)}&overlay=${encodeURIComponent(overlay)}&slot=${slot}`);
+        if (!r.ok || seq !== loadSeq) continue;
+        const g = await gltf.parseAsync(await r.arrayBuffer(), '');
+        if (seq !== loadSeq) return;
+        for (const c of list) {
+          const o = cloneSkinned(g.scene);
+          o.position.set(c[1], c[2], Z(c[3])); o.rotation.set(-c[4], -c[5], c[6], 'YXZ');
+          o.userData.pick = { title: spaced(rit.split(':')[0]) + ' car' };
+          layers.rides.add(o);
+        }
+      } catch (e) {}
+    }
+  }
+  // support columns under the coaster tracks (track_model's 'supports': [x, z, ground, top])
+  const supportGeo = new THREE.CylinderGeometry(0.2, 0.24, 1, 8); supportGeo.translate(0, 0.5, 0);
+  const supportMat = new THREE.MeshLambertMaterial({ color: 0x737a86 });
+  function addSupports(list, name) {
+    if (!list?.length) return;
+    const im = new THREE.InstancedMesh(supportGeo, supportMat, list.length), m = new THREE.Matrix4();
+    list.forEach(([x, z, g0, top], k) => im.setMatrixAt(k, m.makeScale(1, Math.max(0.1, top - g0), 1).setPosition(x, g0, Z(z))));
+    im.computeBoundingSphere(); im.userData.pick = { title: name, detail: 'supports' }; im.userData.shared = true;
+    layers.rides.add(im);
   }
   // Wild! animals: the species' model standing where the animal was, playing its standing animation
   async function buildAnimals(seq) {
@@ -388,12 +473,12 @@ function build() {
     return modelCache[key];
   }
   // Placement: tile centre, turned by DIRECTION (0 faces the tile's -column edge, 1 +row, 2 +column, 3 -row; the
-  // models have their edge side at -x). Quarter-tile items go to their CORNER; edge items (walls, benches, lamps) out
+  // models have their edge side at +x). Quarter-tile items go to their CORNER; edge items (walls, benches, lamps) out
   // to the edge they face. Bigger items (flat rides, shops) cover squares[0] columns x squares[1] rows (swapped at
   // directions 1 and 3) from the stored tile towards +column / +row, and stand in the middle of that.
   const CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
   const EDGE = { 'wall': 2.0, 'path edge outer': 1.85, 'path edge join': 1.85, 'path edge inner': 1.35, 'half tile': 1.0 };
-  const ROT = { off: 0, sign: -1 };
+  const ROT = { off: 2, sign: -1 };       // the same turn as track pieces: checked on raised path slopes (they rise towards -x)
   function itemMatrix(it, meta) {
     const [, c, r, y, dir, corner] = it, T = world.tile;
     let x = world.x0 + c * T + T / 2, z = world.z0 + r * T + T / 2;
@@ -405,7 +490,7 @@ function build() {
     if (meta.size === 'quarter tile' && corner >= 0) { x += CORNERS[corner & 3][0]; z += CORNERS[corner & 3][1]; }
     const a = ROT.sign * ((dir + ROT.off) % 4) * Math.PI / 2, d = EDGE[meta.size] || 0;
     const m = new THREE.Matrix4().makeRotationY(a);
-    m.setPosition(x - d * Math.cos(a), y, Z(z) + d * Math.sin(a));
+    m.setPosition(x + d * Math.cos(a), y, Z(z) - d * Math.sin(a));
     return m;
   }
   async function buildItems(seq, progress) {
@@ -457,10 +542,12 @@ function build() {
       try {
         const r = await fetch(`/api/park_track?file=${encodeURIComponent(world.file)}&id=${tr.id}`);
         if (!r.ok) continue;
+        const meta = JSON.parse(r.headers.get('X-Info') || '{}');
         const g = await gltf.parseAsync(await r.arrayBuffer(), '');
         if (seq !== loadSeq) return;
         g.scene.userData.pick = { title: tr.name, detail: 'coaster / tracked ride' };
         layers.rides.add(g.scene);
+        addSupports(meta.supports, tr.name);
         const box = new THREE.Box3().setFromObject(g.scene); rideSpots[tr.id] = box.getCenter(new THREE.Vector3());
       } catch (e) {}
     }
@@ -529,8 +616,11 @@ function build() {
     applyLayers();
     status(`Placing ${world.items.length.toLocaleString()} items…`, 0.1);
     await Promise.all([
-      buildItems(seq, (n, of) => status(`Loading models ${n} / ${of} (${world.items.length.toLocaleString()} items)…`, 0.1 + 0.85 * n / of)),
-      buildTracks(seq), buildAnimals(seq)]);
+      buildItems(seq, (n, of) => status(`Loading models ${n} / ${of} (${world.items.length.toLocaleString()} items)…`, 0.1 + 0.6 * n / of)),
+      buildTracks(seq), buildCars(seq), buildAnimals(seq)]);
+    if (seq !== loadSeq) return;
+    const np = world.people.filter(p => p[5] >= 0).length;
+    await buildPersonModels(seq, (n, of) => status(`Loading people ${n} / ${of} (${np.toLocaleString()} guests and staff)…`, 0.7 + 0.3 * n / of));
     if (seq !== loadSeq) return;
     status(null);
   }

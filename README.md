@@ -129,9 +129,12 @@ The buttons at the top:
   ones, Blank Landscape, Coaster Designer and the sandbox (`Campaigns\*.dat`). **← Back** (or Esc) returns to the viewer.
   - **In 3D:** the landscape with the game's ground textures (land the park doesn't own shaded, land for sale yellow),
     water and the sea around island parks, footpaths and queues, and every placed item at its tile, height and
-    direction: trees, buildings, walls, path extras, flat rides, shops, entrances and raised paths. Every coaster and
-    tracked ride is built from its track pieces, and the guests, staff, ducks and Wild! animals stand where they were
-    when the park was saved. Animated scenery, rides and animals play.
+    direction: trees, buildings, walls, path extras, flat rides, shops, entrances and raised paths (bridges and
+    slopes join up). Every coaster and tracked ride is built from its track pieces, with support columns down to the
+    ground and its trains where they stood. Guests and staff are full models (their own body, legs and head and
+    their clothing colours, walking or standing), with the ducks and Wild! animals where they were when the park was
+    saved. Animated scenery, rides, people and animals play. People load last (the first time a park is opened this
+    takes a minute or so).
   - Drag to turn, right-drag to move, wheel to zoom, arrows or WASD to move. Click anything to see what it is, which
     tile it stands on and how high. **Whole park** frames the park's land; **Park camera** jumps to where the game's
     camera was. The buttons along the top turn scenery, rides, paths, water, people, land shading, the tile grid

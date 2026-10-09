@@ -502,8 +502,10 @@ def park_world(lib: Library, rel: str) -> dict:
     world['items'] = items
     # tracked rides: one model each (/api/park_track)
     world['tracks'] = [{'id': oid, 'name': _name(lib, v.get('Name'))} for oid, (n, v) in O.items() if n == 'TrackedRideInstance']
-    # people and ducks
-    people = []
+    # people and ducks. A person is built from three part groups (body, legs, head: PPGDatabaseEntry.SymbolName,
+    # often from different characters, e.g. AM01 body, AM05 legs, AM07 head) -> 'combos', one model each
+    people, combos, combo_index = [], [], {}
+    ppg = lambda ref: (O.get(ref, ('', {}))[1].get('SymbolName') or '').lower()
     for oid, (n, v) in O.items():
         m = _matrix(v.get('WorldMatrix')) if 'WorldMatrix' in v else None
         if m is None:
@@ -511,8 +513,36 @@ def park_world(lib: Library, rel: str) -> dict:
         kind = 'duck' if n == 'Duck' else 'guest' if n == 'Guest' else 'staff' if n in PERSON_TYPES else n.lower()
         if n == 'Guest' and not v.get('IsInPark') and abs(m[12]) < 1e-3 and abs(m[14]) < 1e-3:
             continue
-        people.append([kind, round(m[12], 2), round(m[13], 2), round(m[14], 2), round(float(np.arctan2(m[8], m[0])), 3)])
+        combo = -1
+        groups = tuple(g + ':ppg' for g in (ppg(v.get('BodyPartGroup')), ppg(v.get('LegsPartGroup')), ppg(v.get('HeadPartGroup'))) if g)
+        if groups:
+            if groups not in combo_index:
+                combo_index[groups] = len(combos); combos.append(list(groups))
+            combo = combo_index[groups]
+        people.append([kind, round(m[12], 2), round(m[13], 2), round(m[14], 2), round(float(np.arctan2(m[8], m[0])), 3),
+                       combo, 1 if (v.get('MoveSpeed') or 0) > 0.05 else 0,
+                       v.get('UpperClothingPalette') or 0, v.get('LowerClothingPalette') or 0, v.get('SkinPalette') or 0])
     world['people'] = people
+    world['person_combos'] = combos
+    # ride cars: where each car of each train stood (world position, Euler angles), and which car model it is
+    cars, car_models, car_index = [], [], {}
+    for oid, (n, v) in O.items():
+        if n != 'RideCarInstance' or not isinstance(v.get('Stats'), dict):
+            continue
+        tr = O.get(v.get('RideTrainInstance'), ('', {}))[1]
+        rit = tr.get('RideTrainSymbolName', '')
+        st = v['Stats']
+        if not rit or not st.get('PosValid', 1):
+            continue
+        key = (rit, tr.get('RideTrainOverlayName', ''), v.get('WhichRideTrainCar', 2))
+        if key not in car_index:
+            car_index[key] = len(car_models); car_models.append(list(key))
+        orient = st.get('Orient')
+        ang = list(struct.unpack('<3f', orient)) if isinstance(orient, (bytes, bytearray)) and len(orient) == 12 else [0, 0, 0]
+        p = st.get('Pos') or [0, 0, 0]
+        cars.append([car_index[key], round(p[0], 3), round(p[1], 3), round(p[2], 3)] + [round(a, 4) for a in ang])
+    world['cars'] = cars
+    world['car_models'] = car_models
     # Wild! animals: species (WASDatabaseEntry) and the visual that holds where it stands
     animals = []
     for oid, (n, v) in O.items():
@@ -624,7 +654,38 @@ def track_model(lib: Library, rel: str, ride_id: int) -> tuple[bytes, dict]:
         m.positions = m.positions + shift
     return track_glb(lib, merged), {'name': _name(lib, ride.get('Name')), 'type': sym, 'pieces': len(pieces),
                                     'placed': placed, 'missing': sorted(missing),
-                                    'closure_gap': round(max(gaps), 3) if gaps else None}
+                                    'closure_gap': round(max(gaps), 3) if gaps else None,
+                                    'supports': _supports(merged, ter)}
+
+
+def _supports(merged, ter: bytes, cell: float = 4.0, clear: float = 1.5) -> list:
+    """Support columns for a track: one per 4 m cell the track crosses, from the ground up to the lowest point of the
+    track there, where that is more than 1.5 m up (and not under ground: tunnels). [x, z, ground, top] in park space.
+    The game builds supports from per-style pieces; these are plain columns in their place."""
+    W, H = ter[0], ter[1]
+    x0, z0, T, _ = struct.unpack_from('<4f', ter, 2)
+    hg = np.frombuffer(ter, '<f4', W * H * 6, 18).reshape(H, W, 6)[:, :, :4]
+    P = np.concatenate([m.positions for m in merged.meshes])
+    keys = np.floor(P[:, [0, 2]] / cell).astype(np.int64)
+    order = np.lexsort((keys[:, 1], keys[:, 0]))
+    keys, P = keys[order], P[order]
+    split = np.flatnonzero(np.any(np.diff(keys, axis=0), axis=1)) + 1
+    out = []
+    for grp, k in zip(np.split(P, split), keys[np.r_[0, split]]):
+        if len(grp) < 6:
+            continue
+        low = grp[grp[:, 1] < grp[:, 1].min() + 0.4]            # right under the track's lowest point in the cell
+        x, z = float(low[:, 0].mean()), float(low[:, 2].mean())
+        c, r = int((x - x0) // T), int((z - z0) // T)
+        if not (0 <= c < W and 0 <= r < H):
+            continue
+        u, v = (x - x0) / T - c, (z - z0) / T - r
+        h = hg[r, c]
+        ground = (h[0] * (1 - u) + h[1] * u) * (1 - v) + (h[2] * (1 - u) + h[3] * u) * v
+        top = float(grp[:, 1].min())
+        if top - ground > clear:
+            out.append([round(float(x), 2), round(float(z), 2), round(float(ground), 2), round(top - 0.15, 2)])
+    return out
 
 
 def animal_mdl(lib: Library, species: str, adult: bool, male: bool) -> str | None:
@@ -664,3 +725,78 @@ def animal_model(lib: Library, name: str) -> tuple[bytes, dict] | None:
     pick = next((a for a in an if any(w in a.name.lower() for w in ('idle', 'stand', 'look'))), an[0] if an else None)
     glb = shape_to_glb(s, lambda n: lib.texture_image(n, prefer=h[0]), [pick] if pick else [])
     return glb, {'name': name, 'animation': pick.name if pick else None}
+
+
+def person_model(lib: Library, groups: list[str], lod: int = 1) -> tuple[bytes, dict] | None:
+    """A guest or staff member from their three part groups (body, legs, head), walking and idle. Each part's
+    texture is a grid of colour variants (outfits); the model uses variant 0 and 'variants' gives each material's
+    grid [cols, rows, col0, row0] so the viewer can move a guest's UVs to their own clothing colours."""
+    from .characters import assemble, resolve_anims
+    from .gltf_people import people_to_glb
+    cache = lib.__dict__.setdefault('_person_models', {})
+    key = tuple(g.lower() for g in groups) + (lod,)
+    if key in cache:
+        return cache[key]
+    res = None
+    gs = list(key[:-1])
+    m, s, info = assemble(lib, gs, lod, None)
+    if m or s:
+        use = resolve_anims(m, ['Walk', 'Idle'])
+        m, s, info = assemble(lib, gs, lod, use)
+        grids = {}
+        for mm, img in m:
+            try:
+                grids[mm.name] = [int(x) for x in mm.variant_grid(img)]
+            except Exception:
+                pass
+        m = [(mm.with_variant(0, img), img) for mm, img in m]
+        res = (people_to_glb(m, s, use, gs[0].split('_')[0].upper()), {'groups': gs, 'animations': use or [], 'variants': grids})
+    if len(cache) > 400:
+        cache.pop(next(iter(cache)))
+    cache[key] = res
+    return res
+
+
+def car_model(lib: Library, rit: str, overlay: str, slot: int) -> tuple[bytes, dict] | None:
+    """A ride car: the train (rit) lists its cars at +8 + 4 * slot (front, second, middle, second to last, rear,
+    link); the car (ric) imports its body's visual (svd) first."""
+    cache = lib.__dict__.setdefault('_car_models', {})
+    key = (rit.lower(), overlay.lower(), slot)
+    if key in cache:
+        return cache[key]
+    res = None
+    prefer = None
+    rel = overlay.replace('/', '\\') + '.common.ovl' if overlay else ''
+    if rel and os.path.exists(os.path.join(lib.root, rel)):
+        try:
+            prefer = lib.open(rel)[0]
+        except Exception:
+            prefer = None
+    h = lib.find(rit, prefer=prefer)
+    if h:
+        o, r = h[0], h[1]
+        imp = {s: n for n, s in o.symbol_refs}
+        names = [imp.get(r.data + 8 + 4 * k) for k in range(6)]
+        ric = (names[slot] if 0 <= slot < 6 else None) or names[2] or names[0]
+        hr = lib.find_near(ric, o) if ric else None
+        imps = _imports(hr[0], hr[1]) if hr else []
+        mdl = next((i for i in imps if i.lower().endswith(':mdl')), None)
+        was = next((i for i in imps if i.lower().endswith(':was')), None)
+        if not mdl and was:                          # the car is an animal species (Elephant:ric -> Elephant:was)
+            hw = lib.find(was)
+            ms = [i for i in _imports(hw[0], hw[1]) if i.lower().endswith(':mdl')] if hw else []
+            mdl = next((m for m in ms if 'transport' in m.lower()), ms[0] if ms else None)
+        if mdl:                                      # an animal as the car (Wild!'s elephant transport)
+            res = animal_model(lib, mdl.split(':')[0])
+            hr = None
+        if hr:
+            svd = next((i for i in _imports(hr[0], hr[1]) if i.lower().endswith(':svd')), None)
+            hv = (lib.find_near(svd, hr[0]) or lib.find(svd)) if svd else None
+            if hv:
+                lods = [l for l in load_svd(hv[0], hv[1]).lods if l.model.lower().endswith((':bsh', ':shs'))]
+                hm = (lib.find_near(lods[0].model, hv[0]) or lib.find(lods[0].model)) if lods else None
+                if hm:
+                    shape = load_shape(hm[0], hm[1])
+                    res = (shape_to_glb(shape, lambda n: lib.texture_image(n, prefer=hm[0])), {'car': ric, 'model': lods[0].model})
+    cache[key] = res
+    return res

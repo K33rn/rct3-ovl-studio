@@ -373,3 +373,22 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   adult/male/female/baby mdl (the elephant's was points at the transport ride's elephant: species name first),
   WildAnimal.Visual -> WildAnimalVisual.WorldMatrix; /api/park_animal (mdl + its Stand animation).
 - Tests: ui_parks (park, tabs), ui_parks_all (all 42: no errors, every track built), ui_parks_tour.
+
+## 2026-10-09: Parks: paths and structures, people, trains, supports
+- Rotation of placed items: ((DIRECTION + 2) % 4) x 90 degrees in RCT3 space, the same rule as track pieces, i.e.
+  three rotation.y = -((dir + 2) % 4) * pi / 2 after the z mirror. Found on raised path slopes: the slope model
+  rises towards local -x, and neighbouring HEIGHTs give the uphill side for each DIRECTION (0 +col, 1 -row, 2 -col,
+  3 +row); HEIGHT is the low end, in metres; HEIGHTOFFSET is only the support height under the piece. Edge items
+  (benches, lamps, walls) then sit on the model's +x side. The earlier -dir rule (from benches alone) turned
+  slopes, turns and buildings the wrong way round.
+- People: PPGDatabaseEntry.SymbolName of Body/Legs/HeadPartGroup (mixed characters: AM01 body, AM05 legs, AM07
+  head) -> one model per combination (characters.assemble, full detail: the medium detail head renders white,
+  the low one has none). Each part's texture is a grid of outfit colours (MorphMesh.variant_grid): the model uses
+  tile 0 and the viewer moves each person's UVs by texture offset to UpperClothingPalette (body, attachments),
+  LowerClothingPalette (legs), SkinPalette (skin parts). Walk or Idle by MoveSpeed.
+- Trains: RideCarInstance.Stats {Pos (world), Orient: 3 f32 Euler, yaw in the middle; 0 faces +z}. Car model:
+  RideTrainInstance.RideTrainSymbolName (rit) lists its cars at +8 + 4 * WhichRideTrainCar (front, second, middle,
+  second to last, rear, link), each car (ric) imports its body visual first. Rides closed in the save (The Money
+  Pit's Avenger) have no trains. Swinging cars' hanging parts (RideCarSwingingPart) aren't drawn yet.
+- Supports: the game builds them from per-style pieces (Supports folder), not decoded; parks._supports puts a
+  column under the track's lowest point in every 4 m cell where it is more than 1.5 m above the ground.

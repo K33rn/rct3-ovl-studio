@@ -108,6 +108,18 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     if res is None:
                         return self.js({'error': 'no model for this item'}, 404)
                     return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
+                if u.path == '/api/park_person':
+                    with lock:
+                        res = parks.person_model(lib, [g for g in q.get('g', '').split(',') if g.endswith(':ppg')], int(q.get('lod', 1)))
+                    if res is None:
+                        return self.js({'error': 'no such person'}, 404)
+                    return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
+                if u.path == '/api/park_car':
+                    with lock:
+                        res = parks.car_model(lib, q['rit'], q.get('overlay', ''), int(q.get('slot', 2)))
+                    if res is None:
+                        return self.js({'error': 'no such car'}, 404)
+                    return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
                 if u.path == '/api/park_animal':
                     with lock:
                         res = parks.animal_model(lib, q['mdl'])

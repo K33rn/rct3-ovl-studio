@@ -116,7 +116,7 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
                 if u.path == '/api/park_car':
                     with lock:
-                        res = parks.car_model(lib, q['rit'], q.get('overlay', ''), int(q.get('slot', 2)))
+                        res = parks.car_model(lib, q['rit'], q.get('overlay', ''), int(q.get('slot', 2)), q.get('part', 'main'))
                     if res is None:
                         return self.js({'error': 'no such car'}, 404)
                     return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
@@ -129,7 +129,20 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 if u.path == '/api/park_track':
                     with lock:
                         glb, info = parks.track_model(lib, q['file'], int(q['id']))
-                    return self.send(200, glb, 'model/gltf-binary', {'X-Info': json.dumps(info, default=str)})
+                    head = {k: v for k, v in info.items() if k != 'supports'}
+                    return self.send(200, glb, 'model/gltf-binary', {'X-Info': json.dumps(head, default=str)})
+                if u.path == '/api/park_supports':
+                    with lock:
+                        glb, info = parks.track_model(lib, q['file'], int(q['id']))
+                    return self.js(info.get('supports', []))
+                if u.path == '/api/park_tex':
+                    name = q.get('name', '')
+                    with lock:
+                        img = lib.texture_image(name) if name.lower().endswith((':tex', ':ftx')) else None
+                    if img is None:
+                        return self.js({'error': 'no such texture'}, 404)
+                    b = io.BytesIO(); img.save(b, 'PNG')
+                    return self.send(200, b.getvalue(), 'image/png')
                 if u.path == '/api/fw/file':
                     with lock:
                         d = fw.file_info(lib, q['path'])

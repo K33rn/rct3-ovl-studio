@@ -130,9 +130,12 @@ The buttons at the top:
   - **In 3D:** the landscape with the game's ground textures (land the park doesn't own shaded, land for sale yellow),
     water and the sea around island parks, footpaths and queues, and every placed item at its tile, height and
     direction: trees, buildings, walls, path extras, flat rides, shops, entrances and raised paths (bridges and
-    slopes join up). Every coaster and tracked ride is built from its track pieces, with support columns down to the
-    ground and its trains where they stood. Guests and staff are full models (their own body, legs and head and
-    their clothing colours, walking or standing), with the ducks and Wild! animals where they were when the park was
+    slopes join up). Queues have their queue type's floor and fences. Every coaster and tracked ride is built from
+    its track pieces, standing on the game's own supports for its style (steel columns, wooden or mine-train
+    lattice; suspended coasters hang from columns with girders), with its trains where they stood: every car,
+    including the hanging cars of swinging coasters. Guests and staff are full models (their own body, legs and head
+    and their clothing colours, walking or standing); riders sit in their seats in the ride's pose (lap bar,
+    harness with dangling feet, or lying), with the ducks and Wild! animals where they were when the park was
     saved. Animated scenery, rides, people and animals play. People load last (the first time a park is opened this
     takes a minute or so).
   - Drag to turn, right-drag to move, wheel to zoom, arrows or WASD to move. Click anything to see what it is, which

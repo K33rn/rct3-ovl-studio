@@ -392,3 +392,23 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   Pit's Avenger) have no trains. Swinging cars' hanging parts (RideCarSwingingPart) aren't drawn yet.
 - Supports: the game builds them from per-style pieces (Supports folder), not decoded; parks._supports puts a
   column under the track's lowest point in every 4 m cell where it is more than 1.5 m above the ground.
+
+## 2026-10-09: Parks: game supports, cars, riders, queues
+- Supports aren't saved; the game builds them from scenery items in Supports\ whose sid type is support bottom /
+  middle (1, 2, 4, 8 m: box_size y) / top / girder / cap and whose 'supports' string names the style (ts1 steel,
+  ts2 wooden, ts3 mine train, steel, scaffolding, flatqueueset1...). A track piece's sid names its style in the
+  same field (SuspendedSwinging, Giga, LayDown: ts1; WoodenRC: ts2; MineTrain: ts3). parks._supports: per tile
+  the track crosses (not stations), a bottom piece, middles greedy 8/4/2/1, a top piece; thin styles under the
+  track's lowest point, lattice styles on the tile centre turned to the track; inverted tracks (pieces Inv*) hang
+  from a column 1.6 m to the side with the style's girder across. The game's exact rules (which pieces get one)
+  aren't decoded. Supports come from /api/park_supports (too big for a header).
+- Cars: the car (ric) has its visual at +0x0C and, for swinging cars, the swinging part's at +0x14 (the
+  Biplane: bogie + plane). RideCarSwingingPart: PivotPos, Length, RotatedEndOrient; the car hangs Length below the
+  pivot along its own down axis. Stats.Orient of a suspended car includes the half turn (0, 0, pi).
+- Riders: Guest.AttractionPersonInfo -> *PersonInfo {State 3 = riding, Matrix (seat, world, row-vector 4x4)};
+  pose by the ride (laydown/flying: RideLayWait; inverted/suspended/swinging/floorless: RideSitHarnessFeetDangleWait;
+  else RideSitBarWait), loaded with each person model.
+- Queues: PathQueue.StartDirection / EndDirection are the open edges, 0 -col, 1 +col, 2 -row, 3 +row (fits all
+  598 open edges in the 42 parks); FenceEntry is the fence sid (wall size), placed on the other edges. Floor: the
+  queue type's (QueueSet1:qtd -> GroundQueueSet1:ftx, a 2x2 atlas; its straight piece, turned along the queue).
+  /api/park_tex serves any tex/ftx by name.

@@ -159,6 +159,13 @@ function build() {
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
   }
   const texCache = {};
+  function parkTex(name) {                         // any game texture by its full name (GroundQueueSet1:ftx)
+    if (!texCache[name]) {
+      const t = new THREE.TextureLoader().load('/api/park_tex?name=' + encodeURIComponent(name));
+      t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; texCache[name] = t;
+    }
+    return texCache[name];
+  }
   function gameTex(name, repeat = true) {
     if (!texCache[name]) {
       const t = new THREE.TextureLoader().load('/api/fw/tex?name=' + encodeURIComponent(name));
@@ -313,21 +320,29 @@ function build() {
   function buildPaths() {
     clear(layers.paths);
     const W = world.cols, T = world.tile, by = {};
-    for (const [c, r, s, raisedH] of world.paths) {
+    for (const [c, r, s, raisedH, , , qs, qe] of world.paths) {
       if (raisedH !== -9999 || c >= world.cols || r >= world.rows) continue;     // raised queues: their own models
-      (by[s] ??= []).push([c, r]);
+      (by[s] ??= []).push([c, r, qs, qe]);
     }
     for (const [s, tiles] of Object.entries(by)) {
-      const style = world.path_styles[s] || '', queue = style.startsWith('queue:');
+      const style = world.path_styles[s] || '', queue = style.startsWith('queue:'), texName = (world.path_tex || {})[style];
       const p = [], uv = [];
-      for (const [c, r] of tiles) {
+      for (const [c, r, qs, qe] of tiles) {
         const i = r * W + c, h = [tileH(i, 0), tileH(i, 1), tileH(i, 2), tileH(i, 3)], corner = [[0, 0], [1, 0], [0, 1], [1, 1]];
-        for (const tri of tris(h)) for (const k of tri) { p.push(world.x0 + (c + corner[k][0]) * T, h[k] + 0.07, Z(world.z0 + (r + corner[k][1]) * T)); uv.push(0.01 + 0.48 * corner[k][0], 0.51 + 0.48 * corner[k][1]); }   // the atlas's solid quarter (top left)
+        // paths: the atlas's solid quarter (top left). Queues: the straight piece (bottom left), its stripes along the
+        // queue: edges 0/1 (-col/+col) open -> runs along x, else along z
+        const alongX = queue && (qs === 0 || qs === 1 || qe === 0 || qe === 1) && !(qs >= 2 && qs <= 3 && qe >= 2 && qe <= 3);
+        for (const tri of tris(h)) for (const k of tri) {
+          p.push(world.x0 + (c + corner[k][0]) * T, h[k] + 0.07, Z(world.z0 + (r + corner[k][1]) * T));
+          const [a, b] = alongX ? [corner[k][1], corner[k][0]] : corner[k];
+          if (queue) uv.push(0.01 + 0.48 * a, 0.01 + 0.48 * b); else uv.push(0.01 + 0.48 * a, 0.51 + 0.48 * b);
+        }
       }
       const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
       geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.computeVertexNormals();
-      const mat = queue || !style ? new THREE.MeshLambertMaterial({ color: queue ? 0xb59a6a : 0x9a9488, polygonOffset: true, polygonOffsetFactor: -2 })
-        : new THREE.MeshLambertMaterial({ map: gameTex('path_' + style.toLowerCase() + '_grounda'), polygonOffset: true, polygonOffsetFactor: -2 });
+      const map = !texName ? null : queue ? parkTex(texName) : gameTex('path_' + style.toLowerCase() + '_grounda');
+      const mat = map ? new THREE.MeshLambertMaterial({ map, polygonOffset: true, polygonOffsetFactor: -2 })
+        : new THREE.MeshLambertMaterial({ color: queue ? 0xb59a6a : 0x9a9488, polygonOffset: true, polygonOffsetFactor: -2 });
       const m = new THREE.Mesh(geo, mat);
       m.userData.pick = { title: queue ? 'Queue' : `${spaced(style)} path`, detail: queue ? spaced(style.slice(6)) : '' };
       layers.paths.add(m);
@@ -394,10 +409,14 @@ function build() {
         for (const p of by.get(ci)) {
           const o = cloneSkinned(g.scene);
           dress(o, grids, p);
-          o.position.set(p[1], p[2], Z(p[3])); o.rotation.y = -p[4];
-          o.userData.pick = { title: p[0] === 'guest' ? 'Guest' : 'Staff member', detail: world.person_combos[ci].map(s => s.split('_')[0].toUpperCase()).join(' / ') };
+          if (p[11]) {
+            // riding: the seat's matrix (RCT3 row-vector 4x4 -> three's column form, then mirrored like everything else)
+            const m = new THREE.Matrix4().fromArray(p[11]), S = new THREE.Matrix4().makeScale(1, 1, -1);
+            o.matrixAutoUpdate = false; o.matrix.copy(S).multiply(m).multiply(S);
+          } else { o.position.set(p[1], p[2], Z(p[3])); o.rotation.y = -p[4]; }
+          o.userData.pick = { title: p[11] ? 'Guest (riding)' : p[0] === 'guest' ? 'Guest' : 'Staff member', detail: world.person_combos[ci].map(s => s.split('_')[0].toUpperCase()).join(' / ') };
           group.add(o);
-          const a = (p[6] ? clip('walk') : clip('idle')) || g.animations[0];
+          const a = (p[10] ? clip(p[10].toLowerCase()) : p[6] ? clip('walk') : clip('idle')) || g.animations[0];
           if (a) { const mx = new THREE.AnimationMixer(o), act = mx.clipAction(a); act.play(); act.time = Math.random() * a.duration; mixers.push(mx); }
         }
       } catch (e) {} finally { done++; progress(done, order.length); }
@@ -413,30 +432,38 @@ function build() {
     const by = {};
     for (const c of world.cars || []) (by[c[0]] ??= []).push(c);
     for (const [mi, list] of Object.entries(by)) {
-      const [rit, overlay, slot] = world.car_models[mi];
+      const [rit, overlay, slot, part] = world.car_models[mi];
       try {
-        const r = await fetch(`/api/park_car?rit=${encodeURIComponent(rit)}&overlay=${encodeURIComponent(overlay)}&slot=${slot}`);
+        const r = await fetch(`/api/park_car?rit=${encodeURIComponent(rit)}&overlay=${encodeURIComponent(overlay)}&slot=${slot}&part=${part || 'main'}`);
         if (!r.ok || seq !== loadSeq) continue;
         const g = await gltf.parseAsync(await r.arrayBuffer(), '');
         if (seq !== loadSeq) return;
         for (const c of list) {
           const o = cloneSkinned(g.scene);
           o.position.set(c[1], c[2], Z(c[3])); o.rotation.set(-c[4], -c[5], c[6], 'YXZ');
+          if (c[7]) o.position.add(new THREE.Vector3(0, -c[7], 0).applyEuler(o.rotation));   // a swinging car hangs Length below its pivot
           o.userData.pick = { title: spaced(rit.split(':')[0]) + ' car' };
           layers.rides.add(o);
         }
       } catch (e) {}
     }
   }
-  // support columns under the coaster tracks (track_model's 'supports': [x, z, ground, top])
-  const supportGeo = new THREE.CylinderGeometry(0.2, 0.24, 1, 8); supportGeo.translate(0, 0.5, 0);
-  const supportMat = new THREE.MeshLambertMaterial({ color: 0x737a86 });
-  function addSupports(list, name) {
-    if (!list?.length) return;
-    const im = new THREE.InstancedMesh(supportGeo, supportMat, list.length), m = new THREE.Matrix4();
-    list.forEach(([x, z, g0, top], k) => im.setMatrixAt(k, m.makeScale(1, Math.max(0.1, top - g0), 1).setPosition(x, g0, Z(z))));
-    im.computeBoundingSphere(); im.userData.pick = { title: name, detail: 'supports' }; im.userData.shared = true;
-    layers.rides.add(im);
+  // coaster supports, built from the ride's own support style pieces (/api/park_supports: [sid, x, y, z, yaw])
+  async function addSupports(list, name, seq) {
+    const by = new Map();
+    for (const s of list || []) { if (!by.has(s[0])) by.set(s[0], []); by.get(s[0]).push(s); }
+    for (const [sid, parts] of by) {
+      const got = await sidModel({ name: sid, overlay: '' });
+      if (!got || seq !== loadSeq) continue;
+      const mats = parts.map(([, x, y, z, yaw]) => new THREE.Matrix4().makeRotationY(-yaw).setPosition(x, y, Z(z)));
+      got.g.scene.traverse(o => {
+        if (!o.isMesh) return;
+        const im = new THREE.InstancedMesh(o.geometry, o.material, mats.length), tmp = new THREE.Matrix4();
+        mats.forEach((m, k) => im.setMatrixAt(k, tmp.multiplyMatrices(m, o.matrixWorld)));
+        im.computeBoundingSphere(); im.userData.pick = { title: name, detail: 'supports' }; im.userData.shared = true;
+        layers.rides.add(im);
+      });
+    }
   }
   // Wild! animals: the species' model standing where the animal was, playing its standing animation
   async function buildAnimals(seq) {
@@ -547,8 +574,9 @@ function build() {
         if (seq !== loadSeq) return;
         g.scene.userData.pick = { title: tr.name, detail: 'coaster / tracked ride' };
         layers.rides.add(g.scene);
-        addSupports(meta.supports, tr.name);
         const box = new THREE.Box3().setFromObject(g.scene); rideSpots[tr.id] = box.getCenter(new THREE.Vector3());
+        const sr = await fetch(`/api/park_supports?file=${encodeURIComponent(world.file)}&id=${tr.id}`);
+        if (sr.ok) await addSupports(await sr.json(), tr.name, seq);
       } catch (e) {}
     }
   }

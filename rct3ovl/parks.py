@@ -152,6 +152,31 @@ def finite(v):
     return v
 
 
+def _euler(b) -> list[float]:
+    """An 'orientation' field: 3 f32 Euler angles (radians)."""
+    if isinstance(b, (bytes, bytearray)) and len(b) == 12:
+        return [round(a, 4) for a in struct.unpack('<3f', b)]
+    return [0.0, 0.0, 0.0]
+
+
+def _ride_pose(O: dict, ride_ref) -> str:
+    """The animation a seated rider plays, from the kind of ride: lying (lay-down / flying coasters), feet dangling
+    in a harness (inverted, suspended, swinging, floorless), else sitting with a lap bar."""
+    ride = O.get(ride_ref, ('', {}))[1]
+    names = [ride.get('AnimatedRideSymbolName', ''), O.get(ride.get('AIDDatabaseEntry'), ('', {}))[1].get('SYMBOLNAME', '')]
+    for t in ride.get('Trains') or []:
+        names.append(O.get(t, ('', {}))[1].get('RideTrainSymbolName', ''))
+    s = ' '.join(names).lower()
+    if 'laydown' in s or 'flying' in s:
+        return 'RideLayWait'
+    if any(w in s for w in ('invert', 'suspend', 'swing', 'floorless', 'biplane', 'parrot', 'skyswinger')):
+        return 'RideSitHarnessFeetDangleWait'
+    return 'RideSitBarWait'
+
+
+RIDE_POSES = ['RideSitBarWait', 'RideLayWait', 'RideSitHarnessFeetDangleWait']
+
+
 def _graph(b) -> list[float] | None:
     """graphedValue: i32 -1, i32 64, i32 64, 64 floats: the last 64 samples, newest first (the first is the current
     value: GuestsInPark[0] is the park's guest count). Returned oldest first."""
@@ -462,9 +487,19 @@ def park_world(lib: Library, rel: str) -> dict:
                 styles.append(style)
             raised = n == 'PathQueue' and v.get('BaseHeight', -1) >= 0
             paths.append([v['ColIndex'], v['RowIndex'], styles.index(style), v.get('QuantisedHeight', 0) if raised else -9999,
-                          v.get('SlopeType', 0), v.get('Direction', 0)])
+                          v.get('SlopeType', 0), v.get('Direction', 0), v.get('StartDirection', 255), v.get('EndDirection', 255)])
     world['paths'] = paths
     world['path_styles'] = styles
+    # path floor textures: path_<style>_grounda, queues their queue type's own (QueueSet1:qtd -> GroundQueueSet1:ftx)
+    ptex = {}
+    for s in styles:
+        if s.startswith('queue:'):
+            h = lib.find(s[6:] + ':qtd')
+            ftx = next((i for i in _imports(h[0], h[1]) if i.lower().endswith((':ftx', ':tex'))), None) if h else None
+            ptex[s] = ftx or ''
+        elif s:
+            ptex[s] = 'path_' + s.lower() + '_grounda:tex'
+    world['path_tex'] = ptex
     # placed things
     sids, items = [], []
     sid_index = {}
@@ -498,6 +533,19 @@ def park_world(lib: Library, rel: str) -> dict:
                   absolute=bool(v.get('FORCEABSOLUTEHEIGHT')) or own[0] != 'SceneryItem')
         elif n == 'SceneryItemPlacementSingle':
             place(v['SceneryItemDataField'], sid_of(v['SIDDatabaseEntry']), 3, ref=v.get('Owner'))
+        elif n == 'PathQueue' and isinstance(v.get('FenceEntry'), int) and v['FenceEntry'] in O:
+            # queue fences: the queue's fence item (FenceEntry) on every edge the queue doesn't enter or leave by.
+            # StartDirection / EndDirection number the edges 0 -col, 1 +col, 2 -row, 3 +row (fits every queue tile
+            # of every park); item DIRECTION numbers them 0 -col, 1 +row, 2 +col, 3 -row
+            c, r = v['ColIndex'], v['RowIndex']
+            if not (0 <= c < W and 0 <= r < H):
+                continue
+            open_ = {v.get('StartDirection'), v.get('EndDirection')}
+            raised = v.get('BaseHeight', -1) >= 0
+            y = float(v.get('QuantisedHeight', 0)) if raised else float(hgrid[r, c].mean())
+            for e, item_dir in ((0, 0), (1, 2), (2, 3), (3, 1)):
+                if e not in open_:
+                    items.append([sid_of(v['FenceEntry']), c, r, round(y, 3), item_dir, 0, 5, -1])
     world['sids'] = sids
     world['items'] = items
     # tracked rides: one model each (/api/park_track)
@@ -519,9 +567,16 @@ def park_world(lib: Library, rel: str) -> dict:
             if groups not in combo_index:
                 combo_index[groups] = len(combos); combos.append(list(groups))
             combo = combo_index[groups]
+        # on a ride: the seat's matrix (AttractionPersonInfo.Matrix, State 3 = riding) and a ride pose
+        pose, seat = '', None
+        pi = O.get(v.get('AttractionPersonInfo'), ('', {}))
+        if pi[0].endswith('PersonInfo') and pi[1].get('State') == 3 and _matrix(pi[1].get('Matrix')):
+            seat = [round(x, 4) for x in _matrix(pi[1]['Matrix'])]
+            pose = _ride_pose(O, pi[1].get('Attraction'))
         people.append([kind, round(m[12], 2), round(m[13], 2), round(m[14], 2), round(float(np.arctan2(m[8], m[0])), 3),
                        combo, 1 if (v.get('MoveSpeed') or 0) > 0.05 else 0,
-                       v.get('UpperClothingPalette') or 0, v.get('LowerClothingPalette') or 0, v.get('SkinPalette') or 0])
+                       v.get('UpperClothingPalette') or 0, v.get('LowerClothingPalette') or 0, v.get('SkinPalette') or 0,
+                       pose, seat])
     world['people'] = people
     world['person_combos'] = combos
     # ride cars: where each car of each train stood (world position, Euler angles), and which car model it is
@@ -534,13 +589,27 @@ def park_world(lib: Library, rel: str) -> dict:
         st = v['Stats']
         if not rit or not st.get('PosValid', 1):
             continue
-        key = (rit, tr.get('RideTrainOverlayName', ''), v.get('WhichRideTrainCar', 2))
+        def model(part):
+            key = (rit, tr.get('RideTrainOverlayName', ''), v.get('WhichRideTrainCar', 2), part)
+            if key not in car_index:
+                car_index[key] = len(car_models); car_models.append(list(key))
+            return car_index[key]
+        p = st.get('Pos') or [0, 0, 0]
+        cars.append([model('main'), round(p[0], 3), round(p[1], 3), round(p[2], 3)] + _euler(st.get('Orient')))
+    # swinging cars (suspended swinging coasters): the hanging part, at its pivot, turned by RotatedEndOrient
+    for oid, (n, v) in O.items():
+        if n != 'RideCarSwingingPart':
+            continue
+        car = O.get(v.get('RideCarInstance'), ('', {}))[1]
+        tr = O.get(car.get('RideTrainInstance'), ('', {}))[1]
+        rit = tr.get('RideTrainSymbolName', '')
+        pp = v.get('PivotPos')
+        if not rit or not pp:
+            continue
+        key = (rit, tr.get('RideTrainOverlayName', ''), car.get('WhichRideTrainCar', 2), 'swing')
         if key not in car_index:
             car_index[key] = len(car_models); car_models.append(list(key))
-        orient = st.get('Orient')
-        ang = list(struct.unpack('<3f', orient)) if isinstance(orient, (bytes, bytearray)) and len(orient) == 12 else [0, 0, 0]
-        p = st.get('Pos') or [0, 0, 0]
-        cars.append([car_index[key], round(p[0], 3), round(p[1], 3), round(p[2], 3)] + [round(a, 4) for a in ang])
+        cars.append([car_index[key], round(pp[0], 3), round(pp[1], 3), round(pp[2], 3)] + _euler(v.get('RotatedEndOrient')) + [round(v.get('Length') or 0, 3)])
     world['cars'] = cars
     world['car_models'] = car_models
     # Wild! animals: species (WASDatabaseEntry) and the visual that holds where it stands
@@ -631,7 +700,17 @@ def sid_model(lib: Library, name: str, overlay: str = '') -> tuple[bytes, dict] 
 
 
 def track_model(lib: Library, rel: str, ride_id: int) -> tuple[bytes, dict]:
-    """One tracked ride's track, in park coordinates."""
+    """One tracked ride's track, in park coordinates (cached: the supports are fetched separately)."""
+    cache = lib.__dict__.setdefault('_track_models', {})
+    key = (rel.lower(), ride_id)
+    if key not in cache:
+        if len(cache) > 30:
+            cache.pop(next(iter(cache)))
+        cache[key] = _track_model(lib, rel, ride_id)
+    return cache[key]
+
+
+def _track_model(lib: Library, rel: str, ride_id: int) -> tuple[bytes, dict]:
     t = _load(lib, rel)
     O = t.objects
     ride = O[ride_id][1]
@@ -652,40 +731,155 @@ def track_model(lib: Library, rel: str, ride_id: int) -> tuple[bytes, dict]:
     shift = np.array([x0 + 2, 0, z0 + 2], np.float32)          # grid tile n (centred on 4n) -> park tile n
     for m in merged.meshes:
         m.positions = m.positions + shift
+    style = _track_support_style(lib, ts, pieces)
+    stations = frozenset((v['SceneryItemDataField']['POSX'], v['SceneryItemDataField']['POSZ'])
+                         for v in pieces.values() if 'station' in v['SYMBOLNAME'].lower())
+    inverted = any(v['SYMBOLNAME'].lower().lstrip('45').startswith('inv') for v in pieces.values())
     return track_glb(lib, merged), {'name': _name(lib, ride.get('Name')), 'type': sym, 'pieces': len(pieces),
                                     'placed': placed, 'missing': sorted(missing),
                                     'closure_gap': round(max(gaps), 3) if gaps else None,
-                                    'supports': _supports(merged, ter)}
+                                    'support_style': style, 'inverted': inverted,
+                                    'supports': _supports(lib, merged, ter, style, inverted, stations)}
 
 
-def _supports(merged, ter: bytes, cell: float = 4.0, clear: float = 1.5) -> list:
-    """Support columns for a track: one per 4 m cell the track crosses, from the ground up to the lowest point of the
-    track there, where that is more than 1.5 m up (and not under ground: tunnels). [x, z, ground, top] in park space.
-    The game builds supports from per-style pieces; these are plain columns in their place."""
+def _track_support_style(lib: Library, ts: dict, pieces: dict) -> str:
+    """The support style a track's pieces name (their sid's 'supports': ts1 steel, ts2 wooden, ts3 mine train...)."""
+    from collections import Counter
+    where = {n.lower(): (o, n) for o, n in ts['pieces']}
+    counts = Counter()
+    for name in list({v['SYMBOLNAME'].lower() for v in pieces.values()})[:12]:
+        if name not in where:
+            continue
+        o, _ = lib.open(where[name][0])
+        r = next((x for x in o.resources if x.name.lower() == name), None)
+        sid = next((i for i in _imports(o, r) if i.lower().endswith(':sid')), None) if r else None
+        h = lib.find_near(sid, o) if sid else None
+        if h:
+            try:
+                s = load_sid(h[0], h[1])['supports']
+            except Exception:
+                s = ''
+            if s:
+                counts[s.lower()] += 1
+    return counts.most_common(1)[0][0] if counts else 'ts1'
+
+
+def support_parts(lib: Library) -> dict:
+    """style -> {'bottom', 'top', 'girder', 'middle': {height: sid}} from the scenery items in Supports\\ (their
+    sid type and 'supports' style; diagonal and 'undirected' variants left out)."""
+    cache = getattr(lib, '_support_parts', None)
+    if cache is not None:
+        return cache
+    out = {}
+    for k, rel in lib.index['names'].items():
+        if not (k.endswith(':sid') and rel.lower().startswith('supports')):
+            continue
+        name = k[:-4]
+        if 'diag' in name or name.startswith('undirected'):
+            continue
+        h = lib.find(k)
+        try:
+            d = load_sid(h[0], h[1])
+        except Exception:
+            continue
+        st = (d.get('supports') or '').lower()
+        if not st:
+            continue
+        e = out.setdefault(st, {'middle': {}})
+        real = d['name'][:-4]
+        typ = str(d['type'])
+        if typ == 'support middle':
+            e['middle'][int(round(d['box_size'][1] or 1))] = real
+        elif typ == 'support bottom':
+            e.setdefault('bottom', real)
+        elif typ == 'support top':
+            e.setdefault('top', real)
+        elif typ == 'support girder':
+            if '1l' in name or 'girder' not in e:
+                e['girder'] = real
+        elif typ == 'support cap':
+            e.setdefault('cap', real)
+    lib._support_parts = out
+    return out
+
+
+THIN_SUPPORTS = {'ts1', 'ts1a', 'ts4', 'ts7', 'ts8', 'ts9', 'ts10', 'steel'}     # a single column under the track
+
+
+def _supports(lib: Library, merged, ter: bytes, style: str, inverted: bool, stations=frozenset(), clear: float = 1.0) -> list:
+    """Supports built from the style's own pieces, one per 4 m tile cell the track crosses: a bottom piece at the
+    ground, middle pieces (8 / 4 / 2 / 1 m) up to the track, a top piece under it. Thin styles stand under the
+    track's lowest point, lattice styles (wooden, mine train) fill their tile. Suspended tracks hang from a column
+    beside them with a girder across the top. -> [[sid, x, y, z, yaw], ...] in park space (RCT3 coordinates).
+    The game's own placement rules aren't decoded; this follows how its supports are built."""
+    parts = support_parts(lib).get(style) or support_parts(lib).get('ts1') or {}
+    mids = parts.get('middle', {})
+    if not mids:
+        return []
     W, H = ter[0], ter[1]
     x0, z0, T, _ = struct.unpack_from('<4f', ter, 2)
     hg = np.frombuffer(ter, '<f4', W * H * 6, 18).reshape(H, W, 6)[:, :, :4]
-    P = np.concatenate([m.positions for m in merged.meshes])
-    keys = np.floor(P[:, [0, 2]] / cell).astype(np.int64)
-    order = np.lexsort((keys[:, 1], keys[:, 0]))
-    keys, P = keys[order], P[order]
-    split = np.flatnonzero(np.any(np.diff(keys, axis=0), axis=1)) + 1
-    out = []
-    for grp, k in zip(np.split(P, split), keys[np.r_[0, split]]):
-        if len(grp) < 6:
-            continue
-        low = grp[grp[:, 1] < grp[:, 1].min() + 0.4]            # right under the track's lowest point in the cell
-        x, z = float(low[:, 0].mean()), float(low[:, 2].mean())
+
+    def ground_at(x, z):
         c, r = int((x - x0) // T), int((z - z0) // T)
         if not (0 <= c < W and 0 <= r < H):
-            continue
+            return None
         u, v = (x - x0) / T - c, (z - z0) / T - r
         h = hg[r, c]
-        ground = (h[0] * (1 - u) + h[1] * u) * (1 - v) + (h[2] * (1 - u) + h[3] * u) * v
-        top = float(grp[:, 1].min())
-        if top - ground > clear:
-            out.append([round(float(x), 2), round(float(z), 2), round(float(ground), 2), round(top - 0.15, 2)])
-    return out
+        return float((h[0] * (1 - u) + h[1] * u) * (1 - v) + (h[2] * (1 - u) + h[3] * u) * v)
+
+    def column(x, z, y0, y1, yaw, out):
+        """Stack pieces from y0 up to y1."""
+        y = y0
+        if parts.get('bottom') and y1 - y >= 2:
+            out.append([parts['bottom'], x, y, z, yaw]); y += 1
+        top = parts.get('top') if y1 - y >= 2 else None
+        end = y1 - (1 if top else 0)
+        for size in sorted(mids, reverse=True):
+            while end - y >= size - 0.01:
+                out.append([mids[size], x, y, z, yaw]); y += size
+        if end - y > 0.2 and 1 in mids:                   # the last bit: a 1 m piece, overlapping the next one
+            out.append([mids[1], x, end - 1, z, yaw]); y = end
+        if top:
+            out.append([top, x, y, z, yaw])
+
+    P = np.concatenate([m.positions for m in merged.meshes])
+    cells = np.floor((P[:, [0, 2]] - [x0, z0]) / T).astype(np.int64)
+    order = np.lexsort((cells[:, 1], cells[:, 0]))
+    cells, P = cells[order], P[order]
+    split = np.flatnonzero(np.any(np.diff(cells, axis=0), axis=1)) + 1
+    thin = style in THIN_SUPPORTS
+    out = []
+    for grp, k in zip(np.split(P, split), cells[np.r_[0, split]]):
+        if len(grp) < 6 or (int(k[0]), int(k[1])) in stations:      # stations stand on their platforms
+            continue
+        xz = grp[:, [0, 2]] - grp[:, [0, 2]].mean(0)
+        ev = np.linalg.eigh(xz.T @ xz)[1][:, -1]           # the track's direction in this cell
+        along = float(np.arctan2(-ev[1], ev[0]))           # yaw that turns local +x along it
+        if inverted:
+            high = float(grp[:, 1].max())
+            cx, cz = float(grp[:, 0].mean()), float(grp[:, 2].mean())
+            px, pz = -ev[1], ev[0]                         # across the track
+            sx, sz = cx + 1.6 * px, cz + 1.6 * pz
+            g = ground_at(sx, sz)
+            if g is None or high + 0.3 - g < 2:
+                continue
+            column(sx, sz, g, high + 0.3, along, out)
+            if parts.get('girder'):
+                out.append([parts['girder'], cx + 0.8 * px, high + 0.3, cz + 0.8 * pz, float(np.arctan2(-pz, px))])
+            continue
+        low = grp[grp[:, 1] < grp[:, 1].min() + 0.4]
+        if thin:
+            x, z = float(low[:, 0].mean()), float(low[:, 2].mean())
+        else:
+            x, z = x0 + (k[0] + 0.5) * T, z0 + (k[1] + 0.5) * T
+        g = ground_at(x, z)
+        top = float(grp[:, 1].min()) - 0.1
+        if g is None or top - g < clear:
+            continue
+        yaw = along if thin else round(along / (np.pi / 2)) * (np.pi / 2)
+        column(x, z, g, top, yaw, out)
+    return [[s, round(float(x), 3), round(float(y), 3), round(float(z), 3), round(float(a), 4)] for s, x, y, z, a in out]
 
 
 def animal_mdl(lib: Library, species: str, adult: bool, male: bool) -> str | None:
@@ -741,7 +935,7 @@ def person_model(lib: Library, groups: list[str], lod: int = 1) -> tuple[bytes, 
     gs = list(key[:-1])
     m, s, info = assemble(lib, gs, lod, None)
     if m or s:
-        use = resolve_anims(m, ['Walk', 'Idle'])
+        use = resolve_anims(m, ['Walk', 'Idle'] + RIDE_POSES)
         m, s, info = assemble(lib, gs, lod, use)
         grids = {}
         for mm, img in m:
@@ -757,11 +951,12 @@ def person_model(lib: Library, groups: list[str], lod: int = 1) -> tuple[bytes, 
     return res
 
 
-def car_model(lib: Library, rit: str, overlay: str, slot: int) -> tuple[bytes, dict] | None:
+def car_model(lib: Library, rit: str, overlay: str, slot: int, part: str = 'main') -> tuple[bytes, dict] | None:
     """A ride car: the train (rit) lists its cars at +8 + 4 * slot (front, second, middle, second to last, rear,
-    link); the car (ric) imports its body's visual (svd) first."""
+    link); the car (ric) holds its visual at +0x0C (the car, or a swinging car's bogie on the track) and the swinging
+    part's at +0x14 (part='swing')."""
     cache = lib.__dict__.setdefault('_car_models', {})
-    key = (rit.lower(), overlay.lower(), slot)
+    key = (rit.lower(), overlay.lower(), slot, part)
     if key in cache:
         return cache[key]
     res = None
@@ -790,7 +985,10 @@ def car_model(lib: Library, rit: str, overlay: str, slot: int) -> tuple[bytes, d
             res = animal_model(lib, mdl.split(':')[0])
             hr = None
         if hr:
-            svd = next((i for i in _imports(hr[0], hr[1]) if i.lower().endswith(':svd')), None)
+            cimp = {s: n for n, s in hr[0].symbol_refs}
+            svd = cimp.get(hr[1].data + (0x14 if part == 'swing' else 0x0C))
+            if not svd and part == 'main':
+                svd = next((i for i in _imports(hr[0], hr[1]) if i.lower().endswith(':svd')), None)
             hv = (lib.find_near(svd, hr[0]) or lib.find(svd)) if svd else None
             if hv:
                 lods = [l for l in load_svd(hv[0], hv[1]).lods if l.model.lower().endswith((':bsh', ':shs'))]

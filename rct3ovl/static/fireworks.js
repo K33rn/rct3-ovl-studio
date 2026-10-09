@@ -46,13 +46,14 @@ const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } cat
 
 let ui = null;   // built once
 
-export async function openFireworks({ onBack }) {
+export async function openFireworks({ onBack, open }) {
   if (!ui) ui = await build();
   ui.onBack = onBack;
   ui.root.style.display = 'grid';
   ui.resize(); ui.start();
   history.replaceState(null, '', '#fireworks');
-  setTimeout(() => ui.tour(false), 900);   // the MixMaster walkthrough, the first time
+  if (open) ui.openFile(open);              // a file picked in the main file list
+  else setTimeout(() => ui.tour(false), 900);   // the MixMaster walkthrough, the first time
 }
 
 // ------------------------------------------------------------------------------------------------------------
@@ -1122,9 +1123,9 @@ async function build() {
 
   // ---- editors: Advanced Firework Editor (always available here; the game hides it behind a guest name), laser and
   // water jet designers ----
-  async function openEditor(kind, key) {
-    const def = key ? clone(REG[kind][key]) : null;
-    if (def && !key.startsWith('my:')) { def.title = def.title + ' (copy)'; if (def.nodes?.[def.root]) def.nodes[def.root].Name = def.title; }
+  async function openEditor(kind, key, given) {   // given: a definition from outside the palette (a file from the file list)
+    const def = given ? clone(given) : key ? clone(REG[kind][key]) : null;
+    if (def && !(key || '').startsWith('my:')) { def.title = def.title + ' (copy)'; if (def.nodes?.[def.root]) def.nodes[def.root].Name = def.title; }
     const mod = await import(kind === 'firework' ? './fw_afe.js' : './fw_designers.js');
     const ownKey = key && key.startsWith('my:') ? key : null;
     if (kind === 'firework') mod.openAFE(ctx, def, ownKey);
@@ -2211,10 +2212,36 @@ async function build() {
   }
   $('#fw-tour', root).onclick = () => tour(true);
 
+  // a file picked in the main file list: { type, file, def, action: 'preview' | 'edit' }. Shows load into the
+  // timeline; fireworks, lasers and jets are picked in the palette and previewed (or opened in their editor);
+  // the game's other particle effects (ParticleEffects\*.frw) aren't palette items, so they fire from their definition
+  async function openFile(o) {
+    if (o.type === 'show') {
+      const i = data.displays.findIndex(d => d.file === o.file);
+      if (i >= 0) { showSel.value = 'd' + i; openChoice(showSel.value); toast('Opened the show ' + data.displays[i].name); }
+      return;
+    }
+    const kind = o.type === 'effect' ? 'firework' : o.type, key = REG[kind]?.[o.file] ? o.file : null;
+    const def = key ? null : o.def && prepDef(kind, clone(o.def), o.file);
+    if (!key && !def) return;
+    if (key) {
+      S.tab = kind; $('#fw-search', root).value = ''; renderLib();
+      const row = [...lib.querySelectorAll('.fwk')].find(r => r.dataset.f === key);
+      if (row) { lib.querySelectorAll('.fwk.sel').forEach(x => x.classList.remove('sel')); row.classList.add('sel'); row.scrollIntoView({ block: 'center' }); }
+    }
+    if (o.action === 'edit') return openEditor(kind, key, def);
+    await new Promise(r => setTimeout(r, 700));             // the launchers are still being placed on a first open
+    if (key) return preview(kind, key);
+    audio();
+    const li = compatibleLauncher(kind);
+    fireNow({ kind, firework: null, launcher: li, slot: 0, tint: null }, { def });
+    toast(`Preview: ${def.title}`);
+  }
+
   window.__fwdebug = {   // for tests
     count: () => parts.length, parts: () => parts, step, launch, FW, REG, descInfo, S, ribbons, terrain, openEditor, ctx, seek, applyAims, renderAll,
     sceneryObjs: () => sceneryObjs };
-  return { root, resize, start, stop, tour, onBack: null };
+  return { root, resize, start, stop, tour, openFile, onBack: null };
 }
 
 // how long a firework runs: its lifetime plus the longest chain of particles it releases

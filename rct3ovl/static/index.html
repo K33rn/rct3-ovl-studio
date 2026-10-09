@@ -27,6 +27,11 @@
   .tree .ovl { padding: 2px 4px 2px 22px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-radius: 4px; }
   .tree .ovl:hover, .res:hover { background: var(--panel2); }
   .tree .ovl.sel, .res.sel { background: var(--sel); }
+  .tree .ovl.gfile .gi { display: inline-block; width: 1.3em; text-align: center; color: var(--accent); }
+  #doc .gf-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  #doc .gf-btns button { font-weight: 600; } #doc .gf-btns button.main { background: var(--accent); color: #111; border-color: var(--accent); }
+  #doc .gf-sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid #fff3; }
+  #doc .gf-draw { background: #05070c; border-radius: 8px; display: block; width: 100%; max-width: 420px; aspect-ratio: 1; }
   .badge { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 8px; margin-left: 4px; background: #333a48; color: var(--dim); }
   .b-shs { background: #2b4a3a; color: #9fe0b8; } .b-tex { background: #4a3b2b; color: #f2c58a; } .b-snd { background: #2b3b4a; color: #9fc8f0; }
   .group { padding: 8px 12px 2px; color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
@@ -263,10 +268,14 @@ document.addEventListener('keydown', e => {
 function setDownload(blob, name) { if (dlUrl) URL.revokeObjectURL(dlUrl); dlUrl = blob ? URL.createObjectURL(blob) : null; dlName = name; }
 
 // ---- tree ------------------------------------------------------------------------------------------------
-let ovls = [], selOvl = null, tracksets = [];
+let ovls = [], selOvl = null, tracksets = [], gameFiles = [];
+// the loose firework files beside the OVLs (fireworks, particle effects, shows, lasers, water jets, laser drawings, music)
+const GF = { firework: ['🎆', 'Firework'], effect: ['✨', 'Particle effect'], show: ['🎇', 'Firework show (MixMaster display)'],
+  laser: ['✳', 'Laser'], jet: ['⛲', 'Water jet'], drawing: ['✎', 'Laser drawing'], music: ['♪', 'Music'] };
 async function loadTree() {
   const t = await (await fetch('/api/tree')).json();
-  ovls = t.ovls; $('rootinfo').textContent = `${ovls.length} OVL pairs · ${t.root}`;
+  ovls = t.ovls; gameFiles = t.files || [];
+  $('rootinfo').textContent = `${ovls.length} OVL pairs · ${gameFiles.length} firework files · ${t.root}`;
   renderTree(''); msg('Pick an OVL on the left, or a tab: Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks');
   // track pieces per ride arrive a moment later (the first time, the server scans the track files)
   fetch('/api/tracksets').then(r => r.json()).then(s => { tracksets = s; renderTree($('treefilter').value); }).catch(() => {});
@@ -288,9 +297,16 @@ function renderTree(filter) {
     for (const p of s.folder.split(/[\\/]/)) node = (node[p + '/'] ??= {});
     node['\u0000' + label] = { path: 'trackset:' + s.ride, trackset: s, counts: { tks: s.count } };
   }
+  for (const g of gameFiles) {
+    if (f && !(g.path + ' ' + g.type).toLowerCase().includes(f)) continue;
+    const parts = g.path.split(/[\\/]/); let node = root;
+    for (const p of parts.slice(0, -1)) node = (node[p + '/'] ??= {});
+    node[parts.at(-1)] = { path: 'file:' + g.path, gfile: g };
+  }
   const html = (node, depth) => Object.keys(node).sort((a, b) => (b.endsWith('/') - a.endsWith('/')) || a.localeCompare(b)).map(k => {
     const v = node[k];
     if (k.endsWith('/')) return `<details${f || depth < 1 ? ' open' : ''}><summary>${esc(k.slice(0, -1))}</summary>${html(v, depth + 1)}</details>`;
+    if (v.gfile) return `<div class="ovl gfile${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="${esc(GF[v.gfile.type][1])} · ${(v.gfile.size / 1024).toFixed(0)} KB${v.gfile.custom ? ' · made with this program' : ''}"><span class="gi">${GF[v.gfile.type][0]}</span> ${esc(k)}${v.gfile.custom ? '<span class="badge b-tex">yours</span>' : ''}</div>`;
     if (v.trackset) return `<div class="ovl trackset${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="Pieces from ${esc(v.trackset.track_ovls.join(', '))}">🛤 ${esc(k.slice(1))}<span class="badge b-shs">${v.trackset.count}</span></div>`;
     const c = v.counts || {}, m = (c.shs || 0) + (c.bsh || 0) + (c.mms || 0) + (c.ssk || 0), x = (c.tex || 0) + (c.ftx || 0), s = c.snd || 0;
     return `<div class="ovl${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="${esc(v.path)} · v${v.version}">${esc(k)}${m ? `<span class="badge b-shs">${m}</span>` : ''}${x ? `<span class="badge b-tex">${x}</span>` : ''}${s ? `<span class="badge b-snd">♪${s}</span>` : ''}${v.error ? '<span class="badge err">!</span>' : ''}</div>`;
@@ -313,6 +329,7 @@ const LABEL = { shs: 'Static models', bsh: 'Skinned models', mdl: 'Wild! animal 
   ent: 'Entertainers', sat: 'Special attractions', flic: 'Texture pixel data', btbl: 'Bitmap tables' };
 let seq = 0;   // newest request wins; older responses are dropped
 async function openOvl(path, auto = true) {
+  if (String(path).startsWith('file:')) return openGameFile(path.slice(5));
   if (!String(path).startsWith('trackset:')) setTab(null);
   selOvl = path; document.querySelectorAll('.ovl').forEach(d => d.classList.toggle('sel', d.dataset.p === path));
   if (path.startsWith('trackset:')) {
@@ -359,7 +376,7 @@ function filterList() {
   close(); if (grp) grp.style.display = gn ? '' : 'none';
 }
 $('resfilter').oninput = () => resources.length ? renderRes() : filterList();
-$('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return showTypes(hp.dataset.type); const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.scenery ? showScenery(d.dataset.scenery) : d.dataset.design ? showDesign(d.dataset.design) : d.dataset.ride ? showRide(d.dataset.ride) : d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
+$('res').onclick = e => { const hp = e.target.closest('.help'); if (hp) return showTypes(hp.dataset.type); const d = e.target.closest('.res'); if (d && !d.classList.contains('dim')) (d.dataset.gsum ? gameFileSummary() : d.dataset.o ? showGameObj(+d.dataset.o) : d.dataset.scenery ? showScenery(d.dataset.scenery) : d.dataset.design ? showDesign(d.dataset.design) : d.dataset.ride ? showRide(d.dataset.ride) : d.dataset.v ? showPerson(d.dataset.v) : show(resources[+d.dataset.i])); };
 
 // people list
 $('b-people').onclick = async () => {
@@ -512,6 +529,96 @@ async function show(r, opts = {}) {
   const infoRows = Object.entries(j.info || {}).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</td></tr>`).join('');
   $('doc').innerHTML = `<h2>${esc(r.name)} <span class="badge">${esc(r.loader)}</span></h2>${infoRows ? `<div class="card"><table class="t">${infoRows}</table></div>` : ''}
     <div class="card"><pre>${esc(txt.length > 300000 ? txt.slice(0, 300000) + '\n… (truncated, use Download)' : txt)}</pre></div>`;
+}
+
+// ---- firework files from the file list: what the file holds (middle column: its objects; right: a summary with
+// buttons that open it in the Fireworks tab) ------------------------------------------------------------------
+let gfile = null;
+async function openGameFile(rel) {
+  const my = ++seq; setTab(null);
+  selOvl = 'file:' + rel; selRes = null; document.querySelectorAll('.ovl').forEach(d => d.classList.toggle('sel', d.dataset.p === selOvl));
+  history.replaceState(null, '', '#file=' + encodeURIComponent(rel));
+  const name = rel.split(/[\\/]/).at(-1);
+  $('ovltitle').textContent = name; $('ovlsub').textContent = 'loading…'; $('res').innerHTML = ''; resources = [];
+  $('vtitle').textContent = name; info(null); mode('doc'); $('doc').innerHTML = ''; msg('Loading…');
+  const r = await fetch('/api/fw/file?path=' + encodeURIComponent(rel)); const d = await r.json();
+  if (my !== seq) return; msg('');
+  if (d.error && !d.type) { $('ovlsub').innerHTML = `<span class="err">${esc(d.error)}</span>`; return; }
+  gfile = d;
+  setDownload(null); dlUrl = '/api/fw/raw?path=' + encodeURIComponent(rel); dlName = name;
+  const objs = d.objects || [];
+  $('ovlsub').textContent = `${GF[d.type][1]} · ${(d.size / 1024).toFixed(1)} KB` + (objs.length ? ` · ${objs.length} objects` : '');
+  const groups = {};
+  objs.forEach((o, i) => (groups[o.type] ??= []).push(i));
+  $('res').innerHTML = `<div class="res sel" data-gsum="1">Summary</div>` + Object.entries(groups).map(([t, is]) =>
+    `<div class="group">${esc(t)} <small>${is.length}</small></div>` + is.map(i => `<div class="res" data-o="${i}">${esc(objs[i].name || t + ' #' + objs[i].id)}</div>`).join('')).join('');
+  gameFileSummary();
+}
+function gameFileSummary() {
+  const d = gfile; mode('doc'); $('vtitle').textContent = d.file;
+  document.querySelectorAll('#res .res').forEach(x => x.classList.toggle('sel', !!x.dataset.gsum));
+  const rows = [], btns = [], hex = c => '#' + c.slice(0, 3).map(x => Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16).padStart(2, '0')).join('');
+  const t2 = m => m == null ? '?' : `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  let extra = '';
+  rows.push(['Kind', GF[d.type][1]], ['File', d.path], ['Size', (d.size / 1024).toFixed(1) + ' KB']);
+  if (d.custom) rows.push(['Made by', 'this program (saved from the Fireworks tab)']);
+  if (d.firework) {
+    const fw = d.firework, kinds = {};
+    Object.values(fw.nodes).forEach(n => kinds[n.kind] = (kinds[n.kind] || 0) + 1);
+    rows.push(['Name', esc(fw.title)]);
+    if (fw.cost != null && d.type === 'firework') rows.push(['Cost', '$' + (fw.cost / 100).toFixed(2)]);
+    rows.push(['Colour', `<span class="gf-sw" style="background:${hex(fw.colour)}"></span>${hex(fw.colour)}`],
+              ['Particle tree', `${kinds.particle || 0} particle types, ${kinds.emitter || 0} emitters`]);
+    btns.push(['preview', '▶ Preview in the Fireworks tab', true], ['edit', '✎ Open in the Advanced Firework Editor']);
+    if (d.type === 'effect') extra = `<p class="sub">One of the game's particle effects (smoke, splashes, sparkles and the like used by rides and scenery). It uses the same format as a firework, so it can be previewed and opened in the firework editor, and saved from there as a firework of your own.</p>`;
+  }
+  if (d.show) {
+    const s = d.show, end = Math.max(0, ...s.entries.map(e => e.time));
+    rows.push(['Name', esc(s.name)], ['Music', esc(s.music || '(none)')], ['Starts at', t2(s.start_minutes)],
+              ['Launchers', s.launchers.length], ['Launches', s.entries.length], ['Last launch', end.toFixed(1) + ' s'],
+              ['Fireworks used', esc([...new Set(s.entries.map(e => e.firework.replace(/\.frw$/i, '')).filter(Boolean))].sort().join(', '))]);
+    btns.push(['open', '🎇 Open in the MixMaster', true]);
+  }
+  if (d.effect) {
+    const e = d.effect;
+    rows.push(['Name', esc(e.name)], ['Length', (+e.duration).toFixed(1) + ' s']);
+    if (d.type === 'laser') rows.push(['Beam', ['cone', 'plane', 'persisting image'][e.render] || e.render], ['Beams', e.beams], ['Power (beam length)', e.power],
+                                      ['Picture points', e.images?.reduce((a, l) => a + l.points.length, 0) || 0]);
+    else rows.push(['Type', e.type]);
+    const sw = e.colour?.pts?.map(p => `<span class="gf-sw" style="background:${hex(p.v)}" title="${p.t}"></span>`).join('');
+    if (sw) rows.push(['Colours', sw]);
+    btns.push(['preview', '▶ Preview in the Fireworks tab', true], ['edit', `✎ Open in the Advanced ${d.type === 'laser' ? 'Laser' : 'WaterJet'} Designer`]);
+  }
+  if (d.drawing) {
+    const pts = d.drawing.points, xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), sc = 180 / Math.max(x1 - x0, y1 - y0, 1e-6);
+    const P = p => `${(110 + (p[0] - (x0 + x1) / 2) * sc).toFixed(1)},${(110 - (p[1] - (y0 + y1) / 2) * sc).toFixed(1)}`;
+    const segs = pts.slice(1).map((p, i) => d.drawing.solid[i + 1] ? `<line x1="${P(pts[i]).split(',')[0]}" y1="${P(pts[i]).split(',')[1]}" x2="${P(p).split(',')[0]}" y2="${P(p).split(',')[1]}"/>` : '').join('');
+    rows.push(['Points', pts.length], ['Draw time', (+d.drawing.duration).toFixed(2) + ' s']);
+    extra = `<svg class="gf-draw" viewBox="0 0 220 220"><g stroke="#3cf26a" stroke-width="2" stroke-linecap="round" style="filter:drop-shadow(0 0 3px #3cf26a)">${segs}</g></svg>
+      <p class="sub">A picture a laser can draw (laser writing). The Advanced Laser Designer's sketch pad uses these.</p>`;
+  }
+  if (d.type === 'music') extra = `<audio controls preload="none" src="/api/fw/music?name=${encodeURIComponent(d.file)}" style="width:100%"></audio>
+    <p class="sub">Music the game plays in the park and with firework shows (MixMaster music). Playing it here converts it the first time, which needs the viewer started with <code>rct3ovl-viewer.bat</code>.</p>`;
+  if (d.error) rows.push(['Note', `<span class="err">${esc(d.error)}</span>`]);
+  btns.push(['dl', '⬇ Download the file']);
+  $('doc').innerHTML = `<h2>${GF[d.type][0]} ${esc(d.file)} <span class="badge">${esc(GF[d.type][1])}</span></h2>
+    <div class="card"><table class="t">${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table>${extra}
+    <div class="gf-btns">${btns.map(([a, l, main]) => `<button data-gf="${a}"${main ? ' class="main"' : ''}>${l}</button>`).join('')}</div></div>
+    ${d.objects?.length ? '<p class="sub">The list in the middle shows every object stored in the file: pick one to see all of its fields.</p>' : ''}`;
+  $('doc').querySelector('.gf-btns').onclick = e => {
+    const a = e.target.closest('button')?.dataset.gf; if (!a) return;
+    if (a === 'dl') return $('b-dl').onclick();
+    const def = d.firework || d.effect;
+    openFw({ type: d.type, file: d.file, def, action: a === 'edit' ? 'edit' : 'preview' });
+  };
+}
+function showGameObj(i) {
+  const o = gfile.objects[i]; mode('doc');
+  document.querySelectorAll('#res .res').forEach(x => x.classList.toggle('sel', x.dataset.o === String(i)));
+  $('vtitle').textContent = `${gfile.file} · ${o.type}`;
+  $('doc').innerHTML = `<h2>${esc(o.name || o.type)} <span class="badge">${esc(o.type)} #${o.id}</span></h2>
+    <div class="card"><pre>${esc(JSON.stringify(o.fields, null, 1))}</pre></div>`;
 }
 
 async function showTexts() {
@@ -697,21 +804,22 @@ function setTab(id) { TABS.forEach(t => $(t).classList.toggle('active', t === id
 TABS.forEach(id => id !== 'b-fireworks' && $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
 
 // Fireworks: a full-window editor (static/fireworks.js) over the three columns; Back returns to what was open
-$('b-fireworks').onclick = async () => {
+$('b-fireworks').onclick = () => openFw();
+async function openFw(open) {   // open: a file from the file list to show in the editor (see openGameFile)
   const before = TABS.find(t => $(t).classList.contains('active')) || null, hash = location.hash;
   $('b-fireworks').textContent = 'Loading…';
   try {
     const { openFireworks } = await import('/fireworks.js');
     renderer.setAnimationLoop(null);                       // the viewer's 3D view sleeps while the editor is open
     document.getElementById('app').style.display = 'none';
-    await openFireworks({ onBack: () => {
+    await openFireworks({ open, onBack: () => {
       document.getElementById('app').style.display = '';
       renderer.setAnimationLoop(viewerLoop); clock.getDelta(); resize();
       setTab(before); history.replaceState(null, '', hash === '#fireworks' ? '#' : hash || '#');
     } });
   } catch (e) { msg('Could not open the fireworks editor: ' + e, true); document.getElementById('app').style.display = ''; renderer.setAnimationLoop(viewerLoop); }
   $('b-fireworks').textContent = 'Fireworks';
-};
+}
 
 // column dividers: drag to resize the two list columns, double-click to reset; widths are remembered
 const COLS = { 1: ['--c1', 300], 2: ['--c2', 320] };
@@ -743,6 +851,7 @@ async function fromHash() {
   if (location.hash === '#fireworks') return $('b-fireworks').onclick();
   if (h.get('scenery')) { setTab('b-scenery'); await $('b-scenery').onclick(); return showScenery(h.get('scenery'), h.get('anim')); }
   if (h.get('design')) { setTab('b-designs'); await $('b-designs').onclick(); return showDesign(h.get('design')); }
+  if (h.get('file')) return openGameFile(h.get('file'));
   if (!h.get('ovl')) return;
   await openOvl(h.get('ovl'), false);
   if (h.get('texts')) return show(resources.find(x => x.texts));

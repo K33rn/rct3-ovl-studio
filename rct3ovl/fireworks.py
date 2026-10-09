@@ -543,3 +543,64 @@ def save_to_game(lib: Library, kind: str, filename: str, data: dict) -> str:
     json.dump(sorted(made), open(_manifest_path(lib), 'w'))
     lib.__dict__.pop('_fireworks', None)
     return path
+
+
+# ---- the file list: every firework-related game file, beside the OVLs -------------------------------------------------
+FILE_GROUPS = [('Fireworks', 'frw', 'firework'), ('ParticleEffects', 'frw', 'effect'), ('FireworkDisplays', 'fwd', 'show'),
+               ('Lasers', 'las', 'laser'), ('WaterJets', 'wjt', 'jet'), ('LaserWriting', 'lwr', 'drawing'),
+               ('Music', 'wma', 'music')]
+
+
+def list_files(lib: Library) -> list[dict]:
+    """[{path (relative to the game folder), type, size, custom}] for the loose firework, laser, water jet, show,
+    laser drawing, particle effect and music files."""
+    made = _created(lib)
+    out = []
+    for folder, ext, typ in FILE_GROUPS:
+        for f in sorted(glob.glob(os.path.join(lib.root, folder, '*.' + ext))):
+            out.append({'path': os.path.relpath(f, lib.root), 'type': typ, 'size': os.path.getsize(f),
+                        'custom': os.path.normcase(os.path.abspath(f)) in made})
+    return out
+
+
+def file_path(lib: Library, rel: str) -> tuple[str, str] | None:
+    """(absolute path, type) of one of list_files' files, or None (nothing outside those folders is served)."""
+    rel = rel.replace('/', '\\')
+    folder, _, name = rel.rpartition('\\')
+    for fo, ext, typ in FILE_GROUPS:
+        if folder.lower() == fo.lower() and name.lower().endswith('.' + ext) and '..' not in name:
+            p = os.path.join(lib.root, fo, name)
+            return (p, typ) if os.path.isfile(p) else None
+    return None
+
+
+def file_info(lib: Library, rel: str) -> dict | None:
+    """What one firework-related file holds: its objects (type, name, fields) and, by type, the firework / show /
+    effect / drawing the editor would load from it."""
+    found = file_path(lib, rel)
+    if not found:
+        return None
+    p, typ = found
+    d = {'path': os.path.relpath(p, lib.root), 'file': os.path.basename(p), 'type': typ, 'size': os.path.getsize(p),
+         'custom': _is_created(lib, p)}
+    if typ == 'music':
+        return d
+    try:
+        t = Trk(open(p, 'rb').read(), start=64 if typ == 'drawing' else None)
+        d['objects'] = [{'id': oid, 'type': n, 'name': v.get('Name') if isinstance(v.get('Name'), str) else '',
+                         'fields': _clean(v)} for oid, (n, v) in t.objects.items()]
+    except Exception as e:
+        d['objects'], d['error'] = [], f'not in the save format the other firework files use ({e})'
+        return d
+    try:
+        if typ in ('firework', 'effect'):
+            d['firework'] = load_firework(lib, p)
+        elif typ == 'show':
+            d['show'] = next((x for x in list_displays(lib) if x['file'] == d['file']), None)
+        elif typ in ('laser', 'jet'):
+            d['effect'] = _effect_file(p, typ)
+        elif typ == 'drawing':
+            d['drawing'] = next((x for x in list_drawings(lib) if x['file'] == d['file']), None)
+    except Exception as e:
+        d['error'] = str(e)
+    return d

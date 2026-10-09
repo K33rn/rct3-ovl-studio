@@ -92,7 +92,18 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 if u.path == '/filetypes.md':
                     return self.send(200, open(os.path.join(STATIC, 'filetypes.md'), 'rb').read(), 'text/markdown; charset=utf-8')
                 if u.path == '/api/tree':
-                    return self.js({'root': lib.root, 'ovls': lib.index['ovls']})
+                    return self.js({'root': lib.root, 'ovls': lib.index['ovls'], 'files': fw.list_files(lib)})
+                if u.path == '/api/fw/file':
+                    with lock:
+                        d = fw.file_info(lib, q['path'])
+                    return self.js(d) if d else self.js({'error': 'no such file'}, 404)
+                if u.path == '/api/fw/raw':
+                    found = fw.file_path(lib, q['path'])
+                    if not found:
+                        return self.js({'error': 'no such file'}, 404)
+                    name = os.path.basename(found[0]).encode('ascii', 'replace').decode()
+                    return self.send(200, open(found[0], 'rb').read(), 'application/octet-stream',
+                                     {'Content-Disposition': f'attachment; filename="{name}"'})
                 if u.path == '/api/ovl':
                     with lock:
                         o, ts = lib.open(q['path'])

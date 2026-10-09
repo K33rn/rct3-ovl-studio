@@ -316,3 +316,20 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   both designers (afeTourSteps / designerTourSteps exported; ensureEditor() keeps the right one open, also going back)
   and marks their own tours seen. "? Tour" runs the tour of whatever is open. tests/ui_tours.py checks no spotlight
   moves after appearing. Other UI tests mark the tours seen first.
+
+## 2026-10-09: firework files in the file list; tour hand-off
+- /api/tree also returns `files` (fireworks.list_files): Fireworks/*.frw, ParticleEffects/*.frw, FireworkDisplays/*.fwd,
+  Lasers/*.las, WaterJets/*.wjt, LaserWriting/*.lwr, Music/*.wma (240 in RCT3 Gold), with a `custom` flag from the
+  created-files manifest. /api/fw/file?path= (file_info: every object with its fields, plus the firework / show / effect
+  / drawing as the editor loads it) and /api/fw/raw?path= (download); only paths inside those folders are served.
+- Tree entries `file:<path>`; openGameFile shows a summary + buttons and lists the objects in the middle column;
+  #file=<path> in the URL. Buttons call openFw({type, file, def, action}) -> openFireworks({open}) -> ui.openFile:
+  shows load into the timeline, palette items are selected and previewed (or opened in their editor),
+  ParticleEffects (not palette items) fire from their definition / open in the AFE as a copy.
+- Trk: 21 ParticleEffects files have a 64-byte header (like .lwr); the auto-detection now tries 64 when the first
+  guess fails. All 166 parse; 161 round-trip byte for byte (5 older ones store an empty string without the EFEFEFEF
+  marker; the writer isn't used for them).
+- Tour: between steps the spotlight and card stay frozen where they were (outline and card fade, dimming stays) and
+  then move straight to the next place; before, target = null made place() put the hole in the middle for the
+  hand-off. tests/ui_tour_jump.py samples the hole every frame across 54 step changes (old code: middle every time).
+  tests/ui_files.py covers the file list.

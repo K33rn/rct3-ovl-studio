@@ -58,6 +58,14 @@ Unzip `rct3ovl.zip` somewhere easy to find, e.g. `Documents\rct3ovl`. Keep the f
 ### 4. Use the viewer
 - **Left column:** every OVL file in the game, in its folders. Each coaster and tracked ride folder (`tracks\coasters\WoodenRC`…) also has a **🛤 … track pieces** entry with exactly that ride's pieces; the game keeps them in shared `TrackNN` files. Type in the box to filter, e.g. `coaster` or
   `chess`.
+- The same list has every **firework-related file** in its folder, with an icon for each kind: fireworks
+  (`Fireworks\*.frw` 🎆), the game's other particle effects (`ParticleEffects\*.frw` ✨: smoke, splashes, sparkles),
+  firework shows (`FireworkDisplays\*.fwd` 🎇), lasers (`Lasers\*.las` ✳), water jets (`WaterJets\*.wjt` ⛲), laser
+  drawings (`LaserWriting\*.lwr` ✎) and the music (`Music\*.wma` ♪). Files you saved from the Fireworks tab are
+  marked **yours**. Picking one shows a summary (name, cost, colours, particle tree, launchers and launches, the
+  drawing, a music player) with buttons to **preview** it or **open** it in the Fireworks tab (the show in the
+  MixMaster, a firework or particle effect in the Advanced Firework Editor, a laser or jet in its designer) and to
+  download it. The middle column lists every object stored in the file; pick one to see all of its fields.
 - **Middle column:** what's inside the OVL you picked, grouped by type. Click the **?** next to a group to learn
   what that type is.
 - **Right side:** the selected item.

@@ -7,7 +7,8 @@ const CSS = `
   #tour { position: fixed; inset: 0; z-index: 3000; font: 13px/1.5 system-ui, -apple-system, Segoe UI, sans-serif; }
   #tour .tblock { position: absolute; inset: 0; }
   #tour .thole { position: absolute; border-radius: 9px; box-shadow: 0 0 0 9999px rgba(4, 6, 12, 0.72); border: 2px solid var(--accent, #ffb02e);
-                 pointer-events: none; transition: opacity .18s; }
+                 pointer-events: none; transition: border-color .18s; }
+  #tour .thole.wait { border-color: transparent; }
   #tour .thole.none { border: 0; left: 50% !important; top: 50% !important; width: 0 !important; height: 0 !important; }
   #tour .tcard { position: absolute; width: min(400px, calc(100vw - 24px)); background: var(--panel, #171a21); color: var(--text, #e6e9ef);
                  border: 1px solid var(--accent, #ffb02e); border-radius: 12px; padding: 14px 16px 12px; box-shadow: 0 14px 50px #000c;
@@ -40,7 +41,7 @@ export function runTour(id, steps, { force = false, onEnd } = {}) {
     <div class="tfoot"><span class="tcount"></span><button class="tskip">Skip tour</button><button class="tback">← Back</button><button class="tact" style="display:none"></button><button class="tnext">Next →</button></div></div>`;
   document.body.appendChild(el);
   const hole = el.querySelector('.thole'), card = el.querySelector('.tcard');
-  let i = 0, target = null, raf = 0, seq = 0;
+  let i = 0, target = null, raf = 0, seq = 0, frozen = false;
   running = { id };
 
   const find = s => typeof s.target === 'function' ? s.target() : s.target ? document.querySelector(s.target) : null;
@@ -51,6 +52,7 @@ export function runTour(id, steps, { force = false, onEnd } = {}) {
     return null;
   }
   function place() {
+    if (frozen) return;   // between steps everything stays where it is (no jump to the middle while the next step gets ready)
     const W = innerWidth, H = innerHeight, cw = card.offsetWidth, ch = card.offsetHeight, m = 12;
     if (!target || !document.body.contains(target)) {
       hole.classList.add('none');
@@ -81,8 +83,9 @@ export function runTour(id, steps, { force = false, onEnd } = {}) {
   async function show(n) {
     const my = ++seq; i = n;
     const s = steps[i];
-    // fade out and let go of the old target while the next step gets its tab / panel / editor ready
-    target = null; hole.style.opacity = 0; card.style.opacity = 0;
+    // hold the spotlight and card where they are (the dimming stays, the outline and card fade) while the next
+    // step gets its tab / panel / editor ready; then both move straight to the new place
+    frozen = true; target = null; hole.classList.add('wait'); card.style.opacity = 0;
     card.querySelector('h4').textContent = s.title;
     card.querySelector('.tbody').innerHTML = '<p style="color:var(--dim,#8a93a3)">…</p>';
     card.querySelector('.tcount').textContent = `${i + 1} / ${steps.length}`;
@@ -98,8 +101,8 @@ export function runTour(id, steps, { force = false, onEnd } = {}) {
     if (tg) { tg.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }); await settle(tg); }
     if (my !== seq) return;
     card.querySelector('.tbody').innerHTML = s.html;
-    target = tg; place();
-    hole.style.opacity = 1; card.style.opacity = 1;
+    target = tg; frozen = false; place();
+    hole.classList.remove('wait'); card.style.opacity = 1;
   }
   function end() {
     cancelAnimationFrame(raf); el.remove(); window.removeEventListener('keydown', onKey, true); window.removeEventListener('resize', place);

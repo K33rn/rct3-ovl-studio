@@ -29,11 +29,19 @@ class Trk:
         """start: offset of the type count; designs (.trk) have an 80-byte header first, firework files (.frw,
         .fwd) start with it. Found automatically when not given."""
         self.b = data
-        self.start = start if start is not None else (0 if 0 < struct.unpack_from('<I', data, 0)[0] < 400 else 80)
-        self.types: list[tuple[str, list[_Field]]] = []
-        self.objects: dict[int, tuple[str, dict]] = {}
-        self.order: list[int] = []
-        self._parse()
+        # some particle effects (and laser drawings) have a 64-byte header instead
+        tries = [start] if start is not None else [0 if 0 < struct.unpack_from('<I', data, 0)[0] < 400 else 80, 64]
+        for k, s in enumerate(tries):
+            self.start = s
+            self.types: list[tuple[str, list[_Field]]] = []
+            self.objects: dict[int, tuple[str, dict]] = {}
+            self.order: list[int] = []
+            try:
+                self._parse()
+                break
+            except Exception:
+                if k == len(tries) - 1:
+                    raise
 
     # -- primitives --
     def _u16(self, p):

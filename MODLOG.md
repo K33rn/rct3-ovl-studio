@@ -425,3 +425,15 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Riders: Guest WorldMatrix == the seat matrix already. Poses: karts RideCar; fallback to any RideSit / Ride
   clip a model has. Swinging cars hang straight down (only the yaw of RotatedEndOrient, whose roll swung them
   out from under their riders).
+
+## 2026-10-09: Parks: item sizes, supports, poses, path quarters
+- sid word 2 = size in its low 16 bits, flags above (Style\Vanilla\style.common.ovl's items read 0x20001 etc.):
+  the unmasked word made fences, walls and lamps "full tile" -> fences stood across tile centres (the crosses
+  in Box Office). Masked now.
+- Suspended coaster supports: column 1 m beside the track up to its top, girder (1.66 m) over the track from the
+  column; no two columns within 2.5 m (cells along a track made doubles).
+- Raised path supports: the viewer drops any column whose way down is blocked by a ride's track (raycast against
+  the loaded tracks), e.g. the Checkered Flag boardwalk over the go-kart track.
+- Poses: suspended swinging cars (Biplane) have seats: RideSitBarWait; harness only for inverted / floorless.
+  Guest.AnimType isn't an index into the people's animation list (81 / 110 aren't RideCar / ride poses).
+- Path textures: the most opaque quarter of each style's atlas (all base styles: top left).

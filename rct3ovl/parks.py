@@ -152,6 +152,22 @@ def finite(v):
     return v
 
 
+def _solid_quarter(lib: Library, name: str) -> list[int]:
+    """Path textures are 2x2 atlases of path pieces (full, edges, corners); the most opaque quarter is the plain
+    paving. -> [column, row] of that quarter (0 / 1, from the top left)."""
+    cache = lib.__dict__.setdefault('_solid_quarter', {})
+    if name not in cache:
+        best = [0, 0]
+        img = lib.texture_image(name)
+        if img is not None:
+            a = np.asarray(img.convert('RGBA'))[:, :, 3].astype(float)
+            h, w = a.shape
+            scores = {(cx, cy): a[cy * h // 2:(cy + 1) * h // 2, cx * w // 2:(cx + 1) * w // 2].mean() for cx in (0, 1) for cy in (0, 1)}
+            best = list(max(scores, key=lambda k: (scores[k], -k[1], -k[0])))
+        cache[name] = best
+    return cache[name]
+
+
 def _euler(b) -> list[float]:
     """An 'orientation' field: 3 f32 Euler angles (radians)."""
     if isinstance(b, (bytes, bytearray)) and len(b) == 12:
@@ -171,7 +187,9 @@ def _ride_pose(O: dict, ride_ref) -> str:
         return 'RideCar'
     if 'laydown' in s or 'flying' in s:
         return 'RideLayWait'
-    if any(w in s for w in ('invert', 'suspend', 'swing', 'floorless', 'biplane', 'parrot', 'skyswinger')):
+    if any(w in s for w in ('swing', 'biplane')):              # suspended swinging cars have seats
+        return 'RideSitBarWait'
+    if any(w in s for w in ('invert', 'suspend', 'floorless', 'parrot', 'skyswinger')):
         return 'RideSitHarnessFeetDangleWait'
     return 'RideSitBarWait'
 
@@ -506,6 +524,7 @@ def park_world(lib: Library, rel: str) -> dict:
         elif s:
             ptex[s] = 'path_' + s.lower() + '_grounda:tex'
     world['path_tex'] = ptex
+    world['path_quarter'] = {s: _solid_quarter(lib, t) for s, t in ptex.items() if t and not s.startswith('queue:')}
     # placed things
     sids, items = [], []
     sid_index = {}
@@ -682,7 +701,7 @@ def sid_model(lib: Library, name: str, overlay: str = '') -> tuple[bytes, dict] 
         o, r = h[0], h[1]
         v = struct.unpack('<31I', o.read(r.data, 124))
         squares = [v[4], v[5]] if 0 < v[4] < 64 and 0 < v[5] < 64 else [1, 1]
-        size = SID_SIZES[v[2]] if v[2] < len(SID_SIZES) else 'full tile'     # word 2 in both sid layouts
+        size = SID_SIZES[v[2] & 0xFFFF] if (v[2] & 0xFFFF) < len(SID_SIZES) else 'full tile'   # word 2, low half (flags above)
         visuals = [i for i in _imports(o, r) if i.lower().endswith(':svd')]
         if not visuals:
             try:
@@ -874,6 +893,12 @@ def _supports(lib: Library, merged, ter: bytes, style: str, inverted: bool, stat
 
     def column(x, z, y0, y1, yaw, out):
         _stack(parts, x, z, y0, y1, yaw, out)
+        placed.append((x, z))
+
+    placed = []
+
+    def crowded(x, z, gap=2.5):                           # no two columns within 2.5 m of each other
+        return any((x - a) ** 2 + (z - b) ** 2 < gap * gap for a, b in placed)
 
     P = np.concatenate([m.positions for m in merged.meshes])
     cells = np.floor((P[:, [0, 2]] - [x0, z0]) / T).astype(np.int64)
@@ -889,16 +914,18 @@ def _supports(lib: Library, merged, ter: bytes, style: str, inverted: bool, stat
         ev = np.linalg.eigh(xz.T @ xz)[1][:, -1]           # the track's direction in this cell
         along = float(np.arctan2(-ev[1], ev[0]))           # yaw that turns local +x along it
         if inverted:
+            # the track hangs under a girder (1.66 m, centred a little to the column's side so it spans the track
+            # and ends over the column) on a column beside it
             high = float(grp[:, 1].max())
             cx, cz = float(grp[:, 0].mean()), float(grp[:, 2].mean())
             px, pz = -ev[1], ev[0]                         # across the track
-            sx, sz = cx + 1.6 * px, cz + 1.6 * pz
+            sx, sz = cx + 1.0 * px, cz + 1.0 * pz
             g = ground_at(sx, sz)
-            if g is None or high + 0.3 - g < 2:
+            if g is None or high + 0.44 - g < 2 or crowded(sx, sz):
                 continue
-            column(sx, sz, g, high + 0.3, along, out)
+            column(sx, sz, g, high + 0.44, along, out)
             if parts.get('girder'):
-                out.append([parts['girder'], cx + 0.8 * px, high + 0.3, cz + 0.8 * pz, float(np.arctan2(-pz, px))])
+                out.append([parts['girder'], cx + 0.415 * px, high + 0.22, cz + 0.415 * pz, float(np.arctan2(-pz, px))])
             continue
         low = grp[grp[:, 1] < grp[:, 1].min() + 0.4]
         if thin:
@@ -907,7 +934,7 @@ def _supports(lib: Library, merged, ter: bytes, style: str, inverted: bool, stat
             x, z = x0 + (k[0] + 0.5) * T, z0 + (k[1] + 0.5) * T
         g = ground_at(x, z)
         top = float(grp[:, 1].min()) - 0.1
-        if g is None or top - g < clear:
+        if g is None or top - g < clear or crowded(x, z):
             continue
         yaw = along if thin else round(along / (np.pi / 2)) * (np.pi / 2)
         column(x, z, g, top, yaw, out)

@@ -326,6 +326,7 @@ function build() {
     }
     for (const [s, tiles] of Object.entries(by)) {
       const style = world.path_styles[s] || '', queue = style.startsWith('queue:'), texName = (world.path_tex || {})[style];
+      const pq = (world.path_quarter || {})[style] || [0, 0];
       const p = [], uv = [];
       for (const [c, r, qs, qe] of tiles) {
         const i = r * W + c, h = [tileH(i, 0), tileH(i, 1), tileH(i, 2), tileH(i, 3)], corner = [[0, 0], [1, 0], [0, 1], [1, 1]];
@@ -335,7 +336,8 @@ function build() {
         for (const tri of tris(h)) for (const k of tri) {
           p.push(world.x0 + (c + corner[k][0]) * T, h[k] + 0.07, Z(world.z0 + (r + corner[k][1]) * T));
           const [a, b] = alongX ? [corner[k][1], corner[k][0]] : corner[k];
-          if (queue) uv.push(0.01 + 0.48 * a, 0.01 + 0.48 * b); else uv.push(0.01 + 0.48 * a, 0.51 + 0.48 * b);
+          if (queue) uv.push(0.01 + 0.48 * a, 0.01 + 0.48 * b);
+          else uv.push(0.01 + 0.48 * a + 0.5 * pq[0], 0.51 + 0.48 * b - 0.5 * pq[1]);   // the style's plain-paving quarter
         }
       }
       const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
@@ -594,7 +596,22 @@ function build() {
     const queue = [...order];
     await Promise.all(Array.from({ length: 4 }, async () => { while (queue.length && seq === loadSeq) await work(queue.shift()); }));
   }
+  // path supports don't go down through a ride's track: drop the columns whose way to the ground is blocked by one
+  let trackScenes = [];
+  function clearOfTracks(list) {
+    if (!trackScenes.length) return list;
+    const cols = new Map();
+    for (const s of list) { const k = s[1] + ',' + s[3]; if (!cols.has(k)) cols.set(k, []); cols.get(k).push(s); }
+    const ray = new THREE.Raycaster(), out = [];
+    for (const parts of cols.values()) {
+      const [, x, , z] = parts[0], top = Math.max(...parts.map(p => p[2])) + 1, bottom = Math.min(...parts.map(p => p[2]));
+      ray.set(new THREE.Vector3(x, top, Z(z)), new THREE.Vector3(0, -1, 0)); ray.far = top - bottom;
+      if (!ray.intersectObjects(trackScenes, true).length) out.push(...parts);
+    }
+    return out;
+  }
   async function buildTracks(seq) {
+    trackScenes = [];
     for (const tr of world.tracks) {
       if (seq !== loadSeq) return;
       try {
@@ -604,7 +621,7 @@ function build() {
         const g = await gltf.parseAsync(await r.arrayBuffer(), '');
         if (seq !== loadSeq) return;
         g.scene.userData.pick = { title: tr.name, detail: 'coaster / tracked ride' };
-        layers.rides.add(g.scene);
+        layers.rides.add(g.scene); trackScenes.push(g.scene);
         const box = new THREE.Box3().setFromObject(g.scene); rideSpots[tr.id] = box.getCenter(new THREE.Vector3());
         const sr = await fetch(`/api/park_supports?file=${encodeURIComponent(world.file)}&id=${tr.id}`);
         if (sr.ok) await addSupports(await sr.json(), tr.name, seq);
@@ -676,7 +693,9 @@ function build() {
     status(`Placing ${world.items.length.toLocaleString()} items…`, 0.1);
     await Promise.all([
       buildItems(seq, (n, of) => status(`Loading models ${n} / ${of} (${world.items.length.toLocaleString()} items)…`, 0.1 + 0.6 * n / of)),
-      buildTracks(seq), buildCars(seq), buildAnimals(seq), addSupports(world.path_supports, 'Path', seq)]);
+      buildTracks(seq), buildCars(seq), buildAnimals(seq)]);
+    if (seq !== loadSeq) return;
+    await addSupports(clearOfTracks(world.path_supports || []), 'Path', seq);
     if (seq !== loadSeq) return;
     const np = world.people.filter(p => p[5] >= 0).length;
     await buildPersonModels(seq, (n, of) => status(`Loading people ${n} / ${of} (${np.toLocaleString()} guests and staff)…`, 0.7 + 0.3 * n / of));

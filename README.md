@@ -130,7 +130,7 @@ The buttons at the top:
   - **In 3D:** the landscape with the game's ground textures (land the park doesn't own shaded, land for sale yellow),
     water and the sea around island parks, footpaths and queues, and every placed item at its tile, height and
     direction: trees, buildings, walls, path extras, flat rides, shops, entrances and raised paths (bridges and
-    slopes join up). Queues have their queue type's floor and fences. Every coaster and tracked ride is built from
+    slopes join up, standing on their path style's supports). Queues have their queue type's floor and railings. Every coaster and tracked ride is built from
     its track pieces, standing on the game's own supports for its style (steel columns, wooden or mine-train
     lattice; suspended coasters hang from columns with girders), with its trains where they stood: every car,
     including the hanging cars of swinging coasters. Guests and staff are full models (their own body, legs and head

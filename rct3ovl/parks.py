@@ -167,6 +167,8 @@ def _ride_pose(O: dict, ride_ref) -> str:
     for t in ride.get('Trains') or []:
         names.append(O.get(t, ('', {}))[1].get('RideTrainSymbolName', ''))
     s = ' '.join(names).lower()
+    if 'kart' in s:
+        return 'RideCar'
     if 'laydown' in s or 'flying' in s:
         return 'RideLayWait'
     if any(w in s for w in ('invert', 'suspend', 'swing', 'floorless', 'biplane', 'parrot', 'skyswinger')):
@@ -174,7 +176,11 @@ def _ride_pose(O: dict, ride_ref) -> str:
     return 'RideSitBarWait'
 
 
-RIDE_POSES = ['RideSitBarWait', 'RideLayWait', 'RideSitHarnessFeetDangleWait']
+RIDE_POSES = ['RideSitBarWait', 'RideLayWait', 'RideSitHarnessFeetDangleWait', 'RideCar', 'RideSitHarnessWait']
+# each queue type's railing art: (texture, pixel rectangle in a 256 x 256 image, top-left origin)
+QUEUE_RAILS = {'queueset1': ('RaisedQueueSet1:ftx', (52, 134, 190, 216)), 'wildwest': ('WildWestSet:ftx', (0, 0, 112, 132)),
+               'space': ('SpaceQueueRaised:ftx', (0, 128, 128, 170)), 'spooky': ('SpookyQRaised:ftx', (0, 128, 125, 200)),
+               'adventure': ('IncaQRaised:ftx', (0, 128, 125, 212))}
 
 
 def _graph(b) -> list[float] | None:
@@ -533,20 +539,39 @@ def park_world(lib: Library, rel: str) -> dict:
                   absolute=bool(v.get('FORCEABSOLUTEHEIGHT')) or own[0] != 'SceneryItem')
         elif n == 'SceneryItemPlacementSingle':
             place(v['SceneryItemDataField'], sid_of(v['SIDDatabaseEntry']), 3, ref=v.get('Owner'))
-        elif n == 'PathQueue' and isinstance(v.get('FenceEntry'), int) and v['FenceEntry'] in O:
-            # queue fences: the queue's fence item (FenceEntry) on every edge the queue doesn't enter or leave by.
-            # StartDirection / EndDirection number the edges 0 -col, 1 +col, 2 -row, 3 +row (fits every queue tile
-            # of every park); item DIRECTION numbers them 0 -col, 1 +row, 2 +col, 3 -row
-            c, r = v['ColIndex'], v['RowIndex']
-            if not (0 <= c < W and 0 <= r < H):
-                continue
-            open_ = {v.get('StartDirection'), v.get('EndDirection')}
-            raised = v.get('BaseHeight', -1) >= 0
-            y = float(v.get('QuantisedHeight', 0)) if raised else float(hgrid[r, c].mean())
-            for e, item_dir in ((0, 0), (1, 2), (2, 3), (3, 1)):
-                if e not in open_:
-                    items.append([sid_of(v['FenceEntry']), c, r, round(y, 3), item_dir, 0, 5, -1])
     world['sids'] = sids
+    # supports under raised paths and queues: the path piece's sid names its support style (pathcrazy,
+    # pathasphalt, flatqueueset1...), stacked from the ground up to under the piece
+    psup = []
+    styles_of = {}
+    for oid, (n, v) in O.items():
+        if n not in ('PathFlying', 'PathQueue'):
+            continue
+        si = O.get(v.get('SceneryItem'), ('', {}))[1]
+        if not si:
+            continue
+        gd = si['SceneryItemDataField']
+        c, r = gd['POSX'], gd['POSZ']
+        if not (0 <= c < W and 0 <= r < H):
+            continue
+        e = O.get(si.get('DATABASEENTRY'), ('', {}))[1]
+        key = (e.get('SYMBOLNAME', ''), e.get('OVERLAYFILENAME', ''))
+        if key not in styles_of:
+            h = _sid_hit(lib, *key)
+            try:
+                styles_of[key] = (load_sid(h[0], h[1]).get('supports') or '').lower() if h else ''
+            except Exception:
+                styles_of[key] = ''
+        parts = support_parts(lib).get(styles_of[key])
+        ground = float(hgrid[r, c].min())
+        top = float(gd['HEIGHT']) - 0.5                   # under the path deck
+        if parts and top - ground >= 1:
+            _stack(parts, x0 + c * sx + sx / 2, z0 + r * sz + sz / 2, ground, top, 0.0, psup)
+    world['path_supports'] = [[s, round(float(x), 3), round(float(y), 3), round(float(z), 3), a] for s, x, y, z, a in psup]
+    # queue railings: built along the edges a queue tile doesn't open on (StartDirection / EndDirection, numbered
+    # 0 -col, 1 +col, 2 -row, 3 +row: fits every queue tile of every park), from the railing part of the queue
+    # type's raised texture (the game draws them itself; no models)
+    world['queue_rails'] = {s: list(QUEUE_RAILS[s[6:].lower()]) for s in styles if s.startswith('queue:') and s[6:].lower() in QUEUE_RAILS}
     world['items'] = items
     # tracked rides: one model each (/api/park_track)
     world['tracks'] = [{'id': oid, 'name': _name(lib, v.get('Name'))} for oid, (n, v) in O.items() if n == 'TrackedRideInstance']
@@ -609,7 +634,7 @@ def park_world(lib: Library, rel: str) -> dict:
         key = (rit, tr.get('RideTrainOverlayName', ''), car.get('WhichRideTrainCar', 2), 'swing')
         if key not in car_index:
             car_index[key] = len(car_models); car_models.append(list(key))
-        cars.append([car_index[key], round(pp[0], 3), round(pp[1], 3), round(pp[2], 3)] + _euler(v.get('RotatedEndOrient')) + [round(v.get('Length') or 0, 3)])
+        cars.append([car_index[key], round(pp[0], 3), round(pp[1], 3), round(pp[2], 3)] + [0.0, _euler(v.get('RotatedEndOrient'))[1], 0.0] + [round(v.get('Length') or 0, 3)])   # hangs straight down, turned like the car
     world['cars'] = cars
     world['car_models'] = car_models
     # Wild! animals: species (WASDatabaseEntry) and the visual that holds where it stands
@@ -803,6 +828,25 @@ def support_parts(lib: Library) -> dict:
     return out
 
 
+def _stack(parts: dict, x, z, y0, y1, yaw, out: list):
+    """One support column from y0 up to y1 out of a style's pieces: bottom, middles (8 / 4 / 2 / 1 m), top."""
+    mids = parts.get('middle', {})
+    if not mids:
+        return
+    y = y0
+    if parts.get('bottom') and y1 - y >= 2:
+        out.append([parts['bottom'], x, y, z, yaw]); y += 1
+    top = parts.get('top') if y1 - y >= 2 else None
+    end = y1 - (1 if top else 0)
+    for size in sorted(mids, reverse=True):
+        while end - y >= size - 0.01:
+            out.append([mids[size], x, y, z, yaw]); y += size
+    if end - y > 0.2 and 1 in mids:                       # the last bit: a 1 m piece, overlapping the next one
+        out.append([mids[1], x, end - 1, z, yaw]); y = end
+    if top:
+        out.append([top, x, y, z, yaw])
+
+
 THIN_SUPPORTS = {'ts1', 'ts1a', 'ts4', 'ts7', 'ts8', 'ts9', 'ts10', 'steel'}     # a single column under the track
 
 
@@ -829,19 +873,7 @@ def _supports(lib: Library, merged, ter: bytes, style: str, inverted: bool, stat
         return float((h[0] * (1 - u) + h[1] * u) * (1 - v) + (h[2] * (1 - u) + h[3] * u) * v)
 
     def column(x, z, y0, y1, yaw, out):
-        """Stack pieces from y0 up to y1."""
-        y = y0
-        if parts.get('bottom') and y1 - y >= 2:
-            out.append([parts['bottom'], x, y, z, yaw]); y += 1
-        top = parts.get('top') if y1 - y >= 2 else None
-        end = y1 - (1 if top else 0)
-        for size in sorted(mids, reverse=True):
-            while end - y >= size - 0.01:
-                out.append([mids[size], x, y, z, yaw]); y += size
-        if end - y > 0.2 and 1 in mids:                   # the last bit: a 1 m piece, overlapping the next one
-            out.append([mids[1], x, end - 1, z, yaw]); y = end
-        if top:
-            out.append([top, x, y, z, yaw])
+        _stack(parts, x, z, y0, y1, yaw, out)
 
     P = np.concatenate([m.positions for m in merged.meshes])
     cells = np.floor((P[:, [0, 2]] - [x0, z0]) / T).astype(np.int64)

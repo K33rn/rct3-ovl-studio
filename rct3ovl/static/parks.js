@@ -346,7 +346,37 @@ function build() {
       const m = new THREE.Mesh(geo, mat);
       m.userData.pick = { title: queue ? 'Queue' : `${spaced(style)} path`, detail: queue ? spaced(style.slice(6)) : '' };
       layers.paths.add(m);
+      const rail = queue && (world.queue_rails || {})[style];
+      if (rail) buildRails(tiles, rail, style);
     }
+  }
+  // queue railings: a 1 m panel along every edge a queue tile doesn't open on (edges 0 -col, 1 +col, 2 -row,
+  // 3 +row), textured with the railing part of the queue type's raised texture
+  function buildRails(tiles, [texName, [px0, py0, px1, py1]], style) {
+    const W = world.cols, T = world.tile, p = [], uv = [], H = 1.0, inset = 0.12;
+    const EDGE = [[0, 2], [1, 3], [0, 1], [2, 3]], corner = [[0, 0], [1, 0], [0, 1], [1, 1]];
+    const u0 = px0 / 256, u1 = px1 / 256, vt = 1 - py0 / 256, vb = 1 - py1 / 256;
+    for (const [c, r, qs, qe] of tiles) {
+      const i = r * W + c, h = [tileH(i, 0), tileH(i, 1), tileH(i, 2), tileH(i, 3)];
+      for (let e = 0; e < 4; e++) {
+        if (e === qs || e === qe) continue;
+        const pt = k => {
+          const cx = corner[k][0], cz = corner[k][1];
+          // pulled a little into the tile
+          const ix = e === 0 ? inset : e === 1 ? -inset : 0, iz = e === 2 ? inset : e === 3 ? -inset : 0;
+          return [world.x0 + (c + cx) * T + ix, h[k] + 0.07, Z(world.z0 + (r + cz) * T + iz)];
+        };
+        const [a, b] = EDGE[e].map(pt);
+        p.push(...a, ...b, b[0], b[1] + H, b[2], ...a, b[0], b[1] + H, b[2], a[0], a[1] + H, a[2]);
+        uv.push(u0, vb, u1, vb, u1, vt, u0, vb, u1, vt, u0, vt);
+      }
+    }
+    if (!p.length) return;
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: parkTex(texName), side: THREE.DoubleSide, alphaTest: 0.5 }));
+    m.userData.pick = { title: 'Queue railing', detail: spaced(style.slice(6)) };
+    layers.paths.add(m);
   }
   // people: simple figures (the park's guests where they stood when it was saved)
   function buildPeople() {
@@ -416,7 +446,8 @@ function build() {
           } else { o.position.set(p[1], p[2], Z(p[3])); o.rotation.y = -p[4]; }
           o.userData.pick = { title: p[11] ? 'Guest (riding)' : p[0] === 'guest' ? 'Guest' : 'Staff member', detail: world.person_combos[ci].map(s => s.split('_')[0].toUpperCase()).join(' / ') };
           group.add(o);
-          const a = (p[10] ? clip(p[10].toLowerCase()) : p[6] ? clip('walk') : clip('idle')) || g.animations[0];
+          // riders: their ride's pose, else any seated ride pose the model has (never standing in a seat)
+          const a = (p[10] ? (clip(p[10].toLowerCase()) || clip('ridesit') || clip('ride')) : p[6] ? clip('walk') : clip('idle')) || g.animations[0];
           if (a) { const mx = new THREE.AnimationMixer(o), act = mx.clipAction(a); act.play(); act.time = Math.random() * a.duration; mixers.push(mx); }
         }
       } catch (e) {} finally { done++; progress(done, order.length); }
@@ -645,7 +676,7 @@ function build() {
     status(`Placing ${world.items.length.toLocaleString()} items…`, 0.1);
     await Promise.all([
       buildItems(seq, (n, of) => status(`Loading models ${n} / ${of} (${world.items.length.toLocaleString()} items)…`, 0.1 + 0.6 * n / of)),
-      buildTracks(seq), buildCars(seq), buildAnimals(seq)]);
+      buildTracks(seq), buildCars(seq), buildAnimals(seq), addSupports(world.path_supports, 'Path', seq)]);
     if (seq !== loadSeq) return;
     const np = world.people.filter(p => p[5] >= 0).length;
     await buildPersonModels(seq, (n, of) => status(`Loading people ${n} / ${of} (${np.toLocaleString()} guests and staff)…`, 0.7 + 0.3 * n / of));

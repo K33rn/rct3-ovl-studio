@@ -412,3 +412,16 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   598 open edges in the 42 parks); FenceEntry is the fence sid (wall size), placed on the other edges. Floor: the
   queue type's (QueueSet1:qtd -> GroundQueueSet1:ftx, a 2x2 atlas; its straight piece, turned along the queue).
   /api/park_tex serves any tex/ftx by name.
+
+## 2026-10-09: Parks: queue railings, raised path supports, riders' poses
+- Queue railings: queue types have no railing models (their Straight/TurnL/TurnR/Slope sids are raised floor
+  pieces). The game draws railings from the railing part of the queue type's raised texture (RaisedQueueSet1,
+  WildWestSet, SpaceQueueRaised, SpookyQRaised, IncaQRaised: QUEUE_RAILS, pixel rectangles); the viewer builds a
+  1 m panel along each edge a queue tile doesn't open on. PathQueue.FenceEntry (Van_Scaffold2...) isn't the
+  railing and is no longer drawn.
+- Raised paths and queues: the piece's sid 'supports' style (pathcrazy, pathasphalt, pathdirt, pathleafy,
+  pathtarmac, flatqueueset1...) stacked from the tile's lowest ground up to 0.5 m under the deck (world
+  path_supports, the same stacking as coaster supports: parks._stack).
+- Riders: Guest WorldMatrix == the seat matrix already. Poses: karts RideCar; fallback to any RideSit / Ride
+  clip a model has. Swinging cars hang straight down (only the yaw of RotatedEndOrient, whose roll swung them
+  out from under their riders).

@@ -2180,7 +2180,7 @@ async function build() {
     }
     win?._close();
   }
-  const inEditor = (kind, steps) => steps.map(s => ({ ...s, before: async () => { closePanels(); await ensureEditor(kind); await s.before?.(); } }));
+  const inEditor = (kind, steps) => steps.map(s => ({ ...s, inside: true, before: async () => { closePanels(); await ensureEditor(kind); await s.before?.(); } }));
   const outside = s => ({ ...s, before: async () => { await ensureEditor(null); await s.before?.(); } });
   async function fullTour() {
     const [afe, des] = await Promise.all([import('./fw_afe.js'), import('./fw_designers.js')]);
@@ -2197,7 +2197,7 @@ async function build() {
         html: `<p>The game's water jets fire from <b>water jet bases</b>. Next: the <b>Advanced water jet designer</b>.</p>` },
       ...inEditor('jet', des.designerTourSteps('jet')),
     ];
-    return FW_TOUR.flatMap(s => s === 'EDITORS' ? editors.map(outside) : [outside(s)]);
+    return FW_TOUR.flatMap(s => s === 'EDITORS' ? editors.map(e => e.inside ? e : outside(e)) : [outside(s)]);   // editor steps keep their editor open
   }
   // "? Tour": the walkthrough of what is open (the firework editor, a designer, or the whole MixMaster)
   async function tour(force) {

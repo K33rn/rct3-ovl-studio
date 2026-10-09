@@ -333,3 +333,12 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   then move straight to the next place; before, target = null made place() put the hole in the middle for the
   hand-off. tests/ui_tour_jump.py samples the hole every frame across 54 step changes (old code: middle every time).
   tests/ui_files.py covers the file list.
+
+## 2026-10-09: editor steps in the MixMaster tour; firework files in File types
+- fullTour wrapped the editor steps in outside() as well as inEditor(), so each Next ran ensureEditor(null) (closed
+  the editor: a flash of the MixMaster) and then reopened it. inEditor steps are marked `inside` and left unwrapped.
+  tests/ui_tour_editors.py samples the open view every frame (old code: back to the MixMaster on all 12 editor-to-editor
+  steps; now none).
+- filetypes.md: intro paragraph and quick-reference rows for .frw (fireworks + particle effects), .fwd, .las, .wjt,
+  .lwr, .wma; new .wma entry; particle effects under .frw. Table links strip the leading dot to find the entry.
+  A firework file's summary has a ? linking to its entry. tests/ui_filetypes.py.

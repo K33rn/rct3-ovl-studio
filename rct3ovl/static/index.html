@@ -38,6 +38,9 @@
   .group small { color: var(--dim); text-transform: none; letter-spacing: 0; }
   .group .help { float: right; cursor: pointer; color: var(--dim); border: 1px solid var(--line); border-radius: 50%; width: 16px; height: 16px;
     line-height: 14px; text-align: center; font-size: 10px; text-transform: none; }
+  #doc h2 .help { display: inline-block; color: var(--dim); border: 1px solid var(--line); border-radius: 50%; width: 18px; height: 18px;
+    line-height: 16px; text-align: center; font-size: 11px; text-decoration: none; vertical-align: 3px; }
+  #doc h2 .help:hover { color: var(--accent); border-color: var(--accent); }
   .group .help:hover { color: var(--accent); border-color: var(--accent); }
   .head .brand { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .head .brand .sub { margin-left: auto; }
@@ -602,7 +605,8 @@ function gameFileSummary() {
     <p class="sub">Music the game plays in the park and with firework shows (MixMaster music). Playing it here converts it the first time, which needs the viewer started with <code>rct3ovl-viewer.bat</code>.</p>`;
   if (d.error) rows.push(['Note', `<span class="err">${esc(d.error)}</span>`]);
   btns.push(['dl', '⬇ Download the file']);
-  $('doc').innerHTML = `<h2>${GF[d.type][0]} ${esc(d.file)} <span class="badge">${esc(GF[d.type][1])}</span></h2>
+  const ext = d.file.split('.').pop().toLowerCase();
+  $('doc').innerHTML = `<h2>${GF[d.type][0]} ${esc(d.file)} <span class="badge">${esc(GF[d.type][1])}</span> <a class="help" href="#types=${ext}" title="What is a .${ext} file?">?</a></h2>
     <div class="card"><table class="t">${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table>${extra}
     <div class="gf-btns">${btns.map(([a, l, main]) => `<button data-gf="${a}"${main ? ' class="main"' : ''}>${l}</button>`).join('')}</div></div>
     ${d.objects?.length ? '<p class="sub">The list in the middle shows every object stored in the file: pick one to see all of its fields.</p>' : ''}`;
@@ -786,7 +790,8 @@ async function showTypes(tag) {
   }
   // links from the quick-reference table to the entries
   for (const td of doc.querySelectorAll('.md table td:first-child code')) {
-    const t = td.textContent; if (doc.querySelector(`.md h3[data-tags~="${t}"]`)) td.outerHTML = `<a href="#types=${t}"><code>${t}</code></a>`;
+    const s = td.textContent, t = s.replace(/^\./, '');   // .frw etc. (loose files) link to their entries too
+    if (doc.querySelector(`.md h3[data-tags~="${t}"]`)) td.outerHTML = `<a href="#types=${t}"><code>${s}</code></a>`;
   }
   const go = t => { const h = t && doc.querySelector(`.md h3[data-tags~="${t}"]`); doc.querySelectorAll('.md h3.hl').forEach(x => x.classList.remove('hl'));
     if (h) { h.classList.add('hl'); h.scrollIntoView({ block: 'start' }); } else doc.scrollTop = 0; };

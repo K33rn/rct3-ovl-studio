@@ -5,6 +5,11 @@ RCT3 keeps almost everything in **`.ovl` files**. An OVL is a package, like a zi
 `PirateShip` of type `sid`. So the "file types" below (`.ric`, `.shs`, `.snd`…) are really resource types inside
 OVLs. rct3ovl writes each one out as a normal file.
 
+The fireworks side of the game is the exception: fireworks and particle effects (`.frw`), firework shows (`.fwd`),
+lasers (`.las`), water jets (`.wjt`), laser drawings (`.lwr`) and music (`.wma`) are plain files in their own folders,
+listed in the file list with the OVLs. They are at the end of the quick reference and have their own section,
+[Fireworks (outside the OVLs)](#types=frw).
+
 Resources constantly point at each other, often across different OVLs. A scenery item (`sid`) points at its look
 (`svd`), which points at its 3D model (`bsh`), which points at its textures (`ftx`), and so on. The viewer and the
 extractor follow those links for you.
@@ -57,6 +62,12 @@ The counts are from a full RCT3 Gold install (base game + Soaked! + Wild!, 7,484
 | `tks` | **One track piece**: straight, slope, curve, loop, station… | `.glb` model plus rail curves `.json` |
 | `wai`, `pty` | Wild! animal toys; Soaked! pool styles | `.json` |
 | `txs` | Built into the game, never stored in OVLs: texture styles | names only |
+| `.frw` | **A firework** (`Fireworks\`), or one of the game's other particle effects: smoke, splashes, sparkles (`ParticleEffects\`). Loose file, not in an OVL | summary, every object, Firework Editor |
+| `.fwd` | **A firework show** (MixMaster display): launchers, launches, music, start time | summary, opens in the MixMaster |
+| `.las` | A laser effect (cone, plane or drawn image) | summary, Laser Designer |
+| `.wjt` | A water jet effect | summary, WaterJet Designer |
+| `.lwr` | A picture a laser can draw | the drawing |
+| `.wma` | Music for the park and firework shows (`Music\`) | a player |
 
 ## The containers
 
@@ -580,10 +591,13 @@ Variant names:
 Other variants are staff and specials.
 
 ## Fireworks (outside the OVLs)
-Fireworks and firework shows are plain files next to the OVLs. They use the same self-describing save format as
-the premade ride designs (`.trk`), without the header. The viewer's **Fireworks** tab reads both.
+Fireworks, firework shows, lasers, water jets, laser drawings, particle effects and music are plain files next to
+the OVLs, and the viewer's file list shows them in their folders (240 in RCT3 Gold). All but the music use the same
+self-describing save format as the premade ride designs (`.trk`), without the header (a few have a 64-byte header
+instead). Picking one in the list shows a summary and every object in it, with buttons that open it in the
+**Fireworks** tab.
 
-### `.frw`: a firework (28, `Fireworks\`)
+### `.frw`: a firework (28, `Fireworks\`) or particle effect (166, `ParticleEffects\`)
 - **What it is:** one firework type, e.g. Green Peony or Titan Missile.
 - **Inside:** a tree of particles. The base releases particles; each particle can release more while it lives
   (trails) or as it dies (the burst). Each emitter releases a number of particles between two points of its
@@ -591,6 +605,9 @@ the premade ride designs (`.trk`), without the header. The viewer's **Fireworks*
   for wagon wheels) and part of the parent's speed. Each particle has a lifetime, start and end size, drag,
   gravity, stretch along its motion, colour curves, a `psi` sprite and an optional sound (`snd`). The
   in-game name (`%%FireworkNameNN`) is a `txt`.
+- **Particle effects:** `ParticleEffects\` holds 166 more files in the same format: the smoke, fire, mist, splashes,
+  bubbles and sparkles that rides, scenery and animals give off (RoadTrainSmoke, WhiteWaterRapidsSplash, Mist…).
+  The viewer previews them in the Fireworks tab and opens them in the Advanced Firework Editor like any firework.
 
 ### `.fwd`: a firework show (4, `FireworkDisplays\`)
 - **What it is:** a premade display, e.g. Stratosphere.
@@ -617,3 +634,10 @@ the premade ride designs (`.trk`), without the header. The viewer's **Fireworks*
 - **What it is:** one image a laser can draw, e.g. Crab or Spiral.
 - **Inside:** after a 64-byte header, the same save format: the drawing's points, which of them the beam draws to, how
   long it takes, and a small preview picture.
+
+### `.wma`: music (29, `Music\`)
+- **What it is:** a music track (Windows Media Audio): the park music and ambient loops, e.g. Buccaneer or Funky Disco.
+- **In the game:** played around the park and chosen as the soundtrack of a firework show (the `.fwd` stores the
+  file name).
+- **You get:** a player in the viewer and the music under the MixMaster timeline. The first play converts it to
+  Ogg, which needs the viewer started with `rct3ovl-viewer.bat` (it brings ffmpeg).

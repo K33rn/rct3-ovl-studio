@@ -437,3 +437,41 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Poses: suspended swinging cars (Biplane) have seats: RideSitBarWait; harness only for inverted / floorless.
   Guest.AnimType isn't an index into the people's animation list (81 / 110 aren't RideCar / ride poses).
 - Path textures: the most opaque quarter of each style's atlas (all base styles: top left).
+
+## 2026-10-10: Fireworks bug list (tester's sheet)
+- Music always restarted at 0:00: the server sent the music without byte ranges, so the browser could not seek.
+  `send()` now answers `Range:` for audio/video (206 + Content-Range); play() seeks once the length is known.
+- psi (particle sprite) layout: u32 frame count, pointer to an array of that many pointers, each -> {u0, v0, u1, v1}.
+  The old reader took "ptr + 4" as the rect, right only for 1-frame sprites (the rect follows the pointer). Animated
+  sheets (SmokeAnim / FireAnim 16 frames, WaterAnim 3, ConcreteAnim / ElectricAnim 4) read as a zero rect: every
+  smoke / fire particle drew one texel. Now all frames are read; a particle shows frame floor(life% * AnimTimeScale
+  * n) mod n. Effects made in the game's own designer (smoke, fire) render as in the game.
+- Firework Designer slider ranges from RCT3plus.exe: the dialog code calls 0x6a82d0 (ecx = slider) with pushes
+  (step, max[, min]) right after creating labels from "ParticleDescDialog_*" text objects in the same order.
+  Start/End/Random 0-1; Speed, Sphere, Circle, Pos Sphere/Circle 0-100; Parent 0-1; SpinOffset 0-2pi;
+  emitter SpinRate +-20pi; Lifetime 0.05-20 (step 0.05); LifetimeRandom, SoundPlayTime 0-1; Sound dists 0-1000 (5);
+  Start/End size 0-50; SizeRandom 0-1; CameraSpinRate +-2pi; VelStretch 0-1; BurnSize 0-50; Drag 0-5;
+  Gravity -2-2 (0.005); UpScale 0-100; particle SpinRate +-20pi; StrengthModifierDefault 0-1.
+  (# particles, BurnLength: no slider - spinners.)
+- The game itself defaults to FireworkDisplays\Stratosphere.fwd (string in the exe); the MixMaster now starts on the
+  autosave or an empty show, and file building falls back to any game file of the kind when its usual template
+  (GreenPeony.frw, CrabLaser.las, MultiSpurt.wjt, Stratosphere.fwd) is gone.
+- Saving: localStorage errors were swallowed (a "saved" toast, nothing kept). Your effects now also go to
+  ~/.rct3ovl/my_effects.json (/api/fw/mine), merged at start. Game folders under Program Files: RCT3 (no manifest)
+  is virtualised, its saves land in %LOCALAPPDATA%\VirtualStore\<path>; the viewer lists those too and writes there
+  on PermissionError.
+- Laser image frames: game drawings are in pad units x 0..32, y 0..24 (LaserWriting\*.lwr, Crab, Atari...); the
+  sketch pad used -10..10 so the game's frames drew off the thumbnail (black). Pad and thumbnails now use the game's
+  units; old -10..10 frames are converted once (pad: 2 marks converted frames). Non-centred images project around
+  the pad middle (16, 12).
+- Laser Spread (beam width): drawn `width` m across (0.35 x at the dome), slider to 10.
+- AFE colour editor rebuilt (gradient + stop markers, picker / swatches / location / reverse / distribute); the old
+  one rebuilt its inputs on every input event, closing the colour picker after the first change.
+- Particle count: "N particles per launch" (base + sum of N x children) beside "on screen now"; each edit clears the
+  previous version's particles before refiring (they used to pile up after adding an emitter).
+- Aiming turns the tube directions (and laser/jet frames) by the aim, not the base model (mortars spun about).
+- Timeline: right-click removes, drag the ruler / playhead to scrub (music snippets), burst lines on firework bars
+  (emitters releasing >= 8 particles within 0.15 s, following 1-3 particle shell chains; a single particle over a
+  window leaves at its end), timeline-only edits redraw only the timeline + inspector, autosave debounced, undo
+  rebuilds 3D launchers only when launchers / scenery / ground changed.
+- Shift-drag / PageUp-PageDown raise launchers (new `lift`) and scenery. New firework = base only.

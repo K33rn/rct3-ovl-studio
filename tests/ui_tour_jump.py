@@ -15,7 +15,7 @@ with sync_playwright() as p:
     bad, steps = [], 0
     for tour in ('main', 'mix'):
         if tour == 'mix':
-            pg.click('#b-fireworks'); pg.wait_for_selector('#fw .ent', timeout=180000)
+            pg.click('#b-fireworks'); pg.wait_for_selector('#fw .fwk', timeout=180000); pg.select_option('#fw-show', label='Stratosphere'); pg.wait_for_selector('#fw .ent', timeout=60000)
         pg.wait_for_selector('#tour .tcard', timeout=60000)
         while pg.query_selector('#tour'):
             pg.wait_for_function("document.querySelector('#tour .tcard')?.style.opacity === '1'", timeout=60000); pg.wait_for_timeout(300)

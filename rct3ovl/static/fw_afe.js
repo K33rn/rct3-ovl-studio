@@ -31,7 +31,20 @@ const css = `
   #fw .afe-f.wide { grid-template-columns: 96px 1fr; }
   #fw .afe-col { flex: 1.3; display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--line); }
   #fw .afe-tex { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  #fw .afe-grad { margin: 0 12px; height: 46px; border-radius: 6px; border: 1px solid var(--line); cursor: copy; display: block; width: calc(100% - 24px); }
+  #fw .afe-gwrap { margin: 2px 18px 0; position: relative; padding-bottom: 22px; cursor: copy; touch-action: none; }
+  #fw .afe-grad { height: 34px; border-radius: 6px; border: 1px solid var(--line); display: block; width: 100%; }
+  #fw .afe-marks { position: absolute; left: 0; right: 0; top: 34px; height: 22px; }
+  #fw .afe-mk { position: absolute; top: 0; width: 16px; height: 20px; margin-left: -8px; cursor: ew-resize; }
+  #fw .afe-mk::before { content: ''; position: absolute; left: 3px; top: 0; border: 5px solid transparent; border-bottom: 6px solid #9aa3b5; border-top: 0; }
+  #fw .afe-mk i { position: absolute; left: 1px; top: 6px; width: 14px; height: 12px; border: 1px solid #9aa3b5; border-radius: 3px; box-sizing: border-box; }
+  #fw .afe-mk.sel::before { border-bottom-color: var(--accent); } #fw .afe-mk.sel i { border: 2px solid var(--accent); }
+  #fw .afe-mk.gone { opacity: .25; }
+  #fw .afe-stopbar { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 6px 12px; color: var(--dim); font-size: 12px; }
+  #fw .afe-stopbar input[type=color] { width: 38px; height: 24px; padding: 0 2px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); vertical-align: middle; cursor: pointer; }
+  #fw .afe-stopbar input[type=number] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 2px 4px; }
+  #fw .afe-stopbar button { font-size: 11px; padding: 3px 7px; }
+  #fw .afe-sw { display: inline-flex; gap: 3px; } #fw .afe-sw button { width: 16px; height: 16px; padding: 0; border-radius: 4px; border: 1px solid #0008; }
+  #fw .afe-col.off .afe-gwrap, #fw .afe-col.off .afe-stopbar > :not([data-s=n]) { opacity: .35; pointer-events: none; }
   #fw .afe-texgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 5px; padding: 4px 12px 12px; overflow: auto; }
   #fw .afe-texgrid canvas { width: 46px; height: 46px; border-radius: 6px; border: 1px solid var(--line); background: #000; cursor: pointer; }
   #fw .afe-texgrid canvas.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
@@ -39,30 +52,35 @@ const css = `
 `;
 let styled = false;
 
-// fields as the game groups them: [field, label, min, max, step] (step 0: checkbox / int flag)
+// fields as the game groups them: [field, label, min, max, step] (step 0: checkbox / int flag). Ranges and steps are the
+// game's own (the Firework Designer's slider set-up in RCT3plus.exe: step, max, min per slider); fields the game edits
+// without a slider (# particles, burn length, cost, base life, anim speed) keep generous ranges.
+const TAU = 2 * Math.PI;
 const BASE_GROUPS = [
-  ['Firework', [['Name', 'Label', 'text'], ['Cost', 'Cost (cents)', 0, 99999, 1], ['Lifetime', 'Lifetime', 0, 10, 0.01], ['LifetimeRandom', 'Time Rand', 0, 5, 0.01]]],
-  ['Sound', [['SoundName', 'Sound', 'sound'], ['SoundMinDist', 'Min Dist', 0, 600, 1], ['SoundMaxDist', 'Max Dist', 0, 1500, 1], ['SoundPlayTime', 'Sound Time', 0, 10, 0.01]]],
+  ['Firework', [['Name', 'Label', 'text'], ['Cost', 'Cost (cents)', 0, 99999, 1], ['Lifetime', 'Lifetime', 0.05, 20, 0.05], ['LifetimeRandom', 'Time Rand', 0, 1, 0.01]]],
+  ['Sound', [['SoundName', 'Sound', 'sound'], ['SoundMinDist', 'Min Dist', 0, 1000, 5], ['SoundMaxDist', 'Max Dist', 0, 1000, 5], ['SoundPlayTime', 'Sound Time', 0, 1, 0.01]]],
   ['Modifiers', [['_cmod', 'Color Modifier', 'rgb:ColourModifier'], ['_cmodd', 'Default Color Modifier', 'rgb:ColourModifierDefault'],
-    ['StrengthModifier', 'Strength Modifier', 0, 4, 0.01], ['StrengthModifierDefault', 'Default Strength Modifier', 0, 4, 0.01],
+    ['StrengthModifier', 'Strength Modifier', 0, 1, 0.01], ['StrengthModifierDefault', 'Default Strength Modifier', 0, 1, 0.01],
     ['_ident', 'Identifying color', 'rgb:IdentifyingColour']]],
 ];
 const EMITTER_GROUPS = [
-  ['Emitter rate', [['NumParticles', '# Particles', 0, 2000, 1], ['NumParticlesModifierEnable', 'Use Strength Modifier', 0, 1, 0],
-    ['StartTime', 'Start Time', 0, 1, 0.01], ['EndTime', 'End Time', 0, 1, 0.01], ['TimeRandom', 'Random', 0, 5, 0.01]]],
-  ['Emitter speed', [['ParticleSpeed', 'Speed', -50, 150, 0.1], ['SpeedRandom', 'Sphere', 0, 100, 0.1], ['SpeedRandomCircle', 'Circle', 0, 100, 0.1],
-    ['ParentSpeedFactor', 'Parent', -2, 2, 0.01], ['PositionRandom', 'Pos Sphere', 0, 50, 0.1], ['PositionRandomCircle', 'Pos Circle', 0, 50, 0.1],
+  ['Emitter rate', [['NumParticles', '# Particles', 0, 1000, 1], ['NumParticlesModifierEnable', 'Use Strength Modifier', 0, 1, 0],
+    ['StartTime', 'Start Time', 0, 1, 0.01], ['EndTime', 'End Time', 0, 1, 0.01], ['TimeRandom', 'Random', 0, 1, 0.01]]],
+  ['Emitter speed', [['ParticleSpeed', 'Speed', 0, 100, 0.01], ['SpeedRandom', 'Sphere', 0, 100, 0.01], ['SpeedRandomCircle', 'Circle', 0, 100, 0.01],
+    ['ParentSpeedFactor', 'Parent', 0, 1, 0.01], ['PositionRandom', 'Pos Sphere', 0, 100, 0.01], ['PositionRandomCircle', 'Pos Circle', 0, 100, 0.01],
     ['ParticleRelative', 'Move with parent', 0, 1, 0]]],
-  ['Emitter rotation', [['SpinRateX', 'SpinRateX', -20, 20, 0.01], ['SpinRateY', 'SpinRateY', -20, 20, 0.01], ['SpinRateZ', 'SpinRateZ', -20, 20, 0.01],
-    ['SpinOffsetX', 'SpinOffsetX', -6.3, 6.3, 0.01], ['SpinOffsetY', 'SpinOffsetY', -6.3, 6.3, 0.01], ['SpinOffsetZ', 'SpinOffsetZ', -6.3, 6.3, 0.01]]],
+  ['Emitter rotation', [['SpinRateX', 'SpinRateX', -20 * Math.PI, 20 * Math.PI, 0.12566], ['SpinRateY', 'SpinRateY', -20 * Math.PI, 20 * Math.PI, 0.12566],
+    ['SpinRateZ', 'SpinRateZ', -20 * Math.PI, 20 * Math.PI, 0.12566],
+    ['SpinOffsetX', 'SpinOffsetX', 0, TAU, 0.00628], ['SpinOffsetY', 'SpinOffsetY', 0, TAU, 0.00628], ['SpinOffsetZ', 'SpinOffsetZ', 0, TAU, 0.00628]]],
 ];
 const PARTICLE_GROUPS = [
-  ['Particle basics', [['Name', 'Label', 'text'], ['StartSize', 'Start Size', 0, 30, 0.01], ['EndSize', 'End Size', 0, 30, 0.01], ['SizeRandom', 'Random', 0, 2, 0.01]]],
-  ['Particle life', [['Lifetime', 'Lifetime', 0, 20, 0.01], ['LifetimeRandom', 'Time Rand', 0, 10, 0.01]]],
-  ['Particle motion', [['Drag', 'Drag', 0, 20, 0.01], ['GravityScale', 'Gravity', -3, 3, 0.01], ['VelStretch', 'Stretch', 0, 1, 0.005], ['UpScale', 'UpScale', 0, 3, 0.01]]],
-  ['Special effects', [['CameraSpinRate', 'Spin Rate', -10, 10, 0.01], ['SpinRateX', 'SpinRateX', -10, 10, 0.01], ['SpinRateY', 'SpinRateY', -10, 10, 0.01],
-    ['BurnLength', 'Burn Length', 0, 50, 1], ['BurnSize', 'Burn Size', 0, 5, 0.01], ['AnimTimeScale', 'Anim speed', 0, 5, 0.01],
-    ['SoundName', 'Sound', 'sound'], ['SoundMinDist', 'Min Dist', 0, 600, 1], ['SoundMaxDist', 'Max Dist', 0, 1500, 1], ['SoundPlayTime', 'Sound Time', 0, 10, 0.01]]],
+  ['Particle basics', [['Name', 'Label', 'text'], ['StartSize', 'Start Size', 0, 50, 0.01], ['EndSize', 'End Size', 0, 50, 0.01], ['SizeRandom', 'Random', 0, 1, 0.01]]],
+  ['Particle life', [['Lifetime', 'Lifetime', 0.05, 20, 0.05], ['LifetimeRandom', 'Time Rand', 0, 1, 0.01]]],
+  ['Particle motion', [['Drag', 'Drag', 0, 5, 0.01], ['GravityScale', 'Gravity', -2, 2, 0.005], ['VelStretch', 'Stretch', 0, 1, 0.01], ['UpScale', 'UpScale', 0, 100, 0.1]]],
+  ['Special effects', [['CameraSpinRate', 'Spin Rate', -TAU, TAU, 0.01257], ['SpinRateX', 'SpinRateX', -20 * Math.PI, 20 * Math.PI, 0.12566],
+    ['SpinRateY', 'SpinRateY', -20 * Math.PI, 20 * Math.PI, 0.12566],
+    ['BurnLength', 'Burn Length', 0, 50, 1], ['BurnSize', 'Burn Size', 0, 50, 0.01], ['AnimTimeScale', 'Anim speed', 0, 5, 0.01],
+    ['SoundName', 'Sound', 'sound'], ['SoundMinDist', 'Min Dist', 0, 1000, 5], ['SoundMaxDist', 'Max Dist', 0, 1000, 5], ['SoundPlayTime', 'Sound Time', 0, 1, 0.01]]],
   ['Modifiers', [['ColourModifierEnable', 'Use Color Modifier', 0, 1, 0]]],
 ];
 
@@ -82,20 +100,13 @@ function emitter(pd, over = {}) {
     ParticleRelative: 0, ParticleSpeed: 0, PositionRandom: 0, PositionRandomCircle: 0, SpeedRandom: 10, SpeedRandomCircle: 0,
     SpinOffsetX: 0, SpinOffsetY: 0, SpinOffsetZ: 0, SpinRateX: 0, SpinRateY: 0, SpinRateZ: 0, StartTime: 0, TimeRandom: 0 }, over);
 }
-function newFirework() {   // a simple peony: launch flash -> shell with a trail -> burst of stars
+function newFirework() {   // just the base, no emitters yet: add them with "+ Child emitter"
   const n = {
-    1: { kind: 'base', Name: 'My firework', Cost: 599, Lifetime: 1, LifetimeRandom: 0, NumParticles: 0, ParticleEmitterDescs: [2], SoundName: 'Fireworklaunch2',
+    1: { kind: 'base', Name: 'My firework', Cost: 599, Lifetime: 1, LifetimeRandom: 0, NumParticles: 0, ParticleEmitterDescs: [], SoundName: 'Fireworklaunch2',
       SoundMinDist: 70, SoundMaxDist: 300, SoundPlayTime: 0, StrengthModifier: 1, StrengthModifierDefault: 1,
       ColourModifierR: 1, ColourModifierG: 1, ColourModifierB: 1, ColourModifierA: 1, ColourModifierDefaultR: 1, ColourModifierDefaultG: 1,
       ColourModifierDefaultB: 1, ColourModifierDefaultA: 1, IdentifyingColourR: 1, IdentifyingColourG: 0.55, IdentifyingColourB: 0.3,
       IdentifyingColourDarkR: 0.75, IdentifyingColourDarkG: 0.41, IdentifyingColourDarkB: 0.22, IdentifyingIcon: 0 },
-    2: emitter(3, { NumParticles: 1, StartTime: 0, EndTime: 0, ParticleSpeed: 40, SpeedRandom: 2, SpeedRandomCircle: 3 }),
-    3: particle({ Name: 'Shell', Lifetime: 1.3, TextureNameReduced: 'FWFlares01_10', VelStretch: 0.02, GravityScale: 0.3, ParticleEmitterDescs: [4, 6] }),
-    4: emitter(5, { NumParticles: 60, ParentSpeedFactor: 0.2, SpeedRandom: 1.5 }),
-    5: particle({ Name: 'Trail', Lifetime: 0.3, StartSize: 0.35, EndSize: 0.1, Drag: 3 }),
-    6: emitter(7, { NumParticles: 160, StartTime: 1, EndTime: 1, SpeedRandom: 22, NumParticlesModifierEnable: 1 }),
-    7: particle({ Name: 'Stars', Lifetime: 2.2, LifetimeRandom: 0.4, StartSize: 0.9, EndSize: 0.2, GravityScale: 0.35, Drag: 0.8, VelStretch: 0.03,
-      SoundName: 'Fireworkexpld3', ColourModifierEnable: 1 }),
   };
   return { title: 'My firework', cost: 599, colour: [1, 0.55, 0.3], root: '1', nodes: n };
 }
@@ -106,6 +117,7 @@ export function openAFE(ctx, def, key) {
   let fw = def ? JSON.parse(JSON.stringify(def)) : newFirework();
   fw.nodes = Object.fromEntries(Object.entries(fw.nodes).map(([k, v]) => [String(k), v]));
   fw.root = String(fw.root);
+  let perLaunch = 0;
   let sel = fw.root, collapsed = new Set(), version = 0, undo = [], redo = [], auto = true, lastFire = -99, playing = 0;
   ctx.setAfeMode(true);
   const L = document.createElement('div'), R = document.createElement('div'), B = document.createElement('div');
@@ -131,9 +143,9 @@ export function openAFE(ctx, def, key) {
     </div>`;
   R.innerHTML = `<h3 data-r="title">Properties</h3><div class="afe-scroll" data-r="props"></div>`;
   B.innerHTML = `<div class="afe-col"><h3>Particle color <small style="color:var(--dim);text-transform:none;letter-spacing:0">over its life</small></h3>
-      <canvas class="afe-grad"></canvas>
-      <div class="afe-hint">click: add a color stop · drag: move it · right-click: remove it</div>
-      <div class="afe-hint" data-b="stop"></div>
+      <div class="afe-gwrap"><canvas class="afe-grad"></canvas><div class="afe-marks"></div></div>
+      <div class="afe-stopbar" data-b="stopbar"></div>
+      <div class="afe-hint">click the bar (or under it) to add a colour stop · drag a stop to move it · drag it down off the bar or right-click it to remove it</div>
       <div class="afe-hint"><label><input type="checkbox" data-b="glow"> Glow (drawn additively, like most fireworks); off: solid (smoke)</label></div>
       <div class="afe-hint" style="margin-top:auto;padding-bottom:10px"><label><input type="checkbox" data-b="auto" checked> Fire again automatically</label>
         <button data-b="fire" style="margin-left:8px">▶ Fire</button> <span data-b="info"></span></div></div>
@@ -173,7 +185,9 @@ export function openAFE(ctx, def, key) {
     fw.colour = [b.IdentifyingColourR ?? 1, b.IdentifyingColourG ?? 1, b.IdentifyingColourB ?? 1];
     if (rebuild) { renderTree(); renderProps(); }
     renderColour(); renderTex();
-    lastFire = -99;   // fire the new version straight away
+    lastFire = -99;   // fire the new version straight away, alone (earlier versions' particles would add to the count)
+    ctx.clearParticles(f => String(f?.key || '').startsWith('afe:'));
+    perLaunch = launchCount();
   }
 
   // ---- tree ----
@@ -216,7 +230,8 @@ export function openAFE(ctx, def, key) {
     if (String(min).startsWith('rgb:')) { const p = min.slice(4); return `<div class="afe-f wide">${lab}<input type="color" data-o="${owner}" data-rgb="${p}" value="${hex([n[p + 'R'] ?? 1, n[p + 'G'] ?? 1, n[p + 'B'] ?? 1])}"></div>`; }
     if (step === 0) return `<div class="afe-f wide">${lab}<input type="checkbox" data-o="${owner}" data-f="${f}" ${n[f] ? 'checked' : ''} style="justify-self:start"></div>`;
     const v = +(n[f] ?? 0);
-    return `<div class="afe-f">${lab}<input type="range" data-o="${owner}" data-f="${f}" min="${Math.min(min, v)}" max="${Math.max(max, v)}" step="${step}" value="${v}"><input type="number" data-o="${owner}" data-f="${f}" step="${step}" value="${+v.toFixed(4)}"></div>`;
+    const lim = `data-o="${owner}" data-f="${f}" min="${min}" max="${max}" step="${step}"`;
+    return `<div class="afe-f" title="${+min.toFixed(3)} to ${+max.toFixed(3)}">${lab}<input type="range" ${lim} value="${v}"><input type="number" ${lim} value="${+v.toFixed(4)}"></div>`;
   }
   function renderProps() {
     const n = N()[sel];
@@ -250,7 +265,8 @@ export function openAFE(ctx, def, key) {
       if (e.target.type === 'checkbox') n[f] = e.target.checked ? 1 : 0;
       else if (e.target.type === 'text' || e.target.tagName === 'SELECT') n[f] = e.target.value;
       else {
-        n[f] = ['NumParticles', 'Cost', 'BurnLength'].includes(f) ? Math.round(+e.target.value || 0) : (+e.target.value || 0);
+        const x = clamp(+e.target.value || 0, +e.target.min, +e.target.max);   // the game's range for this field
+        n[f] = ['NumParticles', 'Cost', 'BurnLength'].includes(f) ? Math.round(x) : x;
         props.querySelectorAll(`[data-o="${o}"][data-f="${f}"]`).forEach(x => { if (x !== e.target) x.value = n[f]; });
       }
     }
@@ -265,8 +281,10 @@ export function openAFE(ctx, def, key) {
     }
   });
 
-  // ---- colour over life (stops: R, G, B written with the same times; A = glow / solid) ----
-  let stopSel = 0;
+  // ---- colour over life: a gradient with colour stops, like an image editor's gradient tool -------------------------
+  // (stops: R, G, B written with the same times; A = glow / solid). The stop's inputs are built once and updated in
+  // place, so the colour picker stays open while you drag in it.
+  let stopSel = 0, stopsBusy = false;
   function stopsOf(p) {
     const ch = ['R', 'G', 'B'].map(c => p['Colour' + c] || {});
     const times = [...new Set(ch.flatMap((c, i) => c[`Colour${'RGB'[i]}Times`] || []))].sort((a, b) => a - b);
@@ -283,53 +301,114 @@ export function openAFE(ctx, def, key) {
   const colourAt = (p, f) => ['R', 'G', 'B'].map(k => chanAt(p, k, f));
   function writeStops(p, stops) {
     stops.sort((a, b) => a.t - b.t);
+    // two stops at one time would merge: keep them a hair apart
+    for (let i = 1; i < stops.length; i++) if (stops[i].t <= stops[i - 1].t) stops[i].t = Math.min(1, stops[i - 1].t + 0.001);
     ['R', 'G', 'B'].forEach((k, i) => { p['Colour' + k] = { [`Colour${k}Times`]: stops.map(s => +s.t.toFixed(4)), [`Colour${k}Values`]: stops.map(s => +s.c[i].toFixed(4)), wrap: p['Colour' + k]?.wrap || 0 }; });
+    const A = p.ColourA?.ColourAValues || [], a = A.length && Math.max(...A) >= 0.5 ? 1 : 0;   // keep glow / solid
+    p.ColourA = { ColourATimes: stops.map(s => +s.t.toFixed(4)), ColourAValues: stops.map(() => a), wrap: p.ColourA?.wrap || 0 };
+  }
+  const swatches = ['#ffffff', '#fff2a8', '#ffd23a', '#ff8a1e', '#ff3b2e', '#ff4fb4', '#b44dff', '#4d6bff', '#3ad7ff', '#4dff8a', '#000000'];
+  const stopbar = B.querySelector('[data-b=stopbar]'), marks = B.querySelector('.afe-marks');
+  stopbar.innerHTML = `<span data-s="n"></span>
+    <label>Color <input type="color" data-s="c"></label>
+    <span class="afe-sw">${swatches.map(c => `<button data-sw="${c}" style="background:${c}" title="${c}"></button>`).join('')}</span>
+    <label>Location <input type="number" data-s="t" min="0" max="100" step="1" style="width:58px">%</label>
+    <button data-s="prev" title="Previous stop">◀</button><button data-s="next" title="Next stop">▶</button>
+    <button data-s="del" title="Delete this stop (or drag it down off the bar, or right-click it)">Delete</button>
+    <button data-s="rev" title="Reverse the gradient">Reverse</button><button data-s="even" title="Spread the stops evenly">Distribute</button>`;
+  const S$ = k => stopbar.querySelector(`[data-s=${k}]`);
+  function drawGradient(p) {
+    const g = grad.getContext('2d'), w = grad.clientWidth || 300, h = grad.clientHeight || 34, dpr = devicePixelRatio || 1;
+    if (grad.width !== Math.round(w * dpr) || grad.height !== Math.round(h * dpr)) { grad.width = Math.round(w * dpr); grad.height = Math.round(h * dpr); }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    for (let y = 0; y < h; y += 8) for (let x = 0; x < w; x += 8) { g.fillStyle = ((x + y) / 8) % 2 ? '#1a1f2b' : '#10141c'; g.fillRect(x, y, 8, 8); }
+    if (!p) return;
+    for (let x = 0; x < w; x++) { g.fillStyle = hex(colourAt(p, x / Math.max(1, w - 1))); g.fillRect(x, 0, 1, h); }
   }
   function renderColour() {
-    const p = particleOf(), info = B.querySelector('[data-b=stop]'), glow = B.querySelector('[data-b=glow]');
-    const g = grad.getContext('2d'), w = grad.clientWidth || 300, h = 46, dpr = devicePixelRatio || 1;
-    grad.width = w * dpr; grad.height = h * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.fillStyle = '#0a0d14'; g.fillRect(0, 0, w, h);
-    if (!p) { info.textContent = 'Select an emitter to edit its particle\'s colour.'; glow.disabled = true; return; }
-    glow.disabled = false;
+    const p = particleOf(), glow = B.querySelector('[data-b=glow]');
+    drawGradient(p);
+    B.querySelector('.afe-col').classList.toggle('off', !p);
+    glow.disabled = !p;
+    if (!p) { marks.innerHTML = ''; S$('n').textContent = 'Select an emitter to edit its particle\'s colour.'; return; }
     const A = p.ColourA?.ColourAValues || []; glow.checked = !A.length || Math.max(...A) < 0.5;
-    for (let x = 0; x < w; x++) { const c = colourAt(p, x / (w - 1)); g.fillStyle = hex(c); g.fillRect(x, 8, 1, h - 16); }
-    const st = stopsOf(p); stopSel = Math.min(stopSel, st.length - 1);
-    st.forEach((s, i) => { const x = 6 + (w - 12) * s.t; g.fillStyle = i === stopSel ? '#fff' : '#000'; g.fillRect(x - 3, 0, 6, 8); g.fillRect(x - 3, h - 8, 6, 8); });
+    const st = stopsOf(p); stopSel = clamp(stopSel, 0, st.length - 1);
+    if (marks.childElementCount !== st.length) marks.innerHTML = st.map((_, i) => `<div class="afe-mk" data-i="${i}"><i></i></div>`).join('');
+    [...marks.children].forEach((m, i) => {
+      m.style.left = (st[i].t * 100) + '%'; m.firstChild.style.background = hex(st[i].c);
+      m.classList.toggle('sel', i === stopSel); m.dataset.i = i; m.title = `${Math.round(st[i].t * 100)}% · ${hex(st[i].c)}`;
+    });
     const s = st[stopSel];
-    info.innerHTML = s ? `Stop ${stopSel + 1}/${st.length}: at <input type="number" data-b="t" min="0" max="1" step="0.01" value="${s.t.toFixed(2)}" style="width:62px"> of its life,
-      colour <input type="color" data-b="c" value="${hex(s.c)}">` : '';
+    S$('n').textContent = `Stop ${stopSel + 1} of ${st.length}`;
+    if (document.activeElement !== S$('c') && S$('c').value !== hex(s.c)) S$('c').value = hex(s.c);
+    if (document.activeElement !== S$('t')) S$('t').value = Math.round(s.t * 100);
+    S$('del').disabled = st.length < 2;
+  }
+  function editStop(fn, label) {   // change the selected stop; one undo step per gesture
+    const p = particleOf(); if (!p) return;
+    if (!stopsBusy) { snap(); stopsBusy = true; }
+    const st = stopsOf(p), s = st[stopSel]; if (!s) return;
+    fn(s, st); writeStops(p, st); stopSel = Math.max(0, st.indexOf(s)); touched(false);
+    if (label) renderTree();
+  }
+  const endGesture = () => { stopsBusy = false; };
+  stopbar.addEventListener('input', e => {
+    const k = e.target.dataset.s;
+    if (k === 'c') editStop(s => { s.c = unhex(e.target.value); });
+    if (k === 't') editStop(s => { s.t = clamp((+e.target.value || 0) / 100, 0, 1); });
+  });
+  stopbar.addEventListener('change', () => { endGesture(); renderTree(); });
+  stopbar.addEventListener('click', e => {
+    const p = particleOf(); if (!p) return;
+    const sw = e.target.dataset.sw, k = e.target.dataset.s, n = stopsOf(p).length;
+    if (sw) { editStop(s => { s.c = unhex(sw); }, true); endGesture(); }
+    if (k === 'prev' || k === 'next') { stopSel = (stopSel + (k === 'next' ? 1 : n - 1)) % n; renderColour(); }
+    if (k === 'del') removeStop(stopSel);
+    if (k === 'rev') { snap(); const st = stopsOf(p).map(s => ({ t: 1 - s.t, c: s.c })); writeStops(p, st); stopSel = n - 1 - stopSel; touched(false); renderTree(); }
+    if (k === 'even') { snap(); const st = stopsOf(p); st.forEach((s, i) => { s.t = n > 1 ? i / (n - 1) : 0; }); writeStops(p, st); touched(false); }
+  });
+  function removeStop(i) {
+    const p = particleOf(); if (!p) return;
+    const st = stopsOf(p); if (st.length < 2 || !st[i]) return;
+    snap(); st.splice(i, 1); writeStops(p, st); stopSel = Math.min(i, st.length - 1); touched(false); renderTree();
   }
   B.addEventListener('input', e => {
-    const p = particleOf(); if (!p) return;
-    const k = e.target.dataset.b;
-    if (k === 't' || k === 'c') {
-      snap(); const st = stopsOf(p), s = st[stopSel]; if (!s) return;
-      if (k === 't') s.t = clamp(+e.target.value || 0, 0, 1); else s.c = unhex(e.target.value);
-      writeStops(p, st); stopSel = st.indexOf(s); touched(false);
-      if (k === 'c') renderTree();
-    }
-    if (k === 'glow') { snap(); const v = e.target.checked ? 0 : 1, T = stopsOf(p).map(s => s.t); p.ColourA = { ColourATimes: T, ColourAValues: T.map(() => v), wrap: 0 }; touched(false); }
+    const p = particleOf(), k = e.target.dataset.b;
+    if (k === 'glow' && p) { snap(); const v = e.target.checked ? 0 : 1, T = stopsOf(p).map(s => s.t); p.ColourA = { ColourATimes: T, ColourAValues: T.map(() => v), wrap: 0 }; touched(false); }
     if (k === 'auto') auto = e.target.checked;
   });
   B.querySelector('[data-b=fire]').onclick = () => fire();
-  const gx = e => { const r = grad.getBoundingClientRect(); return clamp((e.clientX - r.left - 6) / (r.width - 12), 0, 1); };
-  grad.addEventListener('contextmenu', e => {
-    e.preventDefault(); const p = particleOf(); if (!p) return;
-    const st = stopsOf(p), t = gx(e), i = st.findIndex(s => Math.abs(s.t - t) < 0.03);
-    if (i >= 0 && st.length > 1) { snap(); st.splice(i, 1); writeStops(p, st); stopSel = 0; touched(false); }
-  });
-  grad.addEventListener('pointerdown', e => {
+  const gwrap = B.querySelector('.afe-gwrap');
+  const gx = e => { const r = marks.getBoundingClientRect(); return clamp((e.clientX - r.left) / r.width, 0, 1); };
+  gwrap.addEventListener('contextmenu', e => { e.preventDefault(); const m = e.target.closest('.afe-mk'); if (m) removeStop(+m.dataset.i); });
+  gwrap.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
     const p = particleOf(); if (!p) return;
-    const st = stopsOf(p), t = gx(e);
-    let i = st.findIndex(s => Math.abs(s.t - t) < 0.03);
-    snap();
-    if (i < 0) { st.push({ t, c: colourAt(p, t) }); writeStops(p, st); i = st.findIndex(s => s.t === t); }
-    stopSel = i; touched(false);
-    grad.setPointerCapture(e.pointerId);
-    grad.onpointermove = ev => { const s2 = stopsOf(p), s = s2[stopSel]; if (!s) return; s.t = gx(ev); writeStops(p, s2); stopSel = s2.indexOf(s); touched(false); };
-    grad.onpointerup = () => { grad.onpointermove = grad.onpointerup = null; };
+    const m = e.target.closest('.afe-mk');
+    stopsBusy = false;
+    let st = stopsOf(p);
+    if (m) stopSel = +m.dataset.i;
+    else {                                     // a click on the bar or below it: a new stop with the colour already there
+      snap(); stopsBusy = true;
+      const t = gx(e), s = { t, c: colourAt(p, t) };
+      st.push(s); writeStops(p, st); stopSel = stopsOf(p).findIndex(x => Math.abs(x.t - s.t) < 1e-3);
+      touched(false); renderTree();
+    }
+    const y0 = e.clientY, x0 = e.clientX;
+    let moved = false, off = false;
+    gwrap.setPointerCapture(e.pointerId);
+    gwrap.onpointermove = ev => {
+      if (!moved && Math.abs(ev.clientX - x0) < 3 && Math.abs(ev.clientY - y0) < 3) return;
+      moved = true;
+      off = ev.clientY - marks.getBoundingClientRect().bottom > 36 && stopsOf(p).length > 1;   // dragged off: removes on release
+      marks.children[stopSel]?.classList.toggle('gone', off);
+      if (!off) editStop(s => { s.t = gx(ev); });
+    };
+    gwrap.onpointerup = () => {
+      gwrap.onpointermove = gwrap.onpointerup = null;
+      if (off) { if (!stopsBusy) snap(); const st2 = stopsOf(p); st2.splice(stopSel, 1); writeStops(p, st2); stopSel = Math.max(0, stopSel - 1); touched(false); }
+      endGesture(); marks.innerHTML = ''; renderColour(); renderTree();
+    };
   });
 
   // ---- textures: the game's particle sprites, from an opaque copy of the sheet (their glow is in RGB with alpha 0) ----
@@ -419,13 +498,27 @@ export function openAFE(ctx, def, key) {
     return out;
   }
 
+  // how many particles one launch releases: the base, and each emitter's # particles for every particle it rides on
+  // (strength 1; emitters using the strength modifier scale with it in a show)
+  function launchCount() {
+    const memo = {}, seen = new Set();
+    const of = id => {   // particles released under one particle of this description, itself included
+      id = String(id); if (memo[id] != null) return memo[id];
+      if (seen.has(id)) return 1; seen.add(id);
+      const n = N()[id]; let c = 1;
+      for (const eid of n?.ParticleEmitterDescs || []) { const e = N()[String(eid)]; if (e) c += (e.NumParticles || 0) * of(e.ParticleDesc); }
+      return (memo[id] = c);
+    };
+    return of(fw.root);
+  }
+
   // ---- preview loop & keys ----
   function fire() { ctx.previewEffect('firework', fw, {}); playing = performance.now(); }
   let raf = 0;
   const tick = () => {
     const now = performance.now() / 1000;
     if (auto && now - lastFire > (fw.duration || 3) + 0.8) { lastFire = now; fire(); }
-    B.querySelector('[data-b=info]').textContent = `lasts about ${(fw.duration || 0).toFixed(1)} s · ${ctx.particleCount().toLocaleString()} particles`;
+    B.querySelector('[data-b=info]').textContent = `${perLaunch.toLocaleString()} particles per launch · lasts about ${(fw.duration || 0).toFixed(1)} s · ${ctx.particleCount().toLocaleString()} on screen now`;
     raf = requestAnimationFrame(tick);
   };
   const onKey = e => {
@@ -469,12 +562,14 @@ export const afeTourSteps = () => [
         parent = keep the parent's speed), <b>rotation</b>, <b>life</b>, <b>size</b>, <b>motion</b> (drag, gravity, stretch) and <b>special effects</b>.
         Drag a slider or type a number.</p>` },
     { target: '.afe-col', title: 'Colour over its life',
-      html: `<p>The particle's colour from birth (left) to death (right). Click to add a colour stop, drag to move it, right-click to remove it, and pick its
-        colour below. <b>Glow</b> draws it like a spark; off, it is solid (smoke).</p>` },
+      html: `<p>The particle's colour from birth (left) to death (right), as a gradient. Click the bar (or just under it) to add a colour stop,
+        drag a stop to move it, and drag it down off the bar (or right-click it) to remove it. For the selected stop: its <b>Color</b> (picker or a
+        quick swatch), its <b>Location</b> in the particle's life, ◀ ▶ to step through the stops, <b>Reverse</b> and <b>Distribute</b>.
+        <b>Glow</b> draws it like a spark; off, it is solid (smoke).</p>` },
     { target: '.afe-tex', title: 'Texture',
       html: `<p>The game's particle pictures: flares, stars, sparkles, smoke, splashes. Click one to give it to the selected particle.</p>` },
     { target: '.afe-top', title: 'Load and save',
-      html: `<p><b>New</b> starts a simple firework, <b>Load firework…</b> opens any game firework (as a copy) or one of yours.
+      html: `<p><b>New</b> starts an empty firework (just the base: add emitters with <b>+ Child emitter</b>), <b>Load firework…</b> opens any game firework (as a copy) or one of yours.
         <b>Save firework</b> adds it to your fireworks in the palette; <b>Save to game</b> writes a <code>.frw</code> into the game's Fireworks folder;
         <b>Download .frw</b> saves the file. <b>← MixMaster</b> goes back. <kbd>Ctrl+Z</kbd> undoes, <kbd>F</kbd> fires.</p>` },
 ];

@@ -10,7 +10,8 @@ they fire from, and the sprites, sounds and music they use - served to the viewe
 - .fwd: SavedFireworkDisplay {Entries [{Name (frw path), SceneryEntry, SlotIndex, Time, Track}], SceneryEntries
   [{Row, Col, Dir, Corner, SID -> SIDDatabaseEntry.SYMBOLNAME}], MusicSelection, StartTimeMinutes, MonthMask}.
   Track is an int stored in a float32 field.
-- psi (ParticleSkin): u32 1, rect* {ptr, u0, v0, u1, v1} (v from the bottom), texture import (ParticlePage01).
+- psi (ParticleSkin): u32 frame count, -> array of that many pointers -> {u0, v0, u1, v1} (v from the bottom), texture
+  import (ParticlePage01). Animated sheets (SmokeAnim, FireAnim: 16 frames) play their frames over the particle's life.
 - Launchers (Mortarx1/x16, MortarWallx8, CWFW, LazerDome, WaterJet): tube N runs from effect point
   'fireworkstartNN' to 'fireworkendNN' (bones on the animated Catherine wheel).
 """
@@ -32,6 +33,26 @@ from .meshes import load_shape
 from .trk import Trk
 
 LAUNCHERS = ['Mortarx1', 'Mortarx16', 'MortarWallx8', 'CWFW', 'LazerDome', 'WaterJet']
+
+
+def virtual_store(path: str) -> str | None:
+    """Where Windows puts a file an old program like RCT3 writes into a protected folder (Program Files): the game
+    reads and writes its Fireworks, Lasers, ... there without noticing. None off Windows."""
+    if os.name != 'nt' or not os.environ.get('LOCALAPPDATA'):
+        return None
+    drive, rest = os.path.splitdrive(os.path.abspath(path))
+    return os.path.join(os.environ['LOCALAPPDATA'], 'VirtualStore', rest.lstrip('\\/'))
+
+
+def game_files(lib: Library, folder: str, ext: str) -> list[str]:
+    """The files of one kind in a game folder, including those the game (or this tool) wrote into its VirtualStore
+    copy; a VirtualStore file replaces the game folder's file of the same name, as it does for the game."""
+    found = {}
+    for d in (os.path.join(lib.root, folder), virtual_store(os.path.join(lib.root, folder))):
+        if d and os.path.isdir(d):
+            for f in glob.glob(os.path.join(d, '*.' + ext)):
+                found[os.path.basename(f).lower()] = f
+    return [found[k] for k in sorted(found)]
 
 
 def _f2i(x: float) -> int:
@@ -87,7 +108,7 @@ def list_fireworks(lib: Library) -> list[dict]:
     cache = getattr(lib, '_fireworks', None)
     if cache is None:
         cache = []
-        for f in sorted(glob.glob(os.path.join(lib.root, 'Fireworks', '*.frw'))):
+        for f in game_files(lib, 'Fireworks', 'frw'):
             try:
                 d = load_firework(lib, f)
                 d['custom'] = _is_created(lib, f)
@@ -101,7 +122,7 @@ def list_fireworks(lib: Library) -> list[dict]:
 
 def list_displays(lib: Library) -> list[dict]:
     out = []
-    for f in sorted(glob.glob(os.path.join(lib.root, 'FireworkDisplays', '*.fwd'))):
+    for f in game_files(lib, 'FireworkDisplays', 'fwd'):
         try:
             t = Trk(open(f, 'rb').read())
         except Exception:
@@ -122,7 +143,7 @@ def list_displays(lib: Library) -> list[dict]:
 
 
 def sprites(lib: Library) -> dict:
-    """{psi name: {page, rect: [x0, y0, x1, y1] as fractions from the top-left}} for every particle sprite."""
+    """{psi name: {page, rect: [x0, y0, x1, y1] as fractions from the top-left, frames: [rect...] if animated}}."""
     out = {}
     for n, rel in lib.index['names'].items():
         if not n.endswith(':psi'):
@@ -135,12 +156,15 @@ def sprites(lib: Library) -> dict:
         try:
             if not o.is_pointer(r.data + 4):
                 continue
-            p = o.u32(r.data + 4)
-            u0, v0, u1, v1 = struct.unpack('<4f', o.read(p + 4, 16))
+            cnt, p = o.u32(r.data), o.u32(r.data + 4)
+            frames = []
+            for i in range(max(1, min(cnt, 64))):
+                u0, v0, u1, v1 = struct.unpack('<4f', o.read(o.u32(p + 4 * i), 16))
+                frames.append([min(u0, u1), 1 - max(v0, v1), max(u0, u1), 1 - min(v0, v1)])
         except OvlError:
             continue
         page = imp.get(r.data + 8, '').split(':')[0]
-        out[r.name.split(':')[0]] = {'page': page, 'rect': [min(u0, u1), 1 - max(v0, v1), max(u0, u1), 1 - min(v0, v1)]}
+        out[r.name.split(':')[0]] = {'page': page, 'rect': frames[0], **({'frames': frames} if len(frames) > 1 else {})}
     return out
 
 
@@ -302,7 +326,7 @@ def _effect_file(path: str, kind: str) -> dict | None:
 def list_effects(lib: Library, kind: str) -> list[dict]:
     folder, ext = {'laser': ('Lasers', 'las'), 'jet': ('WaterJets', 'wjt')}[kind]
     out = []
-    for f in sorted(glob.glob(os.path.join(lib.root, folder, '*.' + ext))):
+    for f in game_files(lib, folder, ext):
         try:
             d = _effect_file(f, kind)
         except Exception:
@@ -322,7 +346,7 @@ def list_effects(lib: Library, kind: str) -> list[dict]:
 
 def list_drawings(lib: Library) -> list[dict]:
     out = []
-    for f in sorted(glob.glob(os.path.join(lib.root, 'LaserWriting', '*.lwr'))):
+    for f in game_files(lib, 'LaserWriting', 'lwr'):
         try:
             t = Trk(open(f, 'rb').read(), start=64)
             v = next(v for n, v in t.objects.values() if n == 'LaserWritingLetter')
@@ -338,12 +362,30 @@ def list_drawings(lib: Library) -> list[dict]:
 TEMPLATES = {'frw': ('Fireworks', 'GreenPeony.frw'), 'las': ('Lasers', 'CrabLaser.las'),
              'wjt': ('WaterJets', 'MultiSpurt.wjt'), 'fwd': ('FireworkDisplays', 'Stratosphere.fwd')}
 FOLDERS = {'frw': 'Fireworks', 'las': 'Lasers', 'wjt': 'WaterJets', 'fwd': 'FireworkDisplays'}
+NEED = {'frw': {'ParticleBaseDesc', 'ParticleEmitterDesc', 'ParticleDesc'}, 'las': {'Blender', 'LaserWritingLetter'},
+        'wjt': {'Blender'}, 'fwd': {'SavedFireworkDisplay', 'SIDDatabaseEntry'}}   # object types a template must have
 EXT = {'frw': '.frw', 'las': '.las', 'wjt': '.wjt', 'fwd': '.fwd'}
 
 
 def _template(lib: Library, kind: str) -> Trk:
+    """The usual game file of this kind, or (if it was removed) any other of the game's files of that kind."""
     folder, name = TEMPLATES[kind]
-    return Trk(open(os.path.join(lib.root, folder, name), 'rb').read())
+    made = _created(lib)
+    others = [f for f in sorted(glob.glob(os.path.join(lib.root, folder, '*' + EXT[kind])))
+              if os.path.normcase(os.path.abspath(f)) not in made]
+    fallback = None
+    for f in [os.path.join(lib.root, folder, name)] + others:
+        if os.path.exists(f):
+            try:
+                t = Trk(open(f, 'rb').read())
+            except Exception:
+                continue
+            if NEED[kind] <= {n for n, _ in t.objects.values()}:
+                return t
+            fallback = fallback or (t if t.objects else None)
+    if fallback:
+        return fallback
+    raise OvlError(f"no {EXT[kind]} file left in the game's {folder} folder to build from")
 
 
 def _defaults(t: Trk) -> dict:
@@ -450,7 +492,9 @@ def build_effect(lib: Library, d: dict) -> bytes:
         v.update({'Power': float(d.get('power', 100)), 'NumBeams': int(d.get('beams', 1)), 'RenderType': int(d.get('render', 0)),
                   'TrailDuration': float(d.get('trail', 0.03)), 'ImageSpread': float(d.get('image_scale', 10))})
         wid, letters, lets = new(), [], []
-        tmpl = D['LaserWritingLetter']
+        tmpl = D.get('LaserWritingLetter')
+        if tmpl is None and d.get('images'):
+            raise OvlError("image lasers need CrabLaser.las (or another image laser) in the game's Lasers folder")
         for im in d.get('images') or []:
             lid = new()
             drag = [{'X': float(x), 'Y': float(y)} for x, y in (im.get('points') or [])][:1022]
@@ -522,24 +566,61 @@ def _is_created(lib: Library, path: str) -> bool:
     return os.path.normcase(os.path.abspath(path)) in _created(lib)
 
 
-def save_to_game(lib: Library, kind: str, filename: str, data: dict) -> str:
-    """Write a built file into the game folder (Fireworks, Lasers, WaterJets, FireworkDisplays). Files the game
-    shipped (anything not written by this tool) are never overwritten. -> the path written."""
+def _mine_path(lib: Library) -> str:
+    return os.path.join(lib.cache_dir, 'my_effects.json')
+
+
+def load_mine(lib: Library) -> dict:
+    """Your own fireworks, lasers and water jets ({firework: {key: def}, laser: ..., jet: ...}), kept beside the cache
+    so they survive the browser's storage being cleared (or the viewer running on another port)."""
     import json
-    import re
-    base = re.sub(r'[^\w \-()]+', '', os.path.basename(filename).rsplit('.', 1)[0]).strip()[:60] or 'My ' + kind
-    path = os.path.join(lib.root, FOLDERS[kind], base + EXT[kind])
-    key = os.path.normcase(os.path.abspath(path))
-    made = _created(lib)
-    if os.path.exists(path) and key not in made:
-        raise OvlError(f"{os.path.basename(path)} is one of the game's own files: choose another name")
-    blob = build(lib, kind, data)
-    Trk(blob)                                               # must parse back
+    try:
+        d = json.load(open(_mine_path(lib), encoding='utf-8'))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_mine(lib: Library, mine: dict) -> None:
+    import json
+    if not isinstance(mine, dict):
+        raise OvlError('bad data')
+    p = _mine_path(lib)
+    with open(p + '.tmp', 'w', encoding='utf-8') as fh:
+        json.dump(mine, fh)
+    os.replace(p + '.tmp', p)
+
+
+def _write(path: str, blob: bytes) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + '.tmp', 'wb') as fh:
         fh.write(blob)
     os.replace(path + '.tmp', path)
-    made.add(key)
+
+
+def save_to_game(lib: Library, kind: str, filename: str, data: dict) -> str:
+    """Write a built file into the game folder (Fireworks, Lasers, WaterJets, FireworkDisplays). Files the game
+    shipped (anything not written by this tool) are never overwritten. A game folder Windows protects (Program Files)
+    gets the file in its VirtualStore copy, where the game itself saves and looks. -> the path written."""
+    import json
+    import re
+    base = re.sub(r'[^\w \-()]+', '', os.path.basename(filename).rsplit('.', 1)[0]).strip()[:60] or 'My ' + kind
+    made = _created(lib)
+    for f in game_files(lib, FOLDERS[kind], EXT[kind][1:]):
+        if os.path.basename(f).lower() == (base + EXT[kind]).lower() and os.path.normcase(os.path.abspath(f)) not in made:
+            raise OvlError(f"{os.path.basename(f)} is one of the game's own files: choose another name")
+    blob = build(lib, kind, data)
+    Trk(blob)                                               # must parse back
+    path = os.path.join(lib.root, FOLDERS[kind], base + EXT[kind])
+    try:
+        _write(path, blob)
+    except PermissionError:
+        vs = virtual_store(path)
+        if not vs:
+            raise OvlError(f"no permission to write into {os.path.dirname(path)}")
+        _write(vs, blob)
+        path = vs
+    made.add(os.path.normcase(os.path.abspath(path)))
     json.dump(sorted(made), open(_manifest_path(lib), 'w'))
     lib.__dict__.pop('_fireworks', None)
     return path
@@ -557,8 +638,8 @@ def list_files(lib: Library) -> list[dict]:
     made = _created(lib)
     out = []
     for folder, ext, typ in FILE_GROUPS:
-        for f in sorted(glob.glob(os.path.join(lib.root, folder, '*.' + ext))):
-            out.append({'path': os.path.relpath(f, lib.root), 'type': typ, 'size': os.path.getsize(f),
+        for f in game_files(lib, folder, ext):
+            out.append({'path': folder + '\\' + os.path.basename(f), 'type': typ, 'size': os.path.getsize(f),
                         'custom': os.path.normcase(os.path.abspath(f)) in made})
     return out
 
@@ -569,8 +650,8 @@ def file_path(lib: Library, rel: str) -> tuple[str, str] | None:
     folder, _, name = rel.rpartition('\\')
     for fo, ext, typ in FILE_GROUPS:
         if folder.lower() == fo.lower() and name.lower().endswith('.' + ext) and '..' not in name:
-            p = os.path.join(lib.root, fo, name)
-            return (p, typ) if os.path.isfile(p) else None
+            p = next((f for f in game_files(lib, fo, ext) if os.path.basename(f).lower() == name.lower()), None)
+            return (p, typ) if p else None
     return None
 
 

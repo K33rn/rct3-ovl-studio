@@ -6,7 +6,7 @@ with sync_playwright() as p:
     logs = []
     pg.on('console', lambda m: m.type in ('error', 'warning') and logs.append(m.text[:400]))
     pg.goto(sys.argv[1] + '/'); pg.evaluate('localStorage.clear(); [`main`, `mixmaster`, `afe`, `laser-designer`, `jet-designer`].forEach(k => localStorage.setItem(`rct3ovl.tour.` + k, `1`))'); pg.goto(sys.argv[1] + '/#fireworks')
-    pg.wait_for_selector('#fw .ent', timeout=180000); pg.wait_for_timeout(1500)
+    pg.wait_for_selector('#fw .fwk', timeout=180000); pg.select_option('#fw-show', label='Stratosphere'); pg.wait_for_selector('#fw .ent', timeout=60000); pg.wait_for_timeout(1500)
     pg.evaluate("window.__fwdebug.ctx.previewEffect('laser', window.__fwdebug.REG.laser['SpinMaster.las'], {loop: true})")
     pg.wait_for_timeout(3000)
     print(pg.evaluate("""() => { const R = window.__fwdebug.ribbons, g = R.mesh.geometry;

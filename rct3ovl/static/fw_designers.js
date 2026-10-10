@@ -221,7 +221,7 @@ const deg = r => (r * 180 / Math.PI).toFixed(0) + '°';
 
 // ---- Advanced Laser Designer -------------------------------------------------------------------------------------
 export function openLaserDesigner(ctx, def, key) {
-  def.name = def.name || def.title || 'My laser'; def.images = def.images || []; def.centre ??= true;
+  def.name = def.name || def.title || 'My laser'; def.images = (def.images || []).map(padFix); def.centre ??= true;
   def.colour.scale ??= true;
   return designer(ctx, 'laser', def, key, {
     title: 'Advanced Laser Designer', one: 'laser', fresh: () => ({ ...JSON.parse(JSON.stringify(ctx.newLaser())) }),
@@ -260,7 +260,7 @@ export function openLaserDesigner(ctx, def, key) {
       { key: 'colour', label: 'Color', colour: true },
       { key: 'rotvel', label: 'Rotation speed', min: -15, max: 15, step: 0.01, unit: 'rad/s', show: v => (v * 180 / Math.PI).toFixed(0) + '°/s' },
       { key: 'elevation', label: 'Elevation', min: -0.2, max: Math.PI / 2, step: 0.01, unit: 'rad', show: deg },
-      { key: 'width', label: 'Beam width', min: 0.1, max: 4, step: 0.01, unit: '' },
+      { key: 'width', label: 'Beam width (spread)', min: 0.1, max: 10, step: 0.01, unit: '' },
     ],
   });
 }
@@ -286,29 +286,48 @@ export function openJetDesigner(ctx, def, key) {
 }
 
 // ---- sketch pad for persisting-image frames -------------------------------------------------------------------------
-function drawFrame(c, im, size, col) {
+// Laser image frames use the game's drawing pad coordinates: x 0..PAD_W, y 0..PAD_H (y up), as in the LaserWriting .lwr files
+const PAD_W = 32, PAD_H = 24;
+export function padFix(im) {   // frames drawn by earlier versions of this editor used -10..10 around the middle
+  const P = im.points || [];
+  if (im.pad === 2 || !P.length) { im.pad = 2; return im; }
+  if (Math.min(...P.map(p => p[1])) < -2.6 && Math.max(...P.map(p => Math.abs(p[0]))) <= 10.01) im.points = P.map(([x, y]) => [+(PAD_W / 2 + x * 1.1).toFixed(3), +(PAD_H / 2 + y * 1.1).toFixed(3)]);
+  im.pad = 2;
+  return im;
+}
+function drawFrame(c, im, size, col, fixed) {   // fixed: the pad alone fills the square (the sketch pad)
   const g = c.getContext('2d'); g.fillStyle = '#020308'; g.fillRect(0, 0, size, size);
-  const P = im.points || [], k = size / 22, cx = size / 2;
+  // fit the pad (and anything drawn past its edges) into the square
+  const P = im.points || [];
+  let x0 = 0, x1 = PAD_W, y0 = 0, y1 = PAD_H;
+  if (!fixed) for (const p of P) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  const k = size * 0.92 / Math.max(x1 - x0, y1 - y0), ox = size / 2 - (x0 + x1) / 2 * k, oy = size / 2 + (y0 + y1) / 2 * k;
   const rgb = col && Array.isArray(col) ? `rgb(${col[0] * 255 | 0},${col[1] * 255 | 0},${col[2] * 255 | 0})` : '#ff4a4a';
   g.strokeStyle = rgb; g.lineWidth = Math.max(1, size / 120); g.shadowColor = rgb; g.shadowBlur = size / 40;
   g.beginPath();
-  P.forEach((p, i) => { const x = cx + p[0] * k, y = cx - p[1] * k; if (!i || !(im.solid?.[i] ?? 1)) g.moveTo(x, y); else g.lineTo(x, y); });
+  P.forEach((p, i) => { const x = ox + p[0] * k, y = oy - p[1] * k; if (!i || !(im.solid?.[i] ?? 1)) g.moveTo(x, y); else g.lineTo(x, y); });
   g.stroke();
 }
 function sketchPad(ctx, im, done) {
-  const work = { duration: im.duration || 1.2, points: (im.points || []).map(p => [...p]), solid: [...(im.solid || [])] };
+  padFix(im);
+  const work = { duration: im.duration || 1.2, points: (im.points || []).map(p => [...p]), solid: [...(im.solid || [])], pad: 2 };
   const [box, close] = ctx.dialog(`<h4>Laser image frame</h4>
     <div class="sketch" style="display:grid;gap:8px;justify-items:center"><canvas width="360" height="360" style="width:360px;height:360px"></canvas></div>
     <div class="row" style="justify-content:flex-start"><span style="color:var(--dim)">Frame duration</span><input type="number" data-k="dur" min="0.1" max="20" step="0.1" value="${work.duration}" style="width:70px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px">
       <select data-k="load" style="background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px"><option value="">Load drawing…</option>${(ctx.data.drawings || []).map((d, i) => `<option value="${i}">${ctx.esc(d.name)}</option>`).join('')}</select>
       <span class="hint" data-k="n"></span></div>
     <div class="row"><button data-k="undo">Undo stroke</button><button data-k="clear" title="Erase the image">🗑 Clear</button><span style="flex:1"></span><button data-k="cancel">Cancel</button><button data-k="ok" class="big">✔ OK</button></div>`);
-  const cv = box.querySelector('canvas'), S = 360, k = S / 22, max = 1000;
-  const toPad = e => { const r = cv.getBoundingClientRect(); return [Math.max(-10, Math.min(10, ((e.clientX - r.left) * S / r.width - S / 2) / k)), Math.max(-10, Math.min(10, (S / 2 - (e.clientY - r.top) * S / r.height) / k))]; };
+  const cv = box.querySelector('canvas'), S = 360, max = 1000;
+  // the same fit as drawFrame for an empty pad: the pad's 32 x 24 area centred in the square
+  const k = S * 0.92 / PAD_W, ox = S / 2 - PAD_W / 2 * k, oy = S / 2 + PAD_H / 2 * k;
+  const toPad = e => { const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * S / r.width, y = (e.clientY - r.top) * S / r.height;
+    return [+Math.max(0, Math.min(PAD_W, (x - ox) / k)).toFixed(3), +Math.max(0, Math.min(PAD_H, (oy - y) / k)).toFixed(3)]; };
   const paint = () => {
-    drawFrame(cv, work, S);
-    const g = cv.getContext('2d'); g.shadowBlur = 0; g.strokeStyle = '#ffffff10'; g.lineWidth = 1;
-    for (let i = -10; i <= 10; i += 5) { g.beginPath(); g.moveTo(S / 2 + i * k, 0); g.lineTo(S / 2 + i * k, S); g.moveTo(0, S / 2 - i * k); g.lineTo(S, S / 2 - i * k); g.stroke(); }
+    drawFrame(cv, work, S, null, true);
+    const g = cv.getContext('2d'); g.shadowBlur = 0; g.strokeStyle = '#ffffff14'; g.lineWidth = 1;
+    for (let i = 0; i <= PAD_W; i += 4) { g.beginPath(); g.moveTo(ox + i * k, oy - PAD_H * k); g.lineTo(ox + i * k, oy); g.stroke(); }
+    for (let j = 0; j <= PAD_H; j += 4) { g.beginPath(); g.moveTo(ox, oy - j * k); g.lineTo(ox + PAD_W * k, oy - j * k); g.stroke(); }
+    g.strokeStyle = '#ffffff40'; g.strokeRect(ox, oy - PAD_H * k, PAD_W * k, PAD_H * k);
     box.querySelector('[data-k=n]').textContent = `${work.points.length} / ${max} points`;
   };
   const strokes = [];

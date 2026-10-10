@@ -13,7 +13,7 @@ with sync_playwright() as p:
     pg.goto(base + '/')
     pg.evaluate("localStorage.clear(); localStorage.setItem(`rct3ovl.tour.main`, `1`)")
     pg.reload(); pg.wait_for_function("document.getElementById('rootinfo').textContent.includes('OVL pairs')", timeout=180000)
-    pg.click('#b-fireworks'); pg.wait_for_selector('#fw .ent', timeout=180000)
+    pg.click('#b-fireworks'); pg.wait_for_selector('#fw .fwk', timeout=180000); pg.select_option('#fw-show', label='Stratosphere'); pg.wait_for_selector('#fw .ent', timeout=60000)
     pg.wait_for_selector('#tour .tcard', timeout=60000)
     bad, inside = [], 0
     while pg.query_selector('#tour'):

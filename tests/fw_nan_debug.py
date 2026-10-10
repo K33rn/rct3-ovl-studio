@@ -4,7 +4,7 @@ with sync_playwright() as p:
     b = p.chromium.launch(channel='chrome', headless=True)
     pg = b.new_page(viewport={'width': 1500, 'height': 900})
     pg.goto(sys.argv[1] + '/'); pg.evaluate('localStorage.clear(); [`main`, `mixmaster`, `afe`, `laser-designer`, `jet-designer`].forEach(k => localStorage.setItem(`rct3ovl.tour.` + k, `1`))'); pg.goto(sys.argv[1] + '/#fireworks')
-    pg.wait_for_selector('#fw .ent', timeout=180000); pg.wait_for_timeout(1500)
+    pg.wait_for_selector('#fw .fwk', timeout=180000); pg.select_option('#fw-show', label='Stratosphere'); pg.wait_for_selector('#fw .ent', timeout=60000); pg.wait_for_timeout(1500)
     js = """() => { const T = window.__fwdebug.terrain, g = T.ground.geometry;
       const bad = a => { let n = 0; for (const x of a.array) if (!Number.isFinite(x)) n++; return n; };
       return { pos: bad(g.attributes.position), nor: bad(g.attributes.normal), col: bad(g.attributes.color), h: T.heightAt(10, 10) }; }"""

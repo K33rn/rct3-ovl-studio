@@ -42,7 +42,7 @@ const fmt = t => { t = Math.max(0, t); const m = Math.floor(t / 60), s = t - m *
 const hex = c => '#' + c.slice(0, 3).map(x => Math.round(clamp(x, 0, 1) * 255).toString(16).padStart(2, '0')).join('');
 const unhex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
-                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } } };
 
 let ui = null;   // built once
 
@@ -155,8 +155,12 @@ async function build() {
   #fw .tl .ent.sel { box-shadow: 0 0 0 2px #fff, 0 0 10px #fff8; z-index: 2; }
   #fw .tl .ent.multi { box-shadow: 0 0 0 2px var(--accent), 0 0 8px #ffb02e88; z-index: 2; }
   #fw .tl .ent.live { filter: brightness(1.35); }
-  #fw .tl .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5050; pointer-events: none; z-index: 3; box-shadow: 0 0 6px #ff5050; }
+  #fw .tl .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5050; z-index: 3; box-shadow: 0 0 6px #ff5050; cursor: ew-resize; }
+  #fw .tl .playhead::before { content: ''; position: absolute; left: -5px; right: -5px; top: 0; bottom: 0; }   /* easier to grab */
   #fw .tl .rplay { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5050; pointer-events: none; }
+  #fw .tl .rplay::after { content: ''; position: absolute; left: -5px; bottom: 0; border: 6px solid transparent; border-top: 7px solid #ff5050; border-bottom: 0; }
+  #fw .tl .ruler { cursor: ew-resize; }
+  #fw .tl .ent .ev { position: absolute; top: 2px; bottom: 2px; width: 2px; margin-left: -1px; background: #0a0d14b0; box-shadow: 0 0 0 1px #ffffff55; pointer-events: none; border-radius: 1px; }
   #fw .tl .band { position: absolute; border: 1px solid var(--accent); background: #ffb02e22; pointer-events: none; display: none; z-index: 4; }
   #fw .tl .drop { position: absolute; height: var(--rowh); border: 1px dashed var(--accent); border-radius: 5px; pointer-events: none; display: none; }
   #fw .toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: #000c; color: #fff; padding: 6px 12px; border-radius: 8px; font-size: 12px; pointer-events: none; opacity: 0; transition: opacity .3s; z-index: 70; }
@@ -257,7 +261,19 @@ async function build() {
   let data = await (await fetch('/api/fw/data')).json();
   const REG = { firework: {}, laser: {}, jet: {} };
   const FW = REG.firework;
+  // your own effects: in this browser and on disk (~/.rct3ovl/my_effects.json, through the viewer), merged
   const mine = Object.assign({ firework: {}, laser: {}, jet: {} }, store.get('rct3fw.mine') || {});
+  try {
+    const disk = await (await fetch('/api/fw/mine')).json();
+    for (const k of ['firework', 'laser', 'jet']) mine[k] = Object.assign({}, disk[k] || {}, mine[k] || {});
+  } catch (e) {}
+  function keepMine() {   // -> a message if it could not be kept anywhere
+    const local = store.set('rct3fw.mine', mine);
+    return fetch('/api/fw/mine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mine) })
+      .then(r => r.ok ? null : 'the viewer could not write it').catch(() => 'the viewer is not reachable')
+      .then(err => err && !local ? 'Could not save: ' + err + ' and the browser storage is full' : err ? 'Saved in this browser only (' + err + ')' : null)
+      .then(m => { if (m) toast(m); });
+  }
   function prepDef(kind, d, key) {
     d.kind = kind; d.key = key; d.title = d.title || d.name || key;
     if (kind === 'firework') d.duration = fireworkDuration(d);
@@ -278,12 +294,12 @@ async function build() {
   function saveMine(kind, def, key) {
     key = key || 'my:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const clean = JSON.parse(JSON.stringify(def)); delete clean.key; delete clean._flags;
-    mine[kind][key] = clean; store.set('rct3fw.mine', mine);
+    mine[kind][key] = clean; keepMine();
     REG[kind][key] = prepDef(kind, JSON.parse(JSON.stringify(clean)), key);
     descCache.clear(); renderLib(); renderTimeline();
     return key;
   }
-  function deleteMine(kind, key) { delete mine[kind][key]; store.set('rct3fw.mine', mine); delete REG[kind][key]; renderLib(); }
+  function deleteMine(kind, key) { delete mine[kind][key]; keepMine(); delete REG[kind][key]; renderLib(); }
   const S = { show: null, sel: null, selLauncher: 0, selAim: null, t: 0, playing: false, speed: 1, pps: 40, rowH: 26, undo: [], redo: [],
               fired: new Set(), multi: new Set(), tab: 'firework' };
 
@@ -438,7 +454,8 @@ async function build() {
       R: curve(n.ColourR), G: curve(n.ColourG), B: curve(n.ColourB),
       additive: !A.v.length || Math.max(...A.v) < 0.5,
       useMod: !!n.ColourModifierEnable, anyC: fl.anyC,
-      uv: sp ? [sp.rect[0], 1 - sp.rect[3], sp.rect[2], 1 - sp.rect[1]] : null,
+      uv: sp ? toUV(sp.rect) : null,
+      frames: sp?.frames ? sp.frames.map(toUV) : null, anim: n.AnimTimeScale ?? 1,   // animated sheets: a frame per moment of life
       emitters: (n.ParticleEmitterDescs || []).map(eid => fw.nodes[eid]).filter(Boolean).map(e => ({
         N: e.NumParticles || 0, a: e.StartTime ?? 0, b: e.EndTime ?? 1, speed: e.ParticleSpeed || 0, sr: e.SpeedRandom || 0,
         src: e.SpeedRandomCircle || 0, pr: e.PositionRandom || 0, prc: e.PositionRandomCircle || 0, psf: e.ParentSpeedFactor || 0,
@@ -449,6 +466,7 @@ async function build() {
     descCache.set(key, d);
     return d;
   }
+  const toUV = r => [r[0], 1 - r[3], r[2], 1 - r[1]];
   const curveAt = (c, f) => {
     const t = c.t, v = c.v;
     if (!v.length) return 1;
@@ -547,7 +565,7 @@ async function build() {
       l.at.vel.array.set([p.vx, p.vy, p.vz], i * 3);
       l.at.size.array.set([size, sp * d.stretch], i * 2);
       l.at.col.array.set([r, g, b, d.additive ? (d.gain ?? 1) : (1 - f * 0.6)], i * 4);
-      l.at.uv.array.set(d.uv, i * 4);
+      l.at.uv.array.set(d.frames ? d.frames[Math.min(d.frames.length - 1, Math.floor((f * d.anim % 1) * d.frames.length))] : d.uv, i * 4);
     }
     for (const k of ['add', 'blend']) {
       const l = layers[k]; l.g.instanceCount = cnt[k];
@@ -607,7 +625,7 @@ async function build() {
     if (recentre) centre = layoutCentre();   // only when a show is opened: placing or moving a launcher keeps the view still
     const defs = await Promise.all(S.show.launchers.map(l => launcherDef(l.type)));
     if (my !== buildSeq) return;
-    for (const o of launcherObjs) { launcherGroup.remove(o.obj); o.label?.element.remove(); o.mixer?.stopAllAction(); }
+    for (const o of launcherObjs) { launcherGroup.remove(o.obj); o.label?.element.remove(); o.mixer?.stopAllAction(); if (o.arrow) scene.remove(o.arrow); }
     launcherObjs = S.show.launchers.map((l, i) => {
       const def = defs[i];
       const obj = def ? def.gltf.scene.clone(true) : new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0x884422 }));
@@ -628,7 +646,7 @@ async function build() {
   }
   function placeLauncher(obj, l) {
     const [x, z] = worldOf(l);
-    obj.position.set(x, surfaceAt(x, z), z);   // on the ground, or on top of the scenery there
+    obj.position.set(x, surfaceAt(x, z) + (l.lift || 0), z);   // on the ground, or on top of the scenery there (+ raised)
   }
   // world point -> launcher placement. Grid on: big bases on tile centres, small ones in a tile corner (as the game
   // places them); grid off: anywhere (fractional tiles, no corner)
@@ -741,17 +759,34 @@ async function build() {
     }
     return ks[ks.length - 1];
   }
+  // Aiming turns where a launcher fires, not the launcher: the base stays put (turning the whole model made mortars
+  // swing about during a show). aimQ: the aim in the base's own frame, applied to its tubes' directions.
+  const _e = new THREE.Euler(), _q = new THREE.Quaternion();
   function applyAims(t) {
     launcherObjs.forEach((o, i) => {
       const l = S.show.launchers[i]; if (!l) return;
       const a = aimAt(i, t);
-      o.obj.rotation.set(a.pitch * D2R, -(l.dir || 0) * Math.PI / 2 + ((l.angle || 0) + a.yaw) * D2R, 0, 'YXZ');
+      o.obj.rotation.set(0, -(l.dir || 0) * Math.PI / 2 + (l.angle || 0) * D2R, 0);
       o.obj.updateMatrixWorld(true);
+      o.aimQ = (o.aimQ || new THREE.Quaternion()).setFromEuler(_e.set(a.pitch * D2R, a.yaw * D2R, 0, 'YXZ'));
+      // while an aim is being edited: an arrow shows where its launchers fire
+      const show = !!S.selAim?.launchers?.includes(i);
+      if (show && !o.arrow) { o.arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 14, 0xffb02e, 2.5, 1.4); o.arrow.renderOrder = 11; scene.add(o.arrow); }
+      if (o.arrow) {
+        o.arrow.visible = show;
+        if (show) { const tw = tubeWorld(i, 0); if (tw) { o.arrow.position.copy(tw[0]); o.arrow.setDirection(tw[1]); } }
+      }
     });
+  }
+  function aimDir(o, d) {   // a world direction from the base, turned by the base's aim
+    if (!o.aimQ) return d;
+    const bq = o.obj.getWorldQuaternion(_q);
+    return d.applyQuaternion(bq.clone().invert()).applyQuaternion(o.aimQ).applyQuaternion(bq).normalize();
   }
   function obj3dMarkSel() {
     const aimed = new Set(S.selAim ? S.selAim.launchers : []);
-    launcherObjs.forEach((o, i) => { o.label.element.classList.toggle('sel', i === S.selLauncher); o.label.element.classList.toggle('aim', aimed.has(i)); });
+    launcherObjs.forEach((o, i) => { o.label.element.classList.toggle('sel', i === S.selLauncher); o.label.element.classList.toggle('aim', aimed.has(i)); if (o.arrow && !aimed.has(i)) o.arrow.visible = false; });
+    if (aimed.size) applyAims(S.t);
   }
   function tubeWorld(li, slot) {   // [start, dir] of a launcher's tube in world space
     const o = launcherObjs[li];
@@ -761,15 +796,15 @@ async function build() {
     if (info?.bone_tubes) {
       const n = info.bone_tubes, k = String((slot % n) + 1).padStart(2, '0');
       const a = o.obj.getObjectByName('fireworkstart' + k), b = o.obj.getObjectByName('fireworkend' + k);
-      if (a && b) { const pa = a.getWorldPosition(new THREE.Vector3()), pb = b.getWorldPosition(new THREE.Vector3()); return [pa, pb.sub(pa).normalize()]; }
+      if (a && b) { const pa = a.getWorldPosition(new THREE.Vector3()), pb = b.getWorldPosition(new THREE.Vector3()); return [pa, aimDir(o, pb.sub(pa).normalize())]; }
     }
     const tubes = info?.tubes || [];
     if (tubes.length) {
       const t = tubes[slot % tubes.length];
       const pa = o.obj.localToWorld(new THREE.Vector3(...t.start)), pb = o.obj.localToWorld(new THREE.Vector3(...t.end));
-      return [pa, pb.sub(pa).normalize()];
+      return [pa, aimDir(o, pb.sub(pa).normalize())];
     }
-    return [o.obj.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(0, 1, 0)];
+    return [o.obj.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 1, 0)), aimDir(o, new THREE.Vector3(0, 1, 0))];
   }
   // where a laser / water jet leaves its base, and the base's orientation (including aiming)
   const previewBase = new THREE.Object3D(); scene.add(previewBase);
@@ -780,7 +815,8 @@ async function build() {
       return { O: previewBase.position.clone(), q: new THREE.Quaternion() };
     }
     const [p, d] = tubeWorld(li, 0);
-    return { O: p.clone().addScaledVector(d, 0.8), q: o.obj.getWorldQuaternion(new THREE.Quaternion()) };
+    const q = o.obj.getWorldQuaternion(new THREE.Quaternion()); if (o.aimQ) q.multiply(o.aimQ);
+    return { O: p.clone().addScaledVector(d, 0.8), q };
   }
   function modsOf(entry, fw) {
     const base = fw.nodes[fw.root] || {};
@@ -927,14 +963,25 @@ async function build() {
   }
   function withCustom(sh) {   // the show plus the definitions of your own effects it uses (so it opens anywhere)
     const out = clone(sh); out.custom = { firework: {}, laser: {}, jet: {} };
-    for (const e of sh.entries) if (String(e.firework).startsWith('my:') && fx(e)) {
+    for (const e of sh.entries) if (String(e.firework).startsWith('my:') && !out.custom[e.kind]?.[e.firework] && fx(e)) {
       const d = clone(fx(e)); delete d._flags; out.custom[e.kind][e.firework] = d;
     }
     return out;
   }
-  function changed(label) { store.set('rct3fw.autosave', withCustom(S.show)); if (label) toast(label); }
+  let autosaveT = 0;   // the autosave waits for a pause in editing (it copies the whole show)
+  function changed(label) {
+    clearTimeout(autosaveT); autosaveT = setTimeout(() => { autosaveT = 0; store.set('rct3fw.autosave', withCustom(S.show)); }, 400);
+    if (label) toast(label);
+  }
   function snapshot() { S.undo.push(clone(S.show)); if (S.undo.length > 120) S.undo.shift(); S.redo = []; }
-  function restore(sh) { S.show = normShow(sh); select([]); S.selAim = null; terrain.setData(sh.terrain || null); applyScene(); rebuildLaunchers(false).then(rebuildScenery); renderAll(); }
+  function restore(sh) {
+    const key = x => JSON.stringify([x.launchers, x.scenery, x.terrain || null, x.scene || null]);
+    const same = S.show && key(S.show) === key(sh);
+    S.show = normShow(sh); select([]); S.selAim = null;
+    if (same) applyAims(S.t);   // only the timeline changed: keep the 3D launchers as they are
+    else { terrain.setData(sh.terrain || null); applyScene(); rebuildLaunchers(false).then(rebuildScenery); }
+    renderAll();
+  }
   function undo() { if (!S.undo.length) return; S.redo.push(clone(S.show)); restore(S.undo.pop()); changed('Undo'); }
   function redo() { if (!S.redo.length) return; S.undo.push(clone(S.show)); restore(S.redo.pop()); changed('Redo'); }
 
@@ -980,7 +1027,10 @@ async function build() {
     if (S.playing) {
       audio();
       if (S.t >= showEnd() - 0.05) seek(0);
-      if (musicEl.src) { musicEl.playbackRate = S.speed; musicEl.currentTime = S.t; musicEl.play().catch(() => {}); }
+      if (musicEl.src) {   // from the playhead (once the music's length is known: earlier seeks are dropped)
+        const go = () => { musicEl.playbackRate = S.speed; try { musicEl.currentTime = Math.min(S.t, musicEl.duration || S.t); } catch (e) {} musicEl.play().catch(() => {}); };
+        if (musicEl.readyState >= 1) go(); else musicEl.addEventListener('loadedmetadata', () => { if (S.playing) go(); }, { once: true });
+      }
     } else musicEl.pause();
   }
   function updateTime() {
@@ -1177,6 +1227,7 @@ async function build() {
     reload: () => $('#fw-reload', root).onclick(),
     newLaser: defaultLaser, newJet: defaultJet,
     particleCount: () => parts.length,
+    clearParticles: test => { parts = parts.filter(p => !test(p.d.fw)); },   // e.g. the editor's earlier versions
   };
 
   // ---- UI: inspector ---------------------------------------------------------------------------------------------
@@ -1308,7 +1359,7 @@ async function build() {
         <input type="number" data-k="col" value="${l.col}" step="${S.grid ? 1 : 0.25}"><input type="number" data-k="row" value="${l.row}" step="${S.grid ? 1 : 0.25}">
         <select data-k="dir">${['N', 'E', 'S', 'W'].map((d, k) => `<option value="${k}"${k === (l.dir || 0) ? ' selected' : ''}>${d}</option>`).join('')}</select>
         <button class="x" data-a="dell" title="Remove launcher (its effects are removed too)">✕</button></div>`).join('') +
-      `<div class="row"><button data-a="addl">+ Add launcher</button></div><div class="muted">Col / Row are park tiles (4 m). Drag bases from the Bases tab into the 3D view, drag a launcher to move it, R turns the selected one. Mortars and the Catherine wheel fire fireworks, laser domes lasers, water jet bases water jets.</div>`;
+      `<div class="row"><button data-a="addl">+ Add launcher</button></div><div class="muted">Col / Row are park tiles (4 m). Drag bases from the Bases tab into the 3D view, drag a launcher to move it, Shift-drag (or PageUp / PageDown) raises or lowers it, R turns the selected one. Mortars and the Catherine wheel fire fireworks, laser domes lasers, water jet bases water jets.</div>`;
   }
   $('#fw-launchers', root).addEventListener('change', ev => {
     const k = ev.target.dataset.k, row = ev.target.closest('.lnch'); if (!k || !row) return;
@@ -1405,6 +1456,7 @@ async function build() {
         title="${fmt(k.t)} · yaw ${k.yaw.toFixed(0)}° pitch ${k.pitch.toFixed(0)}° · launchers ${k.launchers.map(x => '#' + (x + 1)).join(', ')} · right-click to remove"></div>`).join('') + '</div>';
   }
   function renderAimPanel() {
+    applyAims(S.t);   // shows or hides the aim arrows
     const sec = $('#fw-aimsec', root), k = S.selAim;
     sec.style.display = k ? '' : 'none';
     obj3dMarkSel();
@@ -1482,7 +1534,7 @@ async function build() {
       const d = fx(e), kind = e.kind || 'firework';
       const c = e.tint || swatch(d), wpx = Math.max(16, (d?.duration || 3) * S.pps), name = d ? d.title : '(missing ' + KINDS[kind].one + ')';
       html += `<div class="ent k-${kind}${e === S.sel ? ' sel' : S.multi.has(e) ? ' multi' : ''}" data-i="${i}" style="left:${e.time * S.pps}px;top:${e.track * S.rowH}px;width:${wpx}px;background-color:${hex(c)}"
-        title="${esc(name)} · ${fmt(e.time)} · launcher #${e.launcher + 1}${kind === 'firework' ? ' tube ' + (e.slot + 1) : ''}">${KINDS[kind].icon}${esc(name)}<span class="tail" style="width:${Math.max(0, wpx - 2.2 * S.pps)}px"></span></div>`;
+        title="${esc(name)} · ${fmt(e.time)} · launcher #${e.launcher + 1}${kind === 'firework' ? ' tube ' + (e.slot + 1) : ''}${kind === 'firework' && d ? fxEvents(d).map(t => ' · bursts at +' + t.toFixed(2) + ' s').join('') : ''}">${KINDS[kind].icon}${esc(name)}<span class="tail" style="width:${Math.max(0, wpx - 2.2 * S.pps)}px"></span>${kind === 'firework' && d ? fxEvents(d).map(t => `<i class="ev" style="left:${t * S.pps}px"></i>`).join('') : ''}</div>`;
     });
     canvas.innerHTML = html; canvas.append(ph, drop, band);
     // ruler ticks: a label every 1/2/5/10 s depending on the time scale
@@ -1492,6 +1544,28 @@ async function build() {
     ruler.innerHTML = `<div style="position:absolute;left:0;top:0;bottom:0;width:${w}px" id="fw-rin">${r}</div>`; ruler.append(rph);
     renderAimBar(); syncScroll(); updateTime();
   }
+  // when a firework bursts (as the game's MixMaster marks it on the bar): an emitter that releases many particles
+  // within a moment (its window in seconds, or the whole life of a short-lived particle) - following the chain of
+  // shells (emitters of 1-3 particles, which leave at the end of their window: the k-th of N at a + k/N of it)
+  const evCache = new WeakMap();
+  function fxEvents(fw) {
+    if (evCache.has(fw)) return evCache.get(fw);
+    const out = [];
+    const walk = (id, t0, depth) => {
+      const n = fw.nodes?.[id]; if (!n || depth > 6) return;
+      const life = (n.Lifetime || 0) + (n.LifetimeRandom || 0) / 2;
+      for (const eid of n.ParticleEmitterDescs || []) {
+        const e = fw.nodes[eid]; if (!e) continue;
+        const a = e.StartTime ?? 0, b = Math.max(a, e.EndTime ?? 1), N = e.NumParticles || 0, tr = (e.TimeRandom || 0) / 2;
+        if (N >= 8 && (b - a) * life <= 0.15 && t0 + a * life + tr > 0.05) out.push(t0 + a * life + tr);
+        else if (N >= 1 && N <= 3) walk(String(e.ParticleDesc), t0 + (a + (b - a) / N) * life + tr, depth + 1);
+      }
+    };
+    walk(String(fw.root), 0, 0);
+    const ev = [...new Set(out.map(t => Math.round(t * 20) / 20))].sort((a, b) => a - b).slice(0, 8);
+    evCache.set(fw, ev);
+    return ev;
+  }
   function syncScroll() {
     const rin = $('#fw-rin', root); if (rin) rin.style.transform = `translateX(${-lanes.scrollLeft}px)`;
     const ain = $('#fw-ain', root); if (ain) ain.style.transform = `translateX(${-lanes.scrollLeft}px)`;
@@ -1499,13 +1573,34 @@ async function build() {
   }
   lanes.addEventListener('scroll', syncScroll);
   function renderAll() { renderTimeline(); renderEntry(); renderShowInfo(); renderLaunchers(); renderAimPanel(); renderSceneryPanel(); }
+  function renderEdits() { renderTimeline(); renderEntry(); renderShowInfo(); }   // after timeline-only edits
   const timeAt = clientX => (clientX - lanes.getBoundingClientRect().left + lanes.scrollLeft) / S.pps;
   const trackAt = clientY => Math.max(0, Math.floor((clientY - lanes.getBoundingClientRect().top + lanes.scrollTop) / S.rowH));
   const snap = (t, free) => free ? t : Math.round(t * 20) / 20;
-  ruler.addEventListener('pointerdown', e => {
-    ruler.setPointerCapture(e.pointerId);
-    const go = ev => seek(timeAt(ev.clientX));
-    go(e); ruler.onpointermove = go; ruler.onpointerup = () => { ruler.onpointermove = null; };
+  // scrubbing: drag the time ruler or the playhead; the show follows (and a snippet of the music plays at each spot)
+  let scrubT = 0;
+  function scrub(e, el) {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    const wasPlaying = S.playing; if (wasPlaying) play(false);
+    el.setPointerCapture(e.pointerId);
+    let want = timeAt(e.clientX), busy = false;
+    const go = () => {
+      busy = false; seek(want);
+      if (musicEl.src && musicEl.readyState >= 1) {
+        try { musicEl.currentTime = Math.min(S.t, musicEl.duration || S.t); } catch (err) {}
+        musicEl.play().catch(() => {}); clearTimeout(scrubT); scrubT = setTimeout(() => { if (!S.playing) musicEl.pause(); }, 140);
+      }
+    };
+    go();
+    el.onpointermove = ev => { want = timeAt(ev.clientX); if (!busy) { busy = true; requestAnimationFrame(go); } };
+    el.onpointerup = () => { el.onpointermove = el.onpointerup = null; if (wasPlaying) play(true); };
+  }
+  ruler.addEventListener('pointerdown', e => scrub(e, ruler));
+  ph.addEventListener('pointerdown', e => {
+    // the second click of a double-click lands on the playhead the first click moved there: let the timeline have it
+    if (lastDown && performance.now() - lastDown.t < 450 && Math.hypot(e.clientX - lastDown.x, e.clientY - lastDown.y) < 6) return;
+    scrub(e, ph);
   });
   // Empty space: click moves the playhead, drag draws a box that selects the effects it touches (Ctrl/Shift adds),
   // double-click adds the picked palette item. An effect: click selects it, Ctrl/Shift-click adds or removes it,
@@ -1576,13 +1671,20 @@ async function build() {
     };
     el.onpointerup = () => {
       el.onpointermove = el.onpointerup = null;
-      if (moved) { changed(cloneKey ? `Cloned ${group.length}` : group.length > 1 ? `Moved ${group.length} effects` : ''); renderAll(); }
+      if (moved) { changed(cloneKey ? `Cloned ${group.length}` : group.length > 1 ? `Moved ${group.length} effects` : ''); renderEdits(); }
       else if (add) {   // Ctrl/Shift-click: add to or remove from the selection
         if (wasIn) { S.multi.delete(ent); select([...S.multi]); } else select([...S.multi, ent], ent);
         markSel();
       } else if (wasIn && S.multi.size > 1) { select([ent], ent); markSel(); }
       else markSel();
     };
+  });
+  canvas.addEventListener('contextmenu', e => {   // right-click an effect: remove it (as elsewhere in the viewer)
+    const el = e.target.closest('.ent'); if (!el) return;
+    e.preventDefault();
+    const ent = S.show.entries[+el.dataset.i]; if (!ent) return;
+    snapshot(); S.show.entries = S.show.entries.filter(x => x !== ent); S.multi.delete(ent); select([...S.multi]);
+    changed(`Removed ${fx(ent)?.title || 'the effect'} (Ctrl+Z brings it back)`); renderEdits();
   });
   lanes.addEventListener('dragover', e => {
     if (!e.dataTransfer.types.includes('text/x-firework')) return;
@@ -1598,19 +1700,19 @@ async function build() {
   function addEntry(kind, key, time, track) {
     if (!key || !REG[kind][key]) return;
     snapshot();
-    let li = compatibleLauncher(kind);
+    let li = compatibleLauncher(kind); const li0 = li;
     if (li < 0) { li = addLauncher(BASE_FOR[kind]); rebuildLaunchers(); toast(`Added a ${LAUNCHER_NAMES[BASE_FOR[kind]]} launcher (#${li + 1}) for it`); }
     // next free tube on that launcher around this time
     const used = new Set(S.show.entries.filter(x => x.launcher === li && Math.abs(x.time - time) < 3).map(x => x.slot));
     let slot = 0; while (used.has(slot) && slot < tubeCount(li) - 1) slot++;
     const e = { kind, firework: key, launcher: li, slot, time, track };
     S.show.entries.push(e); select([e], e);
-    changed(`Added ${REG[kind][key].title} at ${fmt(time)}`); renderAll();
+    changed(`Added ${REG[kind][key].title} at ${fmt(time)}`); li === li0 ? renderEdits() : renderAll();
   }
   function removeSel() {
     const sel = selList(); if (!sel.length) return;
     snapshot(); S.show.entries = S.show.entries.filter(x => !S.multi.has(x)); select([]);
-    changed(sel.length > 1 ? `Deleted ${sel.length} effects` : 'Deleted'); renderAll();
+    changed(sel.length > 1 ? `Deleted ${sel.length} effects` : 'Deleted'); renderEdits();
   }
   function duplicate() {
     const sel = selList(); if (!sel.length) return;
@@ -1619,7 +1721,7 @@ async function build() {
     snapshot();
     const copies = sel.map(x => ({ ...clone(x), time: x.time + off }));
     S.show.entries.push(...copies); select(copies);
-    changed(sel.length > 1 ? `Duplicated ${sel.length} effects` : 'Duplicated'); renderAll();
+    changed(sel.length > 1 ? `Duplicated ${sel.length} effects` : 'Duplicated'); renderEdits();
   }
   // clipboard: kept in the browser, so a part of one show can be pasted into another (even after a reload)
   function copySel(cut) {
@@ -1628,7 +1730,7 @@ async function build() {
     clip = { entries: clone(sel), launchers: Object.fromEntries(sel.map(x => [x.launcher, S.show.launchers[x.launcher]?.type])),
              custom: withCustom({ ...S.show, entries: sel }).custom };
     store.set('rct3fw.clipboard', clip);
-    if (cut) { snapshot(); S.show.entries = S.show.entries.filter(x => !S.multi.has(x)); select([]); changed(); renderAll(); }
+    if (cut) { snapshot(); S.show.entries = S.show.entries.filter(x => !S.multi.has(x)); select([]); changed(); renderEdits(); }
     else renderEntry();
     toast(`${cut ? 'Cut' : 'Copied'} ${sel.length} effect${sel.length > 1 ? 's' : ''}${sel.length > 1 ? ` (${fmt(sel[sel.length - 1].time - sel[0].time)} long)` : ''}`);
   }
@@ -1647,14 +1749,14 @@ async function build() {
     snapshot();
     const add = clip.entries.map(x => { const li = mapL(x.launcher, x.kind); return { ...clone(x), kind: x.kind || 'firework', launcher: li, slot: (x.slot || 0) % tubeCount(li), time: +(at + x.time - t0).toFixed(3) }; });
     S.show.entries.push(...add); select(add);
-    changed(`Pasted ${add.length} effect${add.length > 1 ? 's' : ''} at ${fmt(at)}`); renderAll();
+    changed(`Pasted ${add.length} effect${add.length > 1 ? 's' : ''} at ${fmt(at)}`); renderEdits();
   }
   function nudge(dt, dtr) {
     const sel = selList(); if (!sel.length) return;
     const minT = Math.min(...sel.map(x => x.time)), minTr = Math.min(...sel.map(x => x.track));
     dt = Math.max(-minT, dt); dtr = Math.max(-minTr, dtr);
     if (!dt && !dtr) return;
-    snapshot(); for (const x of sel) { x.time = +(x.time + dt).toFixed(3); x.track += dtr; } changed(); renderAll();
+    snapshot(); for (const x of sel) { x.time = +(x.time + dt).toFixed(3); x.track += dtr; } changed(); renderEdits();
   }
   function previewSel() {
     const sel = selList().sort((a, b) => a.time - b.time); if (!sel.length) return;
@@ -1797,17 +1899,29 @@ async function build() {
       renderer.domElement.setPointerCapture(e.pointerId); return;
     }
     if (li != null && S.show.launchers[li]) {   // press on a launcher: drag to move it (a click still just selects it)
-      controls.enabled = false; moveDrag = { li, x: e.clientX, y: e.clientY, moved: false };
+      controls.enabled = false; moveDrag = { li, x: e.clientX, y: e.clientY, moved: false, lift: e.shiftKey, lift0: S.show.launchers[li].lift || 0 };
       renderer.domElement.setPointerCapture(e.pointerId); return;
     }
     const si = sceneryUnder(e);
     if (si != null && S.show.scenery[si]) {   // press on a scenery piece: drag to move it, with the launchers standing on it
-      controls.enabled = false; moveDrag = { si, x: e.clientX, y: e.clientY, moved: false };
+      controls.enabled = false; moveDrag = { si, x: e.clientX, y: e.clientY, moved: false, lift: e.shiftKey, lift0: S.show.scenery[si].lift || 0 };
       renderer.domElement.setPointerCapture(e.pointerId);
     }
   }, true);
   renderer.domElement.addEventListener('pointermove', e => {
     if (tool) { const p = groundHit(e); terrain.showRing(p?.x, p?.z, +$('#fw-bsize', root).value); if (painting && p) brushPt = p; }
+    if (moveDrag?.lift) {   // Shift-drag: raise / lower the launcher or scenery piece (up = higher)
+      if (!moveDrag.moved && Math.abs(e.clientY - moveDrag.y) < 3) return;
+      const it = moveDrag.si != null ? S.show.scenery[moveDrag.si] : S.show.launchers[moveDrag.li];
+      const obj = moveDrag.si != null ? sceneryObjs[moveDrag.si]?.obj : launcherObjs[moveDrag.li]?.obj; if (!it || !obj) return;
+      if (!moveDrag.moved) { snapshot(); moveDrag.moved = true; }
+      const mPerPx = 2 * Math.tan(camera.fov * D2R / 2) * camera.position.distanceTo(obj.getWorldPosition(new THREE.Vector3())) / Math.max(1, view.clientHeight);
+      it.lift = clamp(Math.round((moveDrag.lift0 + (moveDrag.y - e.clientY) * mPerPx) * 10) / 10, -30, 200);
+      if (moveDrag.si != null) placeScenery(moveDrag.si);
+      placeAll();
+      showCard(e, `${esc(moveDrag.si != null ? it.title : '#' + (moveDrag.li + 1) + ' ' + LAUNCHER_NAMES[it.type])} · raised ${it.lift.toFixed(1)} m`);
+      return;
+    }
     if (moveDrag && moveDrag.si != null) {
       if (!moveDrag.moved && Math.hypot(e.clientX - moveDrag.x, e.clientY - moveDrag.y) < 5) return;
       const o = sceneryObjs[moveDrag.si], s = S.show.scenery[moveDrag.si]; if (!o || !s) return;
@@ -1844,7 +1958,7 @@ async function build() {
     if (aimDrag) { aimDrag = null; controls.enabled = true; changed(); }
     if (moveDrag) {
       const m = moveDrag; moveDrag = null; controls.enabled = true; showCard(null);
-      if (m.moved) { changed(m.si != null ? `Moved ${S.show.scenery[m.si]?.title}` : `Moved launcher #${m.li + 1}`); renderLaunchers(); renderSceneryPanel(); return 'moved'; }
+      if (m.moved) { changed(m.lift ? 'Raised to ' + ((m.si != null ? S.show.scenery[m.si] : S.show.launchers[m.li])?.lift || 0).toFixed(1) + ' m' : m.si != null ? `Moved ${S.show.scenery[m.si]?.title}` : `Moved launcher #${m.li + 1}`); renderLaunchers(); renderSceneryPanel(); return 'moved'; }
     }
   };
   renderer.domElement.addEventListener('pointerup', e => {
@@ -1856,7 +1970,7 @@ async function build() {
     if (hit && hit.object.userData.launcher != null) { S.selLauncher = hit.object.userData.launcher; S.pick = 'launcher'; obj3dMarkSel(); markScenery(); renderLaunchers(); renderAimBar(); toast(`Launcher #${S.selLauncher + 1} selected`); return; }
     const si = sceneryUnder(e);
     S.selScenery = si; S.pick = si != null ? 'scenery' : null; markScenery(); renderSceneryPanel();
-    if (si != null) toast(`${S.show.scenery[si]?.title} selected · drag to move · R to turn · Delete to remove`);
+    if (si != null) toast(`${S.show.scenery[si]?.title} selected · drag to move · Shift-drag to raise or lower · R to turn · Delete to remove`);
   });
   renderer.domElement.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
   S.grid = store.get('rct3fw.grid') ?? true;
@@ -1919,7 +2033,7 @@ async function build() {
     play(false);
     if (v === 'new') setShow(blank());
     else if (v === 'auto') setShow(store.get('rct3fw.autosave') || blank());
-    else { const d = data.displays[+v.slice(1)]; setShow(clone({ name: d.name, music: d.music, start_minutes: d.start_minutes, launchers: d.launchers, entries: d.entries })); }
+    else { const d = data.displays[+v.slice(1)]; if (!d) { setShow(blank()); return; } setShow(clone({ name: d.name, music: d.music, start_minutes: d.start_minutes, launchers: d.launchers, entries: d.entries })); }
     S.undo = []; S.redo = [];
   }
   showSel.onchange = () => openChoice(showSel.value);
@@ -1981,6 +2095,13 @@ async function build() {
     else if ((e.ctrlKey || e.metaKey) && k === 'a') { e.preventDefault(); select(S.show.entries.slice()); markSel(); toast(`All ${S.multi.size} effects selected`); }
     else if (k === 'arrowleft' || k === 'arrowright') { if (S.multi.size) { e.preventDefault(); nudge((k === 'arrowleft' ? -1 : 1) * (e.shiftKey ? 1 : 0.1), 0); } }
     else if (k === 'arrowup' || k === 'arrowdown') { if (S.multi.size) { e.preventDefault(); nudge(0, k === 'arrowup' ? -1 : 1); } }
+    else if (k === 'pageup' || k === 'pagedown') {   // raise / lower the selected scenery piece or launcher by 0.5 m (Shift: 2 m)
+      const it = S.pick === 'scenery' && S.selScenery != null ? S.show.scenery[S.selScenery] : S.show.launchers[S.selLauncher]; if (!it) return;
+      e.preventDefault(); snapshot();
+      it.lift = clamp(+((it.lift || 0) + (k === 'pageup' ? 1 : -1) * (e.shiftKey ? 2 : 0.5)).toFixed(1), -30, 200);
+      if (S.pick === 'scenery' && S.selScenery != null) placeScenery(S.selScenery);
+      placeAll(); renderSceneryPanel(); changed('Raised to ' + it.lift.toFixed(1) + ' m');
+    }
     else if (k === '+' || k === '=') zoom(1.5);
     else if (k === '-') zoom(1 / 1.5);
     else if (k === 'f' && S.multi.size) previewSel();
@@ -2055,12 +2176,15 @@ async function build() {
   }
   function start() { if (!running) { running = true; clock.getDelta(); renderer.setAnimationLoop(frame); } }
   function stop() { running = false; renderer.setAnimationLoop(null); play(false); }
-  function close() { stop(); root.style.display = 'none'; ui.onBack?.(); }
+  function flushAutosave() { if (autosaveT) { clearTimeout(autosaveT); autosaveT = 0; store.set('rct3fw.autosave', withCustom(S.show)); } }
+  window.addEventListener('pagehide', flushAutosave);
+  function close() { flushAutosave(); stop(); root.style.display = 'none'; ui.onBack?.(); }
 
   // ---- go ---------------------------------------------------------------------------------------------------------------
   renderLib(); fillShows();
   const auto = store.get('rct3fw.autosave');
-  if (auto) { showSel.value = 'auto'; setShow(auto); } else { showSel.value = 'd' + Math.max(0, data.displays.findIndex(d => /stratosphere/i.test(d.name))); openChoice(showSel.value); }
+  // start on your autosaved show, or a new empty one (no game show needed: any of them may have been removed)
+  if (auto) { showSel.value = 'auto'; setShow(auto); } else { showSel.value = 'new'; openChoice('new'); }
   // ---- the MixMaster walkthrough -----------------------------------------------------------------------------------
   const wait = (ms = 300) => new Promise(r => setTimeout(r, ms));
   const tab = async k => { S.tab = k; $('#fw-search', root).value = ''; renderLib(); await wait(250); };
@@ -2073,7 +2197,7 @@ async function build() {
         <p>This tour covers every part of it. <b>← Back</b> (top left) or <kbd>Esc</kbd> returns to the viewer; <b>? Tour</b> replays this.</p>`,
       before: async () => { closePanels(); } },
     { target: '#fw-show', title: 'Shows',
-      html: `<p>Open one of the game's four shows (Haunted Skies, Lunar Lights, Pirate Pyrotechnics, Stratosphere), your autosaved show, or a new empty one.</p>
+      html: `<p>Open one of the game's shows (Haunted Skies, Lunar Lights, Pirate Pyrotechnics, Stratosphere: whichever are in your game folder), your autosaved show, or a new empty one. The MixMaster starts on your autosaved show, or an empty one.</p>
         <ul><li><b>New</b> starts an empty show with a few launchers.</li><li><b>Save</b> downloads your show as a file; <b>Open…</b> loads it again.</li>
         <li>Your work is also autosaved in the browser all the time.</li></ul>` },
     { target: '#fw-export', title: 'Export to RCT3',
@@ -2133,12 +2257,14 @@ async function build() {
       html: `<p>Each block is one firework, laser, water jet or scenery cue, starting where its left edge is and as long as it runs. Tracks are just rows to
         keep things tidy.</p><ul><li><b>Add:</b> drag from the palette, or double-click an empty spot to add the item picked in the palette.</li>
         <li><b>Move:</b> drag a block (sideways = time, up/down = track). <kbd>Alt</kbd> turns snapping off.</li>
+        <li><b>Remove:</b> right-click a block (or select it and press <kbd>Delete</kbd>).</li>
+        <li>Thin lines on a firework's block mark the moments it bursts.</li>
         <li><b>Select several:</b> drag a box over empty space, or <kbd>Ctrl</kbd>/<kbd>Shift</kbd>-click. <kbd>Ctrl+A</kbd> selects all.</li>
         <li><b>Ctrl-drag</b> clones; <kbd>Ctrl+C</kbd> <kbd>Ctrl+X</kbd> <kbd>Ctrl+V</kbd> copy, cut and paste at the playhead (also into another show);
         <kbd>Ctrl+D</kbd> duplicates; <kbd>Delete</kbd> removes; <kbd>←</kbd> <kbd>→</kbd> nudge, <kbd>↑</kbd> <kbd>↓</kbd> change track.</li></ul>` },
     { target: '#fw-ruler', title: 'Time ruler and time scale',
-      html: `<p>Click or drag on the ruler to jump to that moment: the sky shows exactly what would be in the air then. The red line is the playhead
-        (pastes and drops go there). <b>−</b> / <b>+</b> on the left (or <kbd>Ctrl</kbd>+scroll) change the time scale.</p>` },
+      html: `<p>Click or drag on the ruler (or drag the red playhead) to scrub: the sky shows exactly what would be in the air then, and a snippet of the
+        music plays. Play starts the music from the playhead (pastes and drops go there too). <b>−</b> / <b>+</b> on the left (or <kbd>Ctrl</kbd>+scroll) change the time scale.</p>` },
     { target: '#fw-aimbar', title: 'Base aiming controls',
       html: `<p>Click this bar to add an <b>angle control point</b> for the selected launcher at that time; turn and tilt it in the right-hand panel, or
         drag the green-highlighted launcher in the 3D view. The launcher turns smoothly from point to point during the show.</p>
@@ -2240,7 +2366,7 @@ async function build() {
 
   window.__fwdebug = {   // for tests
     count: () => parts.length, parts: () => parts, step, launch, FW, REG, descInfo, S, ribbons, terrain, openEditor, ctx, seek, applyAims, renderAll,
-    sceneryObjs: () => sceneryObjs };
+    sceneryObjs: () => sceneryObjs, music: () => musicEl, launcherObjs: () => launcherObjs, tubeWorld };
   return { root, resize, start, stop, tour, openFile, onBack: null };
 }
 

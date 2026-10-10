@@ -122,7 +122,8 @@ export function drawLaser(R, def, tau, O, q, ground, opts = {}) {
       }
     }
     const ex = O.x + d.x * len, ey = O.y + d.y * len, ez = O.z + d.z * len;
-    R.add(O.x, O.y, O.z, ex, ey, ez, 0.07 * width, (0.12 + len * 0.005) * width, r, g, b, a, fade, hit ? fade * 0.9 : fade * 0.05);
+    // a beam `width` metres across that spreads a little with distance (width is the game's Spread: 1 = normal)
+    R.add(O.x, O.y, O.z, ex, ey, ez, 0.35 * width, width * (1 + len * 0.006), r, g, b, a, fade, hit ? fade * 0.9 : fade * 0.05);
     if (hit) {                                                    // glowing spot where it lands
       const s = 0.6 + width * 0.6;
       R.add(ex - s, ey + 0.05, ez, ex + s, ey + 0.05, ez, s, s, r, g, b, a * 1.4, fade, fade);
@@ -141,8 +142,9 @@ export function drawLaser(R, def, tau, O, q, ground, opts = {}) {
       const right = new THREE.Vector3().crossVectors(fwd, _up); if (right.lengthSq() < 1e-6) right.set(1, 0, 0); right.normalize();
       const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
       const D = Math.max(15, Math.min(150, L * 0.5)), k = (def.image_scale || 10) / 10 * D / 40;
-      let cx = 0, cy = 0;
-      if (def.centre) { for (const p of pts) { cx += p[0]; cy += p[1]; } cx /= pts.length; cy /= pts.length; }
+      // centred: around the drawing's own middle; otherwise around the middle of the game's 32 x 24 drawing pad
+      let cx = 16, cy = 12;
+      if (def.centre) { cx = cy = 0; for (const p of pts) { cx += p[0]; cy += p[1]; } cx /= pts.length; cy /= pts.length; }
       const P = p => new THREE.Vector3().copy(O).addScaledVector(fwd, D).addScaledVector(right, (p[0] - cx) * k).addScaledVector(up, (p[1] - cy) * k);
       const prog = Math.min(1, lt / Math.max(0.05, im.duration || 1)), cur = Math.max(1, Math.floor(prog * (pts.length - 1)) + 1);
       const lw = 0.22 * width * D / 60;

@@ -17,7 +17,7 @@ with sync_playwright() as p:
     pg.goto(base + '/')
     pg.evaluate('localStorage.clear(); [`main`, `mixmaster`, `afe`, `laser-designer`, `jet-designer`].forEach(k => localStorage.setItem(`rct3ovl.tour.` + k, `1`))')
     pg.goto(base + '/#fireworks')
-    pg.wait_for_selector('#fw .ent', timeout=180000); pg.wait_for_timeout(2000)
+    pg.wait_for_selector('#fw .fwk', timeout=180000); pg.select_option('#fw-show', label='Stratosphere'); pg.wait_for_selector('#fw .ent', timeout=60000); pg.wait_for_timeout(2000)
     D = 'window.__fwdebug'
     print('tabs:', pg.eval_on_selector_all('#fw-ptabs button', 'bs => bs.map(b => b.textContent)'))
     for k in ('laser', 'jet', 'firework'):
@@ -72,6 +72,9 @@ with sync_playwright() as p:
     print('afe open:', pg.evaluate("document.getElementById('fw').classList.contains('afe')"), '| nodes:', pg.eval_on_selector_all('#fw .afe-node', 'n => n.length'),
           '| particles', pg.evaluate(f'{D}.count()'))
     pg.screenshot(path=f'{out}/5_afe.png')
+    # a new firework is only its base: load a game firework (as a copy) to edit
+    pg.select_option('#fw .afe-top select[data-a="load"]', 'GreenPeony.frw'); pg.wait_for_timeout(1500)
+    print('loaded nodes:', pg.eval_on_selector_all('#fw .afe-node', 'n => n.length'))
     # select the burst emitter, change count + texture + colour stop, add a child emitter, save
     pg.click('#fw .afe-node >> nth=3')
     print('selected:', pg.inner_text('#fw .afe-r h3'))

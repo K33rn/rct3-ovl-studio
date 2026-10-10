@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import threading
 import traceback
 import webbrowser
@@ -34,9 +35,22 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
             pass
 
         def send(self, code, body: bytes, ctype: str, extra: dict | None = None):
+            # byte ranges for audio / video: without them the browser can't seek (music always restarted at 0:00)
+            media = ctype.startswith(('audio/', 'video/'))
+            m = re.match(r'bytes=(\d*)-(\d*)$', self.headers.get('Range', '').strip()) if code == 200 and media else None
+            if m and (m.group(1) or m.group(2)):
+                n = len(body)
+                a, b = (int(m.group(1)), int(m.group(2) or n - 1)) if m.group(1) else (max(0, n - int(m.group(2))), n - 1)
+                b = min(b, n - 1)
+                if a >= n or a > b:
+                    self.send_response(416); self.send_header('Content-Range', f'bytes */{n}'); self.send_header('Content-Length', '0')
+                    self.end_headers(); return
+                code, extra, body = 206, dict(extra or {}, **{'Content-Range': f'bytes {a}-{b}/{n}'}), body[a:b + 1]
             self.send_response(code)
             self.send_header('Content-Type', ctype)
             self.send_header('Content-Length', str(len(body)))
+            if media:
+                self.send_header('Accept-Ranges', 'bytes')
             self.send_header('Cache-Control', 'no-store')   # models/textures change when the exporter improves
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
@@ -60,6 +74,9 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                                         'lasers': fw.list_effects(lib, 'laser'), 'jets': fw.list_effects(lib, 'jet'),
                                         'drawings': fw.list_drawings(lib), 'sounds': fw.sound_names(lib),
                                         'can_play_music': fw._ffmpeg() is not None, 'launchers': fw.LAUNCHERS})
+                if u.path == '/api/fw/mine':
+                    with lock:
+                        return self.js(fw.load_mine(lib))
                 if u.path == '/api/fw/page':
                     with lock:
                         png = fw.page_png(lib, q['name'], q.get('opaque') == '1')
@@ -293,6 +310,10 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 name = (body.get('name') or 'export') + fw.EXT[body['kind']]
                 return self.send(200, blob, 'application/octet-stream',
                                  {'Content-Disposition': f'attachment; filename="{name}"'})
+            if u.path == '/api/fw/mine':
+                with lock:
+                    fw.save_mine(lib, body)
+                return self.js({'ok': True})
             if u.path == '/api/fw/save':
                 with lock:
                     path = fw.save_to_game(lib, body['kind'], body.get('name') or 'My effect', body['data'])

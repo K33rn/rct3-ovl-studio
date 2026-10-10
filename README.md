@@ -85,19 +85,20 @@ The buttons at the top:
 - **Ride Designs** lists the game's 208 premade coasters and tracked rides (the `Coaster Designs` folder), grouped by ride type. Each is built from its track pieces into one 3D model, with its stats: excitement/intensity/nausea, top speed, length, drops, inversions and cost.
 - **Scenery** lists all 1,330 scenery items (trees and plants, scenery, animatronics, walls and roofs, fences, path extras, shops and stalls, entrances, ride events, pools, enclosures, terrain, effects), grouped by category and theme. Animated items are marked ⟳ and play their animation. The filter box narrows the list as you type.
 - **Fireworks** opens the **MixMaster**, a full-window show editor; **← Back** (or Esc) returns to the viewer.
-  - It opens the game's firework shows (Haunted Skies, Lunar Lights, Pirate Pyrotechnics, Stratosphere), or a new show of your own.
+  - It starts on your autosaved show, or a new empty one. The game's firework shows (Haunted Skies, Lunar Lights, Pirate Pyrotechnics, Stratosphere) open from the show list; any of them may be missing from your game folder.
   - Three kinds of effects, as in RCT3 Soaked!, each with its own palette tab:
     - **Fireworks:** the 28 game fireworks, simulated from the game's own particle data and drawn with its sprites, sounds and a glow effect.
     - **Lasers:** the 8 game lasers (cone of light, plane of light, persisting image).
+    - Particle textures that are animated sheets (smoke, fire, water, rubble, electric sparks) play their frames over each particle's life, as in the game.
     - **Water Jets:** the 2 game water jets.
   - ▶ previews any effect, ✎ edits it (a game effect is copied first). Drag effects onto the timeline, or double-click an empty spot to add the one picked in the palette.
   - Effects need the right launcher: mortars and the Catherine wheel fire fireworks, laser domes fire lasers, water jet bases fire water jets. A matching launcher is added for you if the show has none.
   - **Per launch:** time, track, launcher and tube, colour (the game's colour modifier), and strength for fireworks (more or fewer particles, the game's strength modifier).
-  - **Base aiming controls:** click the *Aiming* bar above the tracks to add an angle control point for the selected launcher. Set its turn and tilt in the right-hand panel, or drag a green-highlighted launcher in 3D. One point can control several launchers (tick them). Right-click a point to remove it.
+  - **Base aiming controls:** click the *Aiming* bar above the tracks to add an angle control point for the selected launcher. Set its turn and tilt in the right-hand panel, or drag a green-highlighted launcher in 3D. One point can control several launchers (tick them). Right-click a point to remove it. Aiming turns where a launcher fires (an orange arrow shows it while you edit the point); the launcher itself stays where it stands.
   - **Landscape:** raise, lower, smooth and flatten the ground, and paint water at a level. Fireworks and lasers reflect in the water.
   - **Placing things in 3D:** the **Bases** tab shows the six MixMaster bases with pictures. Drag one into the 3D view: a see-through preview follows the mouse and it is placed where you let go.
     - Drag a firework, laser or water jet into the 3D view as well. Drop it on a matching launcher, or on the ground to place a new matching base there. It is added at the playhead on a free track.
-    - Drag a launcher in the 3D view to move it. **R** turns the selected launcher (Shift+R the other way).
+    - Drag a launcher in the 3D view to move it. **Shift-drag** a launcher or scenery piece up or down to raise or lower it (PageUp / PageDown: 0.5 m, with Shift 2 m). **R** turns the selected launcher (Shift+R the other way).
   - **Grid snap** (top bar): on, bases snap to park tiles, and the small ones (single mortar, laser dome, water jet) to tile corners, as in the game; R turns a quarter. Off, bases go anywhere and R turns 15°. Export to RCT3 snaps free placements to the nearest tile.
   - **Scene** (top bar): time of day (Day, Sunset, Night) with the game's sky colours, clouds and stars; a skyline backdrop (Hill, City, Desert, Island, Mountain, Snow, Spooky, Space); tile grid lines on or off; and the ground texture (plain night grass, or any of the game's 32 ground textures). Kept with the show.
   - **$** (palette footer) shows or hides all prices.
@@ -107,21 +108,26 @@ The buttons at the top:
     - **Animations:** a piece loops its animation all the time, only plays when cued, or stands still. Pick its clip in the panel.
     - **Timing:** *Cue at playhead* puts a ⟳ block on the timeline that starts the piece's animation at that moment, as long as the animation (or repeating for a set time). Line fireworks, lasers and water jets up with it. Playing or scrubbing shows the animation exactly where it would be at that time. Cue blocks can be moved, copied and pasted like any effect.
   - **Show settings:** name, daily start time, the months it plays, and music (the game's tracks or any music file).
-  - **Playback:** play, pause, stop and rewind, scrub the ruler, ¼× to 2× speed. Change the time scale with − / +.
+  - **Playback:** play, pause, stop and rewind, ¼× to 2× speed. Music plays from the playhead. **Scrubbing:** drag the time ruler or the red playhead; the show follows and a snippet of the music plays at each spot. Change the time scale with − / +.
+  - **Bursts on the bar:** a firework's bar marks each moment it bursts (thin lines), as in the game, so you can time bursts to the music.
   - **Cameras:** crowd view, autolook (follows the bursts), close up, top down, slow orbit and freelook.
   - **Selecting several effects:** drag a box across empty timeline space, or Ctrl/Shift-click them. Ctrl+A selects everything.
   - **Clipboard:** copy, cut and paste parts of a show (Ctrl+C / Ctrl+X / Ctrl+V). Pasting puts them at the playhead with their spacing and tracks kept, also into another show.
   - **Group edits:** drag one selected effect to move them all; Ctrl-drag clones them, as in the game. ←/→ nudges 0.1 s (Shift: 1 s), ↑/↓ changes track. Duplicate, Delete, Preview with their own timing, or change their effect, launcher, colour or strength together.
+  - **Removing:** right-click an effect on the timeline (or select it and press Delete).
   - **Keys:** Space play, Delete remove, Ctrl+Z/Ctrl+Y undo/redo, Ctrl+D duplicate, F fire the selection, Esc deselect (again: back), +/- time scale. Hold Alt while dragging to turn off snapping.
-  - **Saving:** your show is autosaved in the browser. **Save** downloads it as a `.fireworks.json` (including your own effects) to **Open…** later.
+  - **Saving:** your show is autosaved in the browser. Your own fireworks, lasers and water jets are kept in the browser and on disk (`~/.rct3ovl/my_effects.json`), so they survive clearing the browser's storage. **Save** downloads it as a `.fireworks.json` (including your own effects) to **Open…** later.
   - **Export to RCT3…:** downloads the show as a `.fwd`, or saves it straight into the game's `FireworkDisplays` folder, along with any of your own fireworks it uses. The game's display format only holds fireworks, launchers, music, start time and months, so lasers, water jets, aiming, landscape and colour/strength changes stay in the editor.
   - **Advanced firework editor (AFE):** RCT3's hidden Firework Designer (in the game it is unlocked by a guest named Atari; here it is always available). Click ✎ *Advanced firework editor* on the Fireworks tab.
-    - It edits a firework's whole particle tree: add, duplicate, move or remove emitters, with every setting in the game's groups (emitter rate, speed and rotation; particle basics, life, motion, special effects, modifiers).
-    - Bottom panel: the particle's colour over its life and its texture.
+    - It edits a firework's whole particle tree: add, duplicate, move or remove emitters, with every setting in the game's groups (emitter rate, speed and rotation; particle basics, life, motion, special effects, modifiers). Each slider has the game's own range and step (read from the game's Firework Designer), e.g. Parent 0–1, Gravity −2–2.
+    - **New** starts an empty firework (only the base); add emitters with **+ Child emitter**.
+    - Bottom panel: the particle's colour over its life, as a gradient with colour stops (click to add, drag to move, drag off or right-click to remove; colour picker, quick swatches, location, Reverse, Distribute), and its texture.
+    - Under the colour: how many particles one launch releases, how long it lasts and how many are on screen.
     - The firework fires in the 3D view as you edit, and Ctrl+Z undoes.
     - **Save firework** adds it to your fireworks; **Save to game** writes a `.frw` into the game's `Fireworks` folder; **Download .frw** saves the file.
-  - **Advanced laser designer** and **advanced water jet designer:** type, duration, power, beams, trail persistence, image scale and centring. Timelines of control points for colour, rotation speed, elevation and beam width (lasers), or pressure, elevation, jet radius and colour (water jets).
-    - Persisting-image lasers draw frames you sketch, or the game's laser drawings.
+    - A game installed under Program Files: Windows keeps what RCT3 saves there in its VirtualStore folder (`%LOCALAPPDATA%\VirtualStore\...`). The viewer reads fireworks, lasers, water jets, shows and drawings from there too (so the ones you made in the game's own designer show up), and saves there when it may not write into the game folder.
+  - **Advanced laser designer** and **advanced water jet designer:** type, duration, power, beams, trail persistence, image scale and centring. Timelines of control points for colour, rotation speed, elevation and beam width (lasers, up to 10 m across), or pressure, elevation, jet radius and colour (water jets).
+    - Persisting-image lasers draw frames you sketch on the game's 32 × 24 drawing pad, or the game's laser drawings.
     - Save to your lasers / water jets, to the game (`.las` / `.wjt`) or as a download.
   - **Game files:** files written into the game folder are built from the game's own files of the same kind, so they load like the originals. The game's own files are never overwritten.
   - The game's `.wma` music is converted once with ffmpeg; `rct3ovl-viewer.bat` includes it (`--with imageio-ffmpeg`).

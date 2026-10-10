@@ -50,7 +50,7 @@ with sync_playwright() as p:
     print('main tour steps:', n, '| cards without a spotlight:', centred)
     pg.reload(); pg.wait_for_timeout(3000)
     print('main tour again on reload?', bool(pg.query_selector('#tour')))
-    pg.click('#b-fireworks'); pg.wait_for_selector('#fw .ent', timeout=180000)
+    pg.click('#b-fireworks'); pg.wait_for_selector('#fw .fwk', timeout=180000); pg.select_option('#fw-show', label='Stratosphere'); pg.wait_for_selector('#fw .ent', timeout=60000)
     n, centred = walk(pg, 'mix', shots=(7, 11, 14, 21, 25, 30))
     print('mixmaster tour steps:', n, '| cards without a spotlight:', centred)
     print('spotlights that moved after appearing:', snapped)

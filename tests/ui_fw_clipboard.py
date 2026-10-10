@@ -16,7 +16,7 @@ with sync_playwright() as p:
     pg.goto(base + '/')
     pg.evaluate('localStorage.clear(); [`main`, `mixmaster`, `afe`, `laser-designer`, `jet-designer`].forEach(k => localStorage.setItem(`rct3ovl.tour.` + k, `1`))')
     pg.goto(base + '/#fireworks')
-    pg.wait_for_selector('#fw .ent', timeout=180000); pg.wait_for_timeout(1500)
+    pg.wait_for_selector('#fw .fwk', timeout=180000); pg.select_option('#fw-show', label='Stratosphere'); pg.wait_for_selector('#fw .ent', timeout=60000); pg.wait_for_timeout(1500)
     n = lambda: pg.eval_on_selector_all('#fw .ent', 'es => es.length')
     nsel = lambda: pg.eval_on_selector_all('#fw .ent.sel, #fw .ent.multi', 'es => es.length')
     head = lambda: pg.inner_text('#fw-entry').split('\n')[0]

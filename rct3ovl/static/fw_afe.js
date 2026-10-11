@@ -453,7 +453,11 @@ export function openAFE(ctx, def, key) {
     const a = e.target.dataset.a; if (!a || e.target.tagName === 'SELECT') return;
     const n = N()[sel];
     if (a === 'add') {
-      snap(); const pid = newId(); N()[pid] = particle({ Name: 'Particle' }); const eid = newId(); N()[eid] = emitter(+pid);
+      // a new emitter starts with every setting at its lowest (no particles, no speed, sizes 0, shortest life;
+      // settings that go both ways at 0): you build it up from nothing, as in the game's designer
+      snap(); const pid = newId();
+      N()[pid] = particle({ Name: 'Particle', Lifetime: 0.05, StartSize: 0, EndSize: 0, BurnSize: 0, SoundMinDist: 0, SoundMaxDist: 0 });
+      const eid = newId(); N()[eid] = emitter(+pid, { NumParticles: 0, SpeedRandom: 0, EndTime: 0 });
       const h = holderOf(sel); h.ParticleEmitterDescs = [...(h.ParticleEmitterDescs || []), +eid]; collapsed.delete(String(sel)); sel = eid; touched(true);
     }
     if (a === 'dup' && n.kind === 'emitter') {

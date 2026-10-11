@@ -234,7 +234,7 @@ async function build() {
       <label style="grid-template-columns:auto 1fr"><input type="checkbox" id="fw-gridlines" checked> Show tile grid lines</label>
       <div><div style="color:var(--dim);margin-bottom:4px">Ground <span id="fw-groundname"></span></div><div class="grounds" id="fw-grounds"></div></div>
     </div>
-    <div class="hint" id="fw-hint">Drag to orbit · right-drag to pan · wheel to zoom · click a launcher to select it</div><div class="toast" id="fw-toast"></div></div>
+    <div class="hint" id="fw-hint">Drag to orbit · right-drag to pan · wheel to zoom · click a launcher to select it · Shift-drag a launcher or scenery to raise or lower it</div><div class="toast" id="fw-toast"></div></div>
   <div class="side right">
     <div class="colresize" data-v="--fwr" style="left:-4px"></div>
     <div class="scroll">
@@ -386,7 +386,7 @@ async function build() {
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-.5, -.5, 0, .5, -.5, 0, .5, .5, 0, -.5, .5, 0]), 3));
     g.setIndex([0, 1, 2, 0, 2, 3]);
     const A = (name, n) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PARTICLES * n), n); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(name, a); return a; };
-    const at = { pos: A('iPos', 3), vel: A('iVel', 3), size: A('iSize', 2), col: A('iCol', 4), uv: A('iUV', 4) };
+    const at = { pos: A('iPos', 3), vel: A('iVel', 3), size: A('iSize', 2), col: A('iCol', 4), uv: A('iUV', 4), rot: A('iRot', 1) };
     const mat = mirror => new THREE.ShaderMaterial({
       // glowing particles: the game's flare sprites keep their glow in RGB with alpha 0, drawn additively (one + one)
       uniforms: { map: { value: page }, level: { value: 0 }, gain: { value: mirror ? 0.35 : 1 } }, transparent: true, depthWrite: false, depthTest: !mirror,
@@ -394,7 +394,7 @@ async function build() {
                    : { blending: THREE.NormalBlending }),
       ...(mirror ? { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp } : {}),
       defines: Object.assign(additive ? { ADDITIVE: 1 } : {}, mirror ? { MIRROR: 1 } : {}),
-      vertexShader: `attribute vec3 iPos; attribute vec3 iVel; attribute vec2 iSize; attribute vec4 iCol; attribute vec4 iUV;
+      vertexShader: `attribute vec3 iPos; attribute vec3 iVel; attribute vec2 iSize; attribute vec4 iCol; attribute vec4 iUV; attribute float iRot;
         uniform float level; varying vec2 vUv; varying vec4 vCol;
         void main() {
           vec3 P = iPos, V = iVel;
@@ -405,6 +405,7 @@ async function build() {
           vec3 v = (modelViewMatrix * vec4(V, 0.0)).xyz;
           float L = length(v.xy);
           vec2 ax = L > 1e-4 ? v.xy / L : vec2(1.0, 0.0);
+          if (iRot != 0.0 && iSize.y < 1e-3) ax = vec2(cos(iRot), sin(iRot));   // a spinning sprite (not stretched)
           vec2 ay = vec2(-ax.y, ax.x);
           c.xy += ax * position.x * (iSize.x + iSize.y) + ay * position.y * iSize.x;
           gl_Position = projectionMatrix * c;
@@ -451,6 +452,8 @@ async function build() {
     d = { n, fw, life: n.Lifetime || 0, lifeR: n.LifetimeRandom || 0, s0: n.StartSize ?? 1, s1: n.EndSize ?? 1, sR: n.SizeRandom || 0,
       drag: n.Drag || 0, grav: n.GravityScale || 0, stretch: n.VelStretch || 0, sound: n.SoundName || '',
       sndMin: n.SoundMinDist || 70, sndMax: n.SoundMaxDist || 300, spin: n.CameraSpinRate || 0,
+      pspin: (n.SpinRateX || n.SpinRateY) ? [n.SpinRateX || 0, n.SpinRateY || 0] : null,       // the particle turns: its bursts spin
+      burnN: Math.max(0, Math.min(50, n.BurnLength | 0)), burnS: n.BurnSize ?? 0.2,              // a burning trail of copies
       R: curve(n.ColourR), G: curve(n.ColourG), B: curve(n.ColourB),
       additive: !A.v.length || Math.max(...A.v) < 0.5,
       useMod: !!n.ColourModifierEnable, anyC: fl.anyC,
@@ -514,6 +517,7 @@ async function build() {
       const cd = descInfo(p.d.fw, e.desc);
       const sp = Math.hypot(p.vx, p.vy, p.vz);
       let h = sp > 0.05 ? [p.vx / sp, p.vy / sp, p.vz / sp] : p.h;
+      if (p.d.pspin) h = rotXYZ(h, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0);
       if (e.spin[0] || e.spin[1] || e.spin[2] || e.spin0[0] || e.spin0[1] || e.spin0[2])
         h = rotXYZ(h, e.spin0[0] + e.spin[0] * p.age, e.spin0[1] + e.spin[1] * p.age, e.spin0[2] + e.spin[2] * p.age);
       for (let k = 0; k < n; k++) {
@@ -546,12 +550,15 @@ async function build() {
     }
     parts.length = j;
   }
+  const kk = d => d.additive ? 'add' : 'blend';
   function draw() {
     const cnt = { add: 0, blend: 0 };
     for (const p of parts) {
       const d = p.d;
       if (!d.uv) continue;
-      const k = d.additive ? 'add' : 'blend', l = layers[k], i = cnt[k]++;
+      const k = d.additive ? 'add' : 'blend', l = layers[k];
+      if (cnt[k] >= MAX_PARTICLES) continue;
+      const i = cnt[k]++;
       const f = Math.min(1, p.age / p.life);
       const size = (d.s0 + (d.s1 - d.s0) * f) * (1 + d.sR * (p.r0 - 0.5) * 2);
       let r = curveAt(d.R, f), g = curveAt(d.G, f), b = curveAt(d.B, f);
@@ -565,7 +572,19 @@ async function build() {
       l.at.vel.array.set([p.vx, p.vy, p.vz], i * 3);
       l.at.size.array.set([size, sp * d.stretch], i * 2);
       l.at.col.array.set([r, g, b, d.additive ? (d.gain ?? 1) : (1 - f * 0.6)], i * 4);
-      l.at.uv.array.set(d.frames ? d.frames[Math.min(d.frames.length - 1, Math.floor((f * d.anim % 1) * d.frames.length))] : d.uv, i * 4);
+      const uv = d.frames ? d.frames[Math.min(d.frames.length - 1, Math.floor((f * d.anim % 1) * d.frames.length))] : d.uv;
+      l.at.uv.array.set(uv, i * 4);
+      l.at.rot.array[i] = d.spin ? p.r0 * 6.2832 + d.spin * p.age : 0;
+      // Burn Length: that many fading copies of Burn Size along the path just behind it
+      for (let k = 1; k <= d.burnN && cnt[kk(d)] < MAX_PARTICLES; k++) {
+        const j = cnt[kk(d)]++, back = k * 0.025, fade = 1 - k / (d.burnN + 1);
+        l.at.pos.array.set([p.x - p.vx * back, p.y - p.vy * back, p.z - p.vz * back], j * 3);
+        l.at.vel.array.set([p.vx, p.vy, p.vz], j * 3);
+        l.at.size.array.set([d.burnS * (1 + d.sR * (p.r0 - 0.5) * 2), 0], j * 2);
+        l.at.col.array.set([r * fade, g * fade, b * fade, d.additive ? (d.gain ?? 1) : (1 - f * 0.6) * fade], j * 4);
+        l.at.uv.array.set(uv, j * 4);
+        l.at.rot.array[j] = 0;
+      }
     }
     for (const k of ['add', 'blend']) {
       const l = layers[k]; l.g.instanceCount = cnt[k];
@@ -1004,9 +1023,13 @@ async function build() {
   function seek(t) {
     t = clamp(t, 0, timelineEnd());
     parts = []; S.fired.clear();
-    // replay what is still in the air at t: launches up to 10 s before, simulated silently
-    const from = Math.max(0, t - 10), dt = 1 / 30;
-    const es = S.show ? S.show.entries.filter(e => e.time <= t && e.time > from - 1e-6).sort((a, b) => a.time - b.time) : [];
+    // replay what is still in the air at t: only the launches still running then (each from its own start), silently
+    const dt = 1 / 20;   // coarse steps: only where things are at t matters, not every frame on the way
+    const es = S.show ? S.show.entries.filter(e => e.time <= t && e.time > t - 10 && (e.kind || 'firework') === 'firework' && e.time + fxDur(e) + 0.5 > t)
+      .sort((a, b) => a.time - b.time) : [];
+    let from = es.length ? es[0].time : t;
+    // a water jet running at t: its last few seconds of water are still in the air
+    if (S.show?.entries.some(e => e.kind === 'jet' && e.time <= t && e.time + fxDur(e) > t - 3)) from = Math.min(from, Math.max(0, t - 3));
     let k = 0, sim = from;
     silent = true;
     while (sim < t - 1e-6) {
@@ -1177,6 +1200,8 @@ async function build() {
     const def = given ? clone(given) : key ? clone(REG[kind][key]) : null;
     if (def && !(key || '').startsWith('my:')) { def.title = def.title + ' (copy)'; if (def.nodes?.[def.root]) def.nodes[def.root].Name = def.title; }
     const mod = await import(kind === 'firework' ? './fw_afe.js' : './fw_designers.js');
+    // the editor's preview plays alone: stop the show and any palette previews (they drew on top of it)
+    play(false); previews = []; parts = [];
     const ownKey = key && key.startsWith('my:') ? key : null;
     if (kind === 'firework') mod.openAFE(ctx, def, ownKey);
     else if (kind === 'laser') mod.openLaserDesigner(ctx, def || defaultLaser(), ownKey);
@@ -1210,6 +1235,7 @@ async function build() {
     toast('Downloaded ' + a.download);
   }
   async function saveToGame(kindExt, payload, name) { return (await post('/api/fw/save', { kind: kindExt, data: payload, name })).json(); }
+  let afeCam = null;
   const ctx = {
     THREE, root, view, scene, camera, controls, renderer, esc, hex, unhex, clamp, fmt, store, toast, ask, dialog,
     get data() { return data; }, REG, fireworkDuration, descCacheClear: () => descCache.clear(),
@@ -1223,7 +1249,15 @@ async function build() {
     previewLauncher: kind => compatibleLauncher(kind),
     // resize once the AFE's own panels are in place: in between, the view briefly sits in the narrow left column, and
     // as it ends up the same size as before, the resize observer never fires (the view stayed squeezed: stretched look)
-    setAfeMode(on) { root.classList.toggle('afe', on); requestAnimationFrame(() => requestAnimationFrame(resize)); },
+    setAfeMode(on) {
+      root.classList.toggle('afe', on); requestAnimationFrame(() => requestAnimationFrame(resize));
+      // frame the launcher the firework is fired from, close enough to see it (crowd view showed it tiny); restore after
+      if (on) {
+        afeCam = { p: camera.position.clone(), t: controls.target.clone() };
+        const li = compatibleLauncher('firework'), tw = li >= 0 ? tubeWorld(li, 0) : null, O = tw ? tw[0] : new THREE.Vector3(0, terrain.heightAt(0, 0), 0);
+        controls.target.set(O.x, O.y + 24, O.z); camera.position.set(O.x + 12, O.y + 12, O.z + 52); controls.update();
+      } else if (afeCam) { camera.position.copy(afeCam.p); controls.target.copy(afeCam.t); controls.update(); afeCam = null; }
+    },
     reload: () => $('#fw-reload', root).onclick(),
     newLaser: defaultLaser, newJet: defaultJet,
     particleCount: () => parts.length,
@@ -1455,6 +1489,9 @@ async function build() {
       (S.show.aim || []).map((k, i) => `<div class="key${k === S.selAim ? ' sel' : k.launchers.includes(S.selLauncher) ? ' mine' : ''}" data-i="${i}" style="left:${k.t * S.pps}px"
         title="${fmt(k.t)} · yaw ${k.yaw.toFixed(0)}° pitch ${k.pitch.toFixed(0)}° · launchers ${k.launchers.map(x => '#' + (x + 1)).join(', ')} · right-click to remove"></div>`).join('') + '</div>';
   }
+  // editing an aim point shows it: the playhead goes to its time (elsewhere the launchers point between points, so
+  // with several points an edit barely moved them)
+  function focusAim(k) { if (k && Math.abs(S.t - k.t) > 1e-3) { play(false); seek(k.t); } }
   function renderAimPanel() {
     applyAims(S.t);   // shows or hides the aim arrows
     const sec = $('#fw-aimsec', root), k = S.selAim;
@@ -1475,7 +1512,7 @@ async function build() {
   });
   $('#fw-aim', root).addEventListener('change', ev => {
     const k = S.selAim; if (!k) return;
-    if (ev.target.dataset.k === 't') k.t = Math.max(0, +ev.target.value || 0);
+    if (ev.target.dataset.k === 't') { k.t = Math.max(0, +ev.target.value || 0); focusAim(k); }
     if (ev.target.dataset.l != null) {
       const i = +ev.target.dataset.l;
       k.launchers = ev.target.checked ? [...new Set([...k.launchers, i])].sort((a, b) => a - b) : k.launchers.filter(x => x !== i);
@@ -1510,11 +1547,16 @@ async function build() {
       k = { t, yaw: Math.round(cur.yaw), pitch: Math.round(cur.pitch), launchers: [S.selLauncher] };
       S.show.aim.push(k); changed(`Aiming control point for launcher #${S.selLauncher + 1} at ${fmt(t)}`);
     }
-    S.selAim = k; renderAimBar(); renderAimPanel();
+    S.selAim = k; focusAim(k); renderAimBar(); renderAimPanel();
     aimbar.setPointerCapture(ev.pointerId);
     let moved = false;
-    aimbar.onpointermove = e2 => { if (!moved) { snapshot(); moved = true; } k.t = tAt(e2.clientX); renderAimBar(); applyAims(S.t); };
-    aimbar.onpointerup = () => { aimbar.onpointermove = aimbar.onpointerup = null; if (moved) { changed(); renderAimPanel(); } };
+    const x0 = ev.clientX;
+    aimbar.onpointermove = e2 => {
+      if (!moved && Math.abs(e2.clientX - x0) < 4) return;   // a click selects; only a real drag moves the point
+      if (!moved) { snapshot(); moved = true; }
+      k.t = tAt(e2.clientX); renderAimBar();
+    };
+    aimbar.onpointerup = () => { aimbar.onpointermove = aimbar.onpointerup = null; if (moved) { focusAim(k); changed(); renderAimPanel(); } };
   });
 
   // ---- UI: timeline ---------------------------------------------------------------------------------------------
@@ -1647,11 +1689,14 @@ async function build() {
     const wasIn = S.multi.has(ent);
     if (!wasIn && !add) select([ent], ent); else if (wasIn) S.sel = ent;
     S.selLauncher = ent.launcher; obj3dMarkSel(); renderLaunchers(); renderAimBar();
-    let group = wasIn || !add ? selList() : [...selList(), ent];
+    // Ctrl-drag on an effect outside the selection clones just that one
+    let group = cloneKey && !wasIn ? [ent] : wasIn || !add ? selList() : [...selList(), ent];
     if (!group.includes(ent)) group.push(ent);
     const x0 = e.clientX, y0 = e.clientY, t0 = ent.time; let moved = false, orig = null, els = null, minT = 0, minTr = 0;
-    el.setPointerCapture(e.pointerId);
-    el.onpointermove = ev => {
+    // capture on the timeline itself: cloning redraws the blocks, and a removed block loses the pointer (the copies
+    // stayed on top of the originals)
+    canvas.setPointerCapture(e.pointerId);
+    canvas.onpointermove = ev => {
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
       if (!moved) {
         snapshot(); moved = true;
@@ -1669,8 +1714,8 @@ async function build() {
         const xe = els.get(x); if (xe) { xe.style.left = x.time * S.pps + 'px'; xe.style.top = x.track * S.rowH + 'px'; }
       }
     };
-    el.onpointerup = () => {
-      el.onpointermove = el.onpointerup = null;
+    canvas.onpointerup = () => {
+      canvas.onpointermove = canvas.onpointerup = null;
       if (moved) { changed(cloneKey ? `Cloned ${group.length}` : group.length > 1 ? `Moved ${group.length} effects` : ''); renderEdits(); }
       else if (add) {   // Ctrl/Shift-click: add to or remove from the selection
         if (wasIn) { S.multi.delete(ent); select([...S.multi]); } else select([...S.multi, ent], ent);
@@ -1895,6 +1940,7 @@ async function build() {
     ray.setFromCamera(ndc(e), camera);
     const hit = ray.intersectObjects(pickers, false)[0], li = hit ? hit.object.userData.launcher : null;
     if (S.selAim && li != null && S.selAim.launchers.includes(li)) {
+      focusAim(S.selAim);
       controls.enabled = false; aimDrag = { x: e.clientX, y: e.clientY, yaw: S.selAim.yaw, pitch: S.selAim.pitch }; snapshot();
       renderer.domElement.setPointerCapture(e.pointerId); return;
     }
@@ -1949,13 +1995,14 @@ async function build() {
     if (aimDrag && S.selAim) {
       S.selAim.yaw = clamp(Math.round(aimDrag.yaw + (e.clientX - aimDrag.x) * 0.5), -180, 180);
       S.selAim.pitch = clamp(Math.round(aimDrag.pitch - (e.clientY - aimDrag.y) * 0.4), -80, 80);
-      applyAims(S.t); renderAimPanel(); renderAimBar();
+      applyAims(S.t);   // the panel's sliders follow (rebuilding the panel on every move was wasted work)
+      for (const f of ['yaw', 'pitch']) { const inp = $(`#fw-aim [data-k="${f}"]`, root); if (inp) inp.value = S.selAim[f]; }
     }
   });
   renderer.domElement.addEventListener('pointerleave', () => terrain.showRing(null));
   const endDrag = () => {
     if (painting) { painting = false; controls.enabled = true; S.show.terrain = terrain.getData(); placeAll(); changed(); }
-    if (aimDrag) { aimDrag = null; controls.enabled = true; changed(); }
+    if (aimDrag) { aimDrag = null; controls.enabled = true; changed(); renderAimBar(); }
     if (moveDrag) {
       const m = moveDrag; moveDrag = null; controls.enabled = true; showCard(null);
       if (m.moved) { changed(m.lift ? 'Raised to ' + ((m.si != null ? S.show.scenery[m.si] : S.show.launchers[m.li])?.lift || 0).toFixed(1) + ' m' : m.si != null ? `Moved ${S.show.scenery[m.si]?.title}` : `Moved launcher #${m.li + 1}`); renderLaunchers(); renderSceneryPanel(); return 'moved'; }
@@ -1981,7 +2028,7 @@ async function build() {
   $('#fw-land', root).onclick = ev => {
     const on = !landp.classList.contains('on'); landp.classList.toggle('on', on); ev.target.classList.toggle('on', on);
     if (!on) { tool = null; terrain.showRing(null); landp.querySelectorAll('.tools button').forEach(b => b.classList.remove('on')); }
-    $('#fw-hint', root).textContent = on ? 'Pick a tool, then left-drag on the ground · right-drag to pan · wheel to zoom' : 'Drag to orbit · right-drag to pan · wheel to zoom · click a launcher to select it';
+    $('#fw-hint', root).textContent = on ? 'Pick a tool, then left-drag on the ground · right-drag to pan · wheel to zoom' : 'Drag to orbit · right-drag to pan · wheel to zoom · click a launcher to select it · Shift-drag a launcher or scenery to raise or lower it';
   };
   landp.querySelector('.tools').onclick = ev => {
     const b = ev.target.closest('button'); if (!b) return;

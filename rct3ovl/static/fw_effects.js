@@ -123,7 +123,9 @@ export function drawLaser(R, def, tau, O, q, ground, opts = {}) {
     }
     const ex = O.x + d.x * len, ey = O.y + d.y * len, ez = O.z + d.z * len;
     // a beam `width` metres across that spreads a little with distance (width is the game's Spread: 1 = normal)
-    R.add(O.x, O.y, O.z, ex, ey, ez, 0.35 * width, width * (1 + len * 0.006), r, g, b, a, fade, hit ? fade * 0.9 : fade * 0.05);
+    // a wide beam spreads its light: dimmer per area, so wide beams don't wash the sky out white
+    const spread = Math.min(1, Math.pow(1.5 / width, 0.85));
+    R.add(O.x, O.y, O.z, ex, ey, ez, 0.35 * width, width * (1 + len * 0.006), r, g, b, a * spread, fade, hit ? fade * 0.9 : fade * 0.05);
     if (hit) {                                                    // glowing spot where it lands
       const s = 0.6 + width * 0.6;
       R.add(ex - s, ey + 0.05, ez, ex + s, ey + 0.05, ez, s, s, r, g, b, a * 1.4, fade, fade);

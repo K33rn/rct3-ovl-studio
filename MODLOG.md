@@ -475,3 +475,22 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   window leaves at its end), timeline-only edits redraw only the timeline + inspector, autosave debounced, undo
   rebuilds 3D launchers only when launchers / scenery / ground changed.
 - Shift-drag / PageUp-PageDown raise launchers (new `lift`) and scenery. New firework = base only.
+
+## 2026-10-11: Fireworks bug list, round 2
+- Ctrl-drag clone: the clone redrew the timeline, the dragged block left the DOM and lost pointer capture, so the
+  copies never moved (they sat on the originals). Block drags now capture on the timeline canvas. Ctrl-drag on a
+  block outside the selection clones only that block.
+- Seek re-simulated 10 s of every launch (80-130 ms per timeline click on Stratosphere): now only launches still
+  burning at t (from their own start; jets: the last 3 s), in 1/20 s steps.
+- Aim points: launchers point between points, so editing a point away from the playhead barely moved them (with
+  several points it felt stuck/laggy). Selecting / editing / dragging a point (or its launcher) moves the playhead
+  to it. A click on a point no longer nudges it (4 px threshold). 3D aim drags update the sliders in place.
+- New child emitter: every value at its lowest (N 0, sphere 0, end time 0; particle life 0.05, sizes 0).
+- Particle fields the preview ignored (unused by the shipped fireworks, used in hand-made ones): BurnLength/BurnSize
+  (trail of N fading copies 0.025 s apart), CameraSpinRate (sprite rotation, unstretched sprites), particle
+  SpinRateX/Y (turns the heading children are released along). UpScale still unknown (game values 0.2-20, often
+  with gravity 2-4: maybe upward lift) - not drawn.
+- Editors stop the show and palette previews (a palette laser preview kept looping on the designer's dome); the AFE
+  frames its launcher and restores the camera on close.
+- Laser beams dim as they widen (alpha x (1.5 / width)^0.85): 12 beams at width 10 washed the view white.
+- Checked: an AFE-style firework (new string ids, 4-stop colours, burn, SmokeAnim) round-trips .frw exactly.

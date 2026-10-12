@@ -93,6 +93,15 @@ export function createRibbons(scene, max = 8000) {
 const _v = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 function dirLocal(elev, phi) { return new THREE.Vector3(Math.cos(elev) * Math.cos(phi), Math.sin(elev), Math.cos(elev) * Math.sin(phi)); }
 
+// Beam width (the game's BeamWidth timeline, stored as Spread): the game's lasers use about 1 for a normal thin beam
+// and up to ~1.57 (Searchlight) for a broad cone of light. -> the beam's half-angle: thin up to 1, then widening fast
+// (17 degrees at pi/2), at most 34 degrees.
+export function beamAngle(w) {
+  if (w <= 1) return 0.0025 * Math.max(0.05, w);
+  return Math.min(0.6, 0.0025 * Math.pow(0.3 / 0.0025, (w - 1) / (Math.PI / 2 - 1)));
+}
+const clampN = (x, a, b) => Math.max(a, Math.min(b, x));
+
 // Draw a laser `tau` seconds after it started, from origin O with the emitter's orientation q.
 // ground(x, z) -> terrain height (beams stop there and leave a spot). opts: {tint, trail (bool)}
 export function drawLaser(R, def, tau, O, q, ground, opts = {}) {
@@ -104,8 +113,9 @@ export function drawLaser(R, def, tau, O, q, ground, opts = {}) {
   if (opts.tint) { r *= opts.tint[0]; g *= opts.tint[1]; b *= opts.tint[2]; }
   if (a < 0.01 || r + g + b < 0.01) return;
   const elev = +blenderAt(def.elevation, tau, dur) || 0, rot = blenderIntegral(def.rotvel, tau, dur);
-  const width = Math.max(0.05, +blenderAt(def.width, tau, dur) || 1);
-  const N = Math.max(1, Math.min(200, def.beams | 0)), L = Math.max(1, Math.min(900, def.power || 100));
+  const width = Math.max(0, +blenderAt(def.width, tau, dur) || 0);
+  const N = Math.max(1, Math.min(200, def.beams | 0)), L = Math.max(1, Math.min(20000, def.power || 100));   // the game's Power: 5..20000 m
+  const th = beamAngle(width);
   const fade = opts.fade ?? 1;
   const beam = (d) => {
     d.applyQuaternion(q);
@@ -124,10 +134,11 @@ export function drawLaser(R, def, tau, O, q, ground, opts = {}) {
     const ex = O.x + d.x * len, ey = O.y + d.y * len, ez = O.z + d.z * len;
     // a beam `width` metres across that spreads a little with distance (width is the game's Spread: 1 = normal)
     // a wide beam spreads its light: dimmer per area, so wide beams don't wash the sky out white
-    const spread = Math.min(1, Math.pow(1.5 / width, 0.85));
-    R.add(O.x, O.y, O.z, ex, ey, ez, 0.35 * width, width * (1 + len * 0.006), r, g, b, a * spread, fade, hit ? fade * 0.9 : fade * 0.05);
+    const w0 = 0.2 + 0.1 * width, w1 = w0 + 2 * len * Math.tan(th);
+    const spread = clampN(Math.pow(1.5 / ((w0 + w1) / 2), 0.7), 0.06, 1);   // a wide beam spreads its light: dimmer
+    R.add(O.x, O.y, O.z, ex, ey, ez, w0, w1, r, g, b, a * spread, fade, hit ? fade * 0.9 : fade * 0.05);
     if (hit) {                                                    // glowing spot where it lands
-      const s = 0.6 + width * 0.6;
+      const s = 0.6 + len * Math.tan(th);
       R.add(ex - s, ey + 0.05, ez, ex + s, ey + 0.05, ez, s, s, r, g, b, a * 1.4, fade, fade);
       R.add(ex, ey + 0.05, ez - s, ex, ey + 0.05, ez + s, s, s, r, g, b, a * 1.4, fade, fade);
     }

@@ -3,7 +3,7 @@
 // jet radius, colour): click an empty spot to add a point, drag a point to move it, right-click to delete it, and
 // edit the selected point's value underneath. Persisting-image lasers draw frames made on a sketch pad.
 // The effect plays on a laser dome / water jet base in the scene while you edit.
-import { blenderAt } from './fw_effects.js';
+import { blenderAt, beamAngle } from './fw_effects.js';
 import { runTour } from './tour.js';
 
 const RENDER = ['Cone of Light', 'Plane of Light', 'Persisting Image'];
@@ -229,9 +229,9 @@ export function openLaserDesigner(ctx, def, key) {
       <label>Name:<input type="text" data-f="name" value="${ctx.esc(d.name)}"></label>
       <label>Type:<select data-f="render">${RENDER.map((r, i) => `<option value="${i}"${i === d.render ? ' selected' : ''}>${r}</option>`).join('')}</select></label>
       ${num(ctx, 'duration', 'Duration:', d.duration, 0.5, 120, 0.5, 'Seconds the laser runs')}
-      ${num(ctx, 'power', 'Power:', d.power, 5, 900, 5, 'How far the beams travel before becoming invisible (m)')}
-      ${num(ctx, 'trail', 'Trail Persist.:', d.trail, 0, 1, 0.01, "How much 'afterglow' appears behind each beam as it moves (s)")}
-      ${d.render === 2 ? num(ctx, 'image_scale', 'Scale:', d.image_scale, 1, 60, 0.5, 'Image size') : num(ctx, 'beams', 'No. beams:', d.beams, 1, 100, 1, 'Beams fired from the emitter')}
+      ${num(ctx, 'power', 'Power:', d.power, 5, 20000, 5, 'How far the beams travel before becoming invisible (m)')}
+      ${num(ctx, 'trail', 'Trail Persist.:', d.trail, 0, 2, 0.01, "How much 'afterglow' appears behind each beam as it moves (s)")}
+      ${d.render === 2 ? num(ctx, 'image_scale', 'Spread:', d.image_scale, 1, 45, 0.5, 'How wide the image is projected') : num(ctx, 'beams', 'No. beams:', d.beams, 1, 100, 1, 'Beams fired from the emitter')}
       <label title="Point times stretch when the duration changes"><span>Scale settings with duration</span><input type="checkbox" data-f="scale" ${d.colour.scale ? 'checked' : ''}></label>
       ${d.render === 2 ? `<label><span>Centralise image projection</span><input type="checkbox" data-f="centre" ${d.centre ? 'checked' : ''}></label>` : '<span></span>'}
       <label>Cost:<span data-cost></span></label>`,
@@ -260,7 +260,7 @@ export function openLaserDesigner(ctx, def, key) {
       { key: 'colour', label: 'Color', colour: true },
       { key: 'rotvel', label: 'Rotation speed', min: -15, max: 15, step: 0.01, unit: 'rad/s', show: v => (v * 180 / Math.PI).toFixed(0) + '°/s' },
       { key: 'elevation', label: 'Elevation', min: -0.2, max: Math.PI / 2, step: 0.01, unit: 'rad', show: deg },
-      { key: 'width', label: 'Beam width (spread)', min: 0.1, max: 10, step: 0.01, unit: '' },
+      { key: 'width', label: 'Beam width', min: 0, max: 2, step: 0.01, unit: '', show: v => { const a = beamAngle(v) * 360 / Math.PI; return v <= 1 ? 'thin beam' : `cone ${a < 10 ? a.toFixed(1) : a.toFixed(0)}° wide (1 = a normal laser, 1.57 = Searchlight)`; } },
     ],
   });
 }

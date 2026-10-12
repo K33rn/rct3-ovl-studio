@@ -44,10 +44,10 @@ const unhex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
                 set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } } };
 
-let ui = null;   // built once
+let ui = null, building = null;   // built once (two quick opens share the one build: they used to make two editors)
 
 export async function openFireworks({ onBack, open }) {
-  if (!ui) ui = await build();
+  if (!ui) ui = await (building ??= build());
   ui.onBack = onBack;
   ui.root.style.display = 'grid';
   ui.resize(); ui.start();
@@ -391,7 +391,7 @@ async function build() {
       // glowing particles: the game's flare sprites keep their glow in RGB with alpha 0, drawn additively (one + one)
       uniforms: { map: { value: page }, level: { value: 0 }, gain: { value: mirror ? 0.35 : 1 } }, transparent: true, depthWrite: false, depthTest: !mirror,
       ...(additive ? { blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendEquation: THREE.AddEquation }
-                   : { blending: THREE.NormalBlending }),
+                   : { blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendEquation: THREE.AddEquation }),
       ...(mirror ? { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp } : {}),
       defines: Object.assign(additive ? { ADDITIVE: 1 } : {}, mirror ? { MIRROR: 1 } : {}),
       vertexShader: `attribute vec3 iPos; attribute vec3 iVel; attribute vec2 iSize; attribute vec4 iCol; attribute vec4 iUV; attribute float iRot;
@@ -418,7 +418,8 @@ async function build() {
         #ifdef ADDITIVE
           gl_FragColor = vec4(t.rgb * vCol.rgb * vCol.a * gain, 1.0);
         #else
-          gl_FragColor = vec4(t.rgb * vCol.rgb, t.a * vCol.a * gain); if (gl_FragColor.a < 0.003) discard;
+          // premultiplied: the sheet's RGB is already scaled by its alpha (smoke: RGB = alpha, i.e. white smoke)
+          gl_FragColor = vec4(t.rgb * vCol.rgb * gain, t.a * vCol.a * gain);
         #endif
         }`,
     });
@@ -455,7 +456,12 @@ async function build() {
       pspin: (n.SpinRateX || n.SpinRateY) ? [n.SpinRateX || 0, n.SpinRateY || 0] : null,       // the particle turns: its bursts spin
       burnN: Math.max(0, Math.min(50, n.BurnLength | 0)), burnS: n.BurnSize ?? 0.2,              // a burning trail of copies
       R: curve(n.ColourR), G: curve(n.ColourG), B: curve(n.ColourB),
-      additive: !A.v.length || Math.max(...A.v) < 0.5,
+      // How the game draws particles (premultiplied alpha): the sprite's colour is added and what is behind darkens by
+      // sprite alpha x the particle's alpha curve. Flares and fire have no alpha, so they always glow; smoke, spray,
+      // bubbles and rubble fade in and out with the alpha curve (the game's smoke goes 0 -> 1 -> 0); a flare with
+      // alpha 0 (Krakatoa's) still glows. Before, alpha >= 0.5 meant "straight-alpha solid": smoke came out near black
+      // and a flare with Glow off vanished. Particles whose alpha is 0 all life go to the additive layer (same look).
+      additive: !A.v.length || Math.max(...A.v) < 0.01, A,
       useMod: !!n.ColourModifierEnable, anyC: fl.anyC,
       uv: sp ? toUV(sp.rect) : null,
       frames: sp?.frames ? sp.frames.map(toUV) : null, anim: n.AnimTimeScale ?? 1,   // animated sheets: a frame per moment of life
@@ -571,7 +577,8 @@ async function build() {
       l.at.pos.array.set([p.x, p.y, p.z], i * 3);
       l.at.vel.array.set([p.vx, p.vy, p.vz], i * 3);
       l.at.size.array.set([size, sp * d.stretch], i * 2);
-      l.at.col.array.set([r, g, b, d.additive ? (d.gain ?? 1) : (1 - f * 0.6)], i * 4);
+      const op = d.additive ? (d.gain ?? 1) : clamp(curveAt(d.A, f), 0, 1);
+      l.at.col.array.set([r, g, b, op], i * 4);
       const uv = d.frames ? d.frames[Math.min(d.frames.length - 1, Math.floor((f * d.anim % 1) * d.frames.length))] : d.uv;
       l.at.uv.array.set(uv, i * 4);
       l.at.rot.array[i] = d.spin ? p.r0 * 6.2832 + d.spin * p.age : 0;
@@ -581,7 +588,7 @@ async function build() {
         l.at.pos.array.set([p.x - p.vx * back, p.y - p.vy * back, p.z - p.vz * back], j * 3);
         l.at.vel.array.set([p.vx, p.vy, p.vz], j * 3);
         l.at.size.array.set([d.burnS * (1 + d.sR * (p.r0 - 0.5) * 2), 0], j * 2);
-        l.at.col.array.set([r * fade, g * fade, b * fade, d.additive ? (d.gain ?? 1) : (1 - f * 0.6) * fade], j * 4);
+        l.at.col.array.set([r * fade, g * fade, b * fade, d.additive ? op : op * fade], j * 4);
         l.at.uv.array.set(uv, j * 4);
         l.at.rot.array[j] = 0;
       }
@@ -711,7 +718,7 @@ async function build() {
     sceneryObjs.forEach((o, i) => placeScenery(i));
     placeAll(); markScenery(); renderTimeline(); renderSceneryPanel();
   }
-  function placeScenery(i) {
+  function placeScenery(i) { kick();
     const s = S.show.scenery?.[i], o = sceneryObjs[i]; if (!s || !o) return;
     const [x, z] = worldOf({ col: s.col, row: s.row, corner: -1, type: '' });
     o.obj.position.set(x, surfaceAt(x, z, o.obj) + (s.lift || 0), z);
@@ -730,7 +737,7 @@ async function build() {
     }
     return y;
   }
-  function markScenery() {
+  function markScenery() { kick();
     const o = S.selScenery != null ? sceneryObjs[S.selScenery] : null;
     selBox.visible = !!o && S.pick === 'scenery';
     if (o) selBox.setFromObject(o.obj);
@@ -765,7 +772,7 @@ async function build() {
     return { kind: 'scenery', key: 'cue', title: `${s ? s.title || s.name.split(':')[0] : '(removed piece)'} #${(e.scenery ?? 0) + 1}: ${e.clip || c?.name || 'animation'}${e.repeat ? ' ↻' : ''}`,
              duration: e.repeat ? (e.length || 10) : (c?.duration || 5), colour_sw: [0.55, 0.85, 0.55] };
   }
-  function placeAll() { launcherObjs.forEach((o, i) => S.show.launchers[i] && placeLauncher(o.obj, S.show.launchers[i])); applyAims(S.t); }
+  function placeAll() { kick(); launcherObjs.forEach((o, i) => S.show.launchers[i] && placeLauncher(o.obj, S.show.launchers[i])); applyAims(S.t); }
   // base aiming: control points {t, yaw, pitch (degrees), launchers: [indices]} on the aiming bar. A launcher points
   // the way its first control point says until then, follows the points in between, and holds the last one.
   function aimAt(li, t) {
@@ -781,7 +788,7 @@ async function build() {
   // Aiming turns where a launcher fires, not the launcher: the base stays put (turning the whole model made mortars
   // swing about during a show). aimQ: the aim in the base's own frame, applied to its tubes' directions.
   const _e = new THREE.Euler(), _q = new THREE.Quaternion();
-  function applyAims(t) {
+  function applyAims(t) { kick();
     launcherObjs.forEach((o, i) => {
       const l = S.show.launchers[i]; if (!l) return;
       const a = aimAt(i, t);
@@ -802,7 +809,7 @@ async function build() {
     const bq = o.obj.getWorldQuaternion(_q);
     return d.applyQuaternion(bq.clone().invert()).applyQuaternion(o.aimQ).applyQuaternion(bq).normalize();
   }
-  function obj3dMarkSel() {
+  function obj3dMarkSel() { kick();
     const aimed = new Set(S.selAim ? S.selAim.launchers : []);
     launcherObjs.forEach((o, i) => { o.label.element.classList.toggle('sel', i === S.selLauncher); o.label.element.classList.toggle('aim', aimed.has(i)); if (o.arrow && !aimed.has(i)) o.arrow.visible = false; });
     if (aimed.size) applyAims(S.t);
@@ -925,7 +932,7 @@ async function build() {
 
   // ---- scene: time of day, backdrop, ground, grid lines (kept with the show) ------------------------------------------
   const defScene = () => ({ sky: 'night', backdrop: '', ground: -1, gridLines: true });
-  function applyScene() {
+  function applyScene() { kick();
     const sc = S.show.scene = Object.assign(defScene(), S.show.scene || {}), k = SKIES[sc.sky] || SKIES.night;
     skyMat.uniforms.u.value = k.u; skyMat.uniforms.starAmt.value = k.stars; skyMat.uniforms.cloudAmt.value = sc.sky === 'night' ? 0 : 1;
     hemi.intensity = k.hemi; moon.intensity = k.sun;
@@ -1020,7 +1027,7 @@ async function build() {
   }
 
   // ---- playback -----------------------------------------------------------------------------------------------
-  function seek(t) {
+  function seek(t) { kick();
     t = clamp(t, 0, timelineEnd());
     parts = []; S.fired.clear();
     // replay what is still in the air at t: only the launches still running then (each from its own start), silently
@@ -1124,7 +1131,7 @@ async function build() {
       : `<button data-c="${kind}" title="Advanced ${KINDS[kind].one} editor">✎ Advanced ${kind === 'laser' ? 'laser' : 'water jet'} designer</button>`;
     const all = Object.values(REG[kind]).filter(x => !f || x.title.toLowerCase().includes(f)).sort((a, b) => a.title.localeCompare(b.title));
     const row = x => `<div class="fwk" draggable="true" data-f="${esc(x.key)}" title="${esc(x.title)}${x.cost != null && prices ? ` · $${(x.cost / 100).toFixed(2)}` : ''} · ${x.duration.toFixed(1)} s">
-        <span class="sw" style="background:${hex(swatch(x))};color:${hex(swatch(x))}"></span><span class="nm">${esc(x.title)}</span>
+        <span class="sw" style="background:${hex(swatch(x))};color:${hex(swatch(x))}"></span><span class="nm">${esc(x.title)}</span>${x.ingame ? '<span class="tag" title="made in the game’s own designer (My Documents, RCT3)">made in game</span>' : ''}
         ${x.cost != null ? `<span class="cost price">$${(x.cost / 100).toFixed(2)}</span>` : `<span class="cost">${x.duration.toFixed(0)} s</span>`}
         <button class="ed" title="Edit (makes your own copy of a game ${KINDS[kind].one})">✎</button><button class="pv" title="Preview">▶</button></div>`;
     const yours = all.filter(x => x.key.startsWith('my:')), game = all.filter(x => !x.key.startsWith('my:'));
@@ -1236,6 +1243,11 @@ async function build() {
   }
   async function saveToGame(kindExt, payload, name) { return (await post('/api/fw/save', { kind: kindExt, data: payload, name })).json(); }
   let afeCam = null;
+  let renderUntil = 0;
+  function kick(ms = 700) { renderUntil = Math.max(renderUntil, performance.now() + ms); }
+  controls.addEventListener('change', () => kick());
+  for (const ev of ['pointerdown', 'pointermove', 'wheel']) view.addEventListener(ev, () => kick(), { passive: true });
+  window.addEventListener('resize', () => kick());
   const ctx = {
     THREE, root, view, scene, camera, controls, renderer, esc, hex, unhex, clamp, fmt, store, toast, ask, dialog,
     get data() { return data; }, REG, fireworkDuration, descCacheClear: () => descCache.clear(),
@@ -1614,7 +1626,7 @@ async function build() {
     heads.scrollTop = lanes.scrollTop; updateTime();
   }
   lanes.addEventListener('scroll', syncScroll);
-  function renderAll() { renderTimeline(); renderEntry(); renderShowInfo(); renderLaunchers(); renderAimPanel(); renderSceneryPanel(); }
+  function renderAll() { kick(); renderTimeline(); renderEntry(); renderShowInfo(); renderLaunchers(); renderAimPanel(); renderSceneryPanel(); }
   function renderEdits() { renderTimeline(); renderEntry(); renderShowInfo(); }   // after timeline-only edits
   const timeAt = clientX => (clientX - lanes.getBoundingClientRect().left + lanes.scrollLeft) / S.pps;
   const trackAt = clientY => Math.max(0, Math.floor((clientY - lanes.getBoundingClientRect().top + lanes.scrollTop) / S.rowH));
@@ -1665,7 +1677,7 @@ async function build() {
         addEntry(S.tab, f, snap(timeAt(e.clientX)), trackAt(e.clientY)); return;
       }
       const [x0, y0] = contentXY(e), before = add ? selList() : [];
-      let banding = false;
+      let banding = false, bandEls = null, lastHit = '';
       canvas.setPointerCapture(e.pointerId);
       canvas.onpointermove = ev => {
         const [x1, y1] = contentXY(ev);
@@ -1675,8 +1687,11 @@ async function build() {
         Object.assign(band.style, { display: 'block', left: L + 'px', top: T + 'px', width: W + 'px', height: H + 'px' });
         const t0 = L / S.pps, t1 = (L + W) / S.pps, r0 = Math.floor(T / S.rowH), r1 = Math.floor((T + H) / S.rowH);
         const hit = S.show.entries.filter(x => x.track >= r0 && x.track <= r1 && x.time <= t1 && x.time + Math.max(16 / S.pps, fxDur(x)) >= t0);
+        const key = hit.length + ':' + hit.map(x => S.show.entries.indexOf(x)).join(',');
+        if (key === lastHit) return;   // only restyle the blocks when the set under the box changes
+        lastHit = key; bandEls ??= entryEls();
         select([...new Set([...before, ...hit])]);
-        for (const [x, xel] of entryEls()) { xel.classList.toggle('sel', x === S.sel); xel.classList.toggle('multi', S.multi.has(x) && x !== S.sel); }
+        for (const [x, xel] of bandEls) { xel.classList.toggle('sel', x === S.sel); xel.classList.toggle('multi', S.multi.has(x) && x !== S.sel); }
       };
       canvas.onpointerup = () => {
         canvas.onpointermove = canvas.onpointerup = null; band.style.display = 'none';
@@ -1728,6 +1743,7 @@ async function build() {
     const el = e.target.closest('.ent'); if (!el) return;
     e.preventDefault();
     const ent = S.show.entries[+el.dataset.i]; if (!ent) return;
+    if (S.multi.has(ent) && S.multi.size > 1) { removeSel(); return; }   // part of a selection: remove the whole selection
     snapshot(); S.show.entries = S.show.entries.filter(x => x !== ent); S.multi.delete(ent); select([...S.multi]);
     changed(`Removed ${fx(ent)?.title || 'the effect'} (Ctrl+Z brings it back)`); renderEdits();
   });
@@ -2179,7 +2195,7 @@ async function build() {
 
   // ---- main loop ----------------------------------------------------------------------------------------------------
   const clock = new THREE.Clock();
-  let running = false, acc = 0;
+  let running = false, acc = 0, lastRender = 0;
   function resize() {
     const r = view.getBoundingClientRect(); if (!r.width || !r.height) return;
     renderer.setSize(r.width, r.height, false); composer.setSize(r.width, r.height); labels.setSize(r.width, r.height);
@@ -2218,6 +2234,14 @@ async function build() {
     controls.update();
     ribbons.setPixel(camera, view.clientHeight); drawEffects(); draw();
     $('#fw-stats', root).textContent = `${parts.length.toLocaleString()} particles${ribbons.count() ? ' · ' + ribbons.count() + ' beams' : ''}`;
+    // draw the 3D view only when something in it can have changed: an idle scene at full rate (with glow) competed
+    // with the timeline for the computer, making drags and selections there laggy on slower machines
+    const now = performance.now();
+    const busy = S.playing || parts.length || ribbons.count() || previews.length || camMode === 'orbit' || camMode === 'auto' || painting
+      || dragState || moveDrag || aimDrag || now < renderUntil || now - lastRender > 1000
+      || launcherObjs.some(o => o.mixer) || sceneryObjs.some(o => o.mixer);
+    if (!busy) return;
+    lastRender = now;
     if (useBloom) composer.render(); else renderer.render(scene, camera);
     labels.render(scene, camera);
   }

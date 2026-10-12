@@ -494,3 +494,25 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   frames its launcher and restores the camera on close.
 - Laser beams dim as they widen (alpha x (1.5 / width)^0.85): 12 beams at width 10 washed the view white.
 - Checked: an AFE-style firework (new string ids, 4-stop colours, burn, SmokeAnim) round-trips .frw exactly.
+
+## 2026-10-12: Fireworks bug list, round 3
+- Particle blending is premultiplied alpha (fits every game particle): out = tex.rgb * colour + dst * (1 - tex.a *
+  alpha(t)). Flares / fire sheets have alpha 0 -> always glow; smoke (RGB = alpha in the sheet: white smoke) fades
+  with the alpha curve (game smoke: 0 -> 1 -> 0); Krakatoa's FWFlares01_07 (has alpha) with alpha 0 still glows.
+  The old rule (alpha >= 0.5 = straight-alpha solid) drew smoke as black blobs (tester's screenshot) and made a
+  flare with Glow off vanish. AFE: per-stop Opacity replaces the Glow checkbox; new particles alpha 1.
+  /api/fw/data sprites carry `solid` (sheet has transparency) for the editor's hint.
+- RCT3plus.exe user folders (under SHGetSpecialFolderLocation -> My Documents\RCT3): \Fireworks \LaserWriting
+  \WaterJetEffects \FireworkEffects \LaserEffects \Parks \Scenarios \Pools \Campaigns \Coasters \Atari. Effects made
+  in the game's designers live there (fireworks FireworkEffects, lasers LaserEffects, jets WaterJetEffects, shows
+  Fireworks): now read (game_files), marked "made in game". RCT3_USER_DIR overrides (tests). .las files always carry
+  the 64-byte 0xF11EDA2A header (shipped ones too).
+- Laser Designer ranges (label, then control + 0x6a82d0(step, max, min)): Trail Persist 0-2 (0.01), Spread
+  (control "BeamSpread", file ImageSpread) 1-45, Power 5-20000 (5); NumBeams an integer box. The BeamWidth timeline
+  (SpreadBlender) range isn't set there; shipped values: 1.005 normal, Hyperspace 0.94-1.59, Searchlight pi/2 ->
+  width -> half-angle 0.0025*w up to 1, then exponential to 0.3 rad at pi/2 (cap 0.6); designer 0-2.
+- New child emitter: tester's defaults (N 1, end 1, life 1, sizes 1; rest lowest).
+- 3D view renders only when something can change (playing, particles / beams / previews, camera or 3D edits via
+  kick(), animated launchers / scenery, drags) and at least once a second: an idle full-rate bloom render competed
+  with timeline drags. Box selection restyles only when the set under the box changes; right-click on a selected
+  effect removes the whole selection.

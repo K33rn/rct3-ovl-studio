@@ -44,11 +44,37 @@ def virtual_store(path: str) -> str | None:
     return os.path.join(os.environ['LOCALAPPDATA'], 'VirtualStore', rest.lstrip('\\/'))
 
 
+# What you make in the game's own designers is saved in the game's user folder (My Documents\RCT3, beside Parks), in
+# these sub-folders (RCT3plus.exe lists \Fireworks \LaserWriting \WaterJetEffects \FireworkEffects \LaserEffects \Parks
+# ...): fireworks in FireworkEffects, lasers in LaserEffects, water jets in WaterJetEffects, shows in Fireworks.
+USER_FOLDERS = {'Fireworks': 'FireworkEffects', 'Lasers': 'LaserEffects', 'WaterJets': 'WaterJetEffects',
+                'FireworkDisplays': 'Fireworks', 'LaserWriting': 'LaserWriting'}
+
+
+def user_dir() -> str | None:
+    """The game's user folder: My Documents\\RCT3 (RCT3_USER_DIR overrides it)."""
+    if os.environ.get('RCT3_USER_DIR'):
+        return os.environ['RCT3_USER_DIR']
+    docs = None
+    if os.name == 'nt':
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(260)
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0:   # CSIDL_PERSONAL
+                docs = buf.value
+        except Exception:
+            docs = None
+    docs = docs or os.path.join(os.path.expanduser('~'), 'Documents')
+    return os.path.join(docs, 'RCT3')
+
+
 def game_files(lib: Library, folder: str, ext: str) -> list[str]:
-    """The files of one kind in a game folder, including those the game (or this tool) wrote into its VirtualStore
-    copy; a VirtualStore file replaces the game folder's file of the same name, as it does for the game."""
+    """The files of one kind: the game folder's, those the game (or this tool) wrote into its VirtualStore copy, and
+    those you made in the game's designers (its user folder). A later one replaces an earlier file of the same name."""
     found = {}
-    for d in (os.path.join(lib.root, folder), virtual_store(os.path.join(lib.root, folder))):
+    ud = user_dir()
+    for d in (os.path.join(lib.root, folder), virtual_store(os.path.join(lib.root, folder)),
+              os.path.join(ud, USER_FOLDERS[folder]) if ud and folder in USER_FOLDERS else None):
         if d and os.path.isdir(d):
             for f in glob.glob(os.path.join(d, '*.' + ext)):
                 found[os.path.basename(f).lower()] = f
@@ -112,6 +138,7 @@ def list_fireworks(lib: Library) -> list[dict]:
             try:
                 d = load_firework(lib, f)
                 d['custom'] = _is_created(lib, f)
+                d['ingame'] = _in_user_dir(f)
                 cache.append(d)
             except Exception:
                 pass
@@ -143,8 +170,11 @@ def list_displays(lib: Library) -> list[dict]:
 
 
 def sprites(lib: Library) -> dict:
-    """{psi name: {page, rect: [x0, y0, x1, y1] as fractions from the top-left, frames: [rect...] if animated}}."""
-    out = {}
+    """{psi name: {page, rect: [x0, y0, x1, y1] as fractions from the top-left, frames: [rect...] if animated,
+    solid}}. solid: the sprite has transparency (smoke, spray, bubbles, rubble), so the particle's alpha curve fades
+    it in and out; flares and fire keep their glow in RGB with alpha 0 and always glow. The sheets are premultiplied
+    (smoke: RGB = alpha, white smoke)."""
+    out, pix = {}, {}
     for n, rel in lib.index['names'].items():
         if not n.endswith(':psi'):
             continue
@@ -164,8 +194,23 @@ def sprites(lib: Library) -> dict:
         except OvlError:
             continue
         page = imp.get(r.data + 8, '').split(':')[0]
-        out[r.name.split(':')[0]] = {'page': page, 'rect': frames[0], **({'frames': frames} if len(frames) > 1 else {})}
+        out[r.name.split(':')[0]] = {'page': page, 'rect': frames[0], 'solid': _sprite_solid(lib, page, frames[0], pix),
+                                     **({'frames': frames} if len(frames) > 1 else {})}
     return out
+
+
+def _sprite_solid(lib: Library, page: str, rect, cache: dict) -> bool:
+    import numpy as np
+    if page not in cache:
+        img = lib.texture_image(page + ':tex')
+        cache[page] = np.asarray(img.convert('RGBA'), dtype=np.float32) if img is not None else None
+    im = cache[page]
+    if im is None:
+        return False
+    H, W = im.shape[:2]
+    x0, y0, x1, y1 = rect
+    reg = im[int(y0 * H):max(int(y0 * H) + 1, int(y1 * H)), int(x0 * W):max(int(x0 * W) + 1, int(x1 * W))]
+    return bool(reg[..., 3].mean() >= 8)
 
 
 def page_png(lib: Library, page: str, opaque: bool = False) -> bytes | None:
@@ -333,6 +378,7 @@ def list_effects(lib: Library, kind: str) -> list[dict]:
             d = None
         if d:
             d['custom'] = _is_created(lib, f)
+            d['ingame'] = _in_user_dir(f)
             if kind == 'laser':
                 h = lib.find('LaserName_' + os.path.basename(f)[:-4] + ':txt')
                 if h:
@@ -562,6 +608,11 @@ def _created(lib: Library) -> set:
         return set()
 
 
+def _in_user_dir(path: str) -> bool:   # made in the game's own designers (its user folder)
+    ud = user_dir()
+    return bool(ud) and os.path.normcase(os.path.abspath(path)).startswith(os.path.normcase(os.path.abspath(ud)) + os.sep)
+
+
 def _is_created(lib: Library, path: str) -> bool:
     return os.path.normcase(os.path.abspath(path)) in _created(lib)
 
@@ -640,7 +691,7 @@ def list_files(lib: Library) -> list[dict]:
     for folder, ext, typ in FILE_GROUPS:
         for f in game_files(lib, folder, ext):
             out.append({'path': folder + '\\' + os.path.basename(f), 'type': typ, 'size': os.path.getsize(f),
-                        'custom': os.path.normcase(os.path.abspath(f)) in made})
+                        'custom': os.path.normcase(os.path.abspath(f)) in made, 'ingame': _in_user_dir(f)})
     return out
 
 

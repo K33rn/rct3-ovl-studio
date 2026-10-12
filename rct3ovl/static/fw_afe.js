@@ -88,7 +88,7 @@ const curve = (times, values) => ({ times, values });
 function particle(over = {}) {
   const c = (n, t, v) => ({ [`Colour${n}Times`]: t, [`Colour${n}Values`]: v, wrap: 0 });
   return Object.assign({ kind: 'particle', Name: '', AnimTimeScale: 1, BurnLength: 0, BurnSize: 0.2, CameraSpinRate: 0,
-    ColourR: c('R', [0, 1], [1, 1]), ColourG: c('G', [0, 1], [1, 0.4]), ColourB: c('B', [0, 1], [1, 0.2]), ColourA: c('A', [0, 1], [0, 0]),
+    ColourR: c('R', [0, 1], [1, 1]), ColourG: c('G', [0, 1], [1, 0.4]), ColourB: c('B', [0, 1], [1, 0.2]), ColourA: c('A', [0, 1], [1, 1]),
     ColourModifierA: 1, ColourModifierB: 1, ColourModifierG: 1, ColourModifierR: 1, ColourModifierDefaultA: 1, ColourModifierDefaultB: 1,
     ColourModifierDefaultG: 1, ColourModifierDefaultR: 1, ColourModifierEnable: 0, Cost: -1, Drag: 0, EndSize: 1, GravityScale: 0,
     Lifetime: 1, LifetimeRandom: 0, ParticleEmitterDescs: [], SizeRandom: 0, SoundMaxDist: 300, SoundMinDist: 70, SoundName: '', SoundPlayTime: 0,
@@ -146,7 +146,7 @@ export function openAFE(ctx, def, key) {
       <div class="afe-gwrap"><canvas class="afe-grad"></canvas><div class="afe-marks"></div></div>
       <div class="afe-stopbar" data-b="stopbar"></div>
       <div class="afe-hint">click the bar (or under it) to add a colour stop · drag a stop to move it · drag it down off the bar or right-click it to remove it</div>
-      <div class="afe-hint"><label><input type="checkbox" data-b="glow"> Glow (drawn additively, like most fireworks); off: solid (smoke)</label></div>
+      <div class="afe-hint" data-b="look"></div>
       <div class="afe-hint" style="margin-top:auto;padding-bottom:10px"><label><input type="checkbox" data-b="auto" checked> Fire again automatically</label>
         <button data-b="fire" style="margin-left:8px">▶ Fire</button> <span data-b="info"></span></div></div>
     <div class="afe-tex"><h3>Particle texture</h3><div class="afe-texgrid"></div></div>`;
@@ -282,15 +282,18 @@ export function openAFE(ctx, def, key) {
   });
 
   // ---- colour over life: a gradient with colour stops, like an image editor's gradient tool -------------------------
-  // (stops: R, G, B written with the same times; A = glow / solid). The stop's inputs are built once and updated in
+  // (stops: R, G, B and A written with the same times; A = opacity, used by textures with transparency - smoke, spray,
+  // bubbles, rubble; flares and fire always glow). The stop's inputs are built once and updated in
   // place, so the colour picker stays open while you drag in it.
   let stopSel = 0, stopsBusy = false;
   function stopsOf(p) {
     const ch = ['R', 'G', 'B'].map(c => p['Colour' + c] || {});
     const times = [...new Set(ch.flatMap((c, i) => c[`Colour${'RGB'[i]}Times`] || []))].sort((a, b) => a - b);
     const T = times.length ? times : [0];
-    return T.map(t => ({ t, c: ['R', 'G', 'B'].map(k => chanAt(p, k, t)) }));
+    return T.map(t => ({ t, c: ['R', 'G', 'B'].map(k => chanAt(p, k, t)), a: alphaAt(p, t) }));
   }
+  const alphaAt = (p, f) => (p.ColourA?.ColourAValues || []).length ? chanAt(p, 'A', f) : 1;
+  const solidTex = p => !!ctx.data.sprites[p?.TextureNameReduced]?.solid;
   function chanAt(p, k, f) {
     const c = p['Colour' + k] || {}, t = c[`Colour${k}Times`] || [], v = c[`Colour${k}Values`] || [];
     if (!v.length) return 1;
@@ -304,8 +307,7 @@ export function openAFE(ctx, def, key) {
     // two stops at one time would merge: keep them a hair apart
     for (let i = 1; i < stops.length; i++) if (stops[i].t <= stops[i - 1].t) stops[i].t = Math.min(1, stops[i - 1].t + 0.001);
     ['R', 'G', 'B'].forEach((k, i) => { p['Colour' + k] = { [`Colour${k}Times`]: stops.map(s => +s.t.toFixed(4)), [`Colour${k}Values`]: stops.map(s => +s.c[i].toFixed(4)), wrap: p['Colour' + k]?.wrap || 0 }; });
-    const A = p.ColourA?.ColourAValues || [], a = A.length && Math.max(...A) >= 0.5 ? 1 : 0;   // keep glow / solid
-    p.ColourA = { ColourATimes: stops.map(s => +s.t.toFixed(4)), ColourAValues: stops.map(() => a), wrap: p.ColourA?.wrap || 0 };
+    p.ColourA = { ColourATimes: stops.map(s => +s.t.toFixed(4)), ColourAValues: stops.map(s => +clamp(s.a ?? 1, 0, 1).toFixed(4)), wrap: p.ColourA?.wrap || 0 };
   }
   const swatches = ['#ffffff', '#fff2a8', '#ffd23a', '#ff8a1e', '#ff3b2e', '#ff4fb4', '#b44dff', '#4d6bff', '#3ad7ff', '#4dff8a', '#000000'];
   const stopbar = B.querySelector('[data-b=stopbar]'), marks = B.querySelector('.afe-marks');
@@ -313,6 +315,7 @@ export function openAFE(ctx, def, key) {
     <label>Color <input type="color" data-s="c"></label>
     <span class="afe-sw">${swatches.map(c => `<button data-sw="${c}" style="background:${c}" title="${c}"></button>`).join('')}</span>
     <label>Location <input type="number" data-s="t" min="0" max="100" step="1" style="width:58px">%</label>
+    <label data-s="alab">Opacity <input type="range" data-s="a" min="0" max="1" step="0.01" style="width:90px"></label>
     <button data-s="prev" title="Previous stop">◀</button><button data-s="next" title="Next stop">▶</button>
     <button data-s="del" title="Delete this stop (or drag it down off the bar, or right-click it)">Delete</button>
     <button data-s="rev" title="Reverse the gradient">Reverse</button><button data-s="even" title="Spread the stops evenly">Distribute</button>`;
@@ -323,15 +326,22 @@ export function openAFE(ctx, def, key) {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     for (let y = 0; y < h; y += 8) for (let x = 0; x < w; x += 8) { g.fillStyle = ((x + y) / 8) % 2 ? '#1a1f2b' : '#10141c'; g.fillRect(x, y, 8, 8); }
     if (!p) return;
-    for (let x = 0; x < w; x++) { g.fillStyle = hex(colourAt(p, x / Math.max(1, w - 1))); g.fillRect(x, 0, 1, h); }
+    const solid = solidTex(p);   // smoke etc.: show the opacity over the checkerboard; glowing textures: colour only
+    for (let x = 0; x < w; x++) {
+      const f = x / Math.max(1, w - 1), c = colourAt(p, f);
+      g.globalAlpha = solid ? clamp(alphaAt(p, f), 0, 1) : 1; g.fillStyle = hex(c); g.fillRect(x, 0, 1, h);
+    }
+    g.globalAlpha = 1;
   }
   function renderColour() {
-    const p = particleOf(), glow = B.querySelector('[data-b=glow]');
+    const p = particleOf(), look = B.querySelector('[data-b=look]');
     drawGradient(p);
     B.querySelector('.afe-col').classList.toggle('off', !p);
-    glow.disabled = !p;
-    if (!p) { marks.innerHTML = ''; S$('n').textContent = 'Select an emitter to edit its particle\'s colour.'; return; }
-    const A = p.ColourA?.ColourAValues || []; glow.checked = !A.length || Math.max(...A) < 0.5;
+    if (!p) { marks.innerHTML = ''; look.textContent = ''; S$('n').textContent = 'Select an emitter to edit its particle\'s colour.'; return; }
+    const solid = solidTex(p);
+    look.textContent = solid ? `${p.TextureNameReduced} has transparency: drawn solid, each stop's Opacity fades it in and out (as the game's smoke does).`
+      : `${p.TextureNameReduced || 'This texture'} glows (drawn additively, like the game's flares and fire): Opacity does not apply.`;
+    S$('a').disabled = !solid; S$('alab').style.opacity = solid ? 1 : 0.4;
     const st = stopsOf(p); stopSel = clamp(stopSel, 0, st.length - 1);
     if (marks.childElementCount !== st.length) marks.innerHTML = st.map((_, i) => `<div class="afe-mk" data-i="${i}"><i></i></div>`).join('');
     [...marks.children].forEach((m, i) => {
@@ -342,6 +352,7 @@ export function openAFE(ctx, def, key) {
     S$('n').textContent = `Stop ${stopSel + 1} of ${st.length}`;
     if (document.activeElement !== S$('c') && S$('c').value !== hex(s.c)) S$('c').value = hex(s.c);
     if (document.activeElement !== S$('t')) S$('t').value = Math.round(s.t * 100);
+    if (document.activeElement !== S$('a')) S$('a').value = s.a;
     S$('del').disabled = st.length < 2;
   }
   function editStop(fn, label) {   // change the selected stop; one undo step per gesture
@@ -356,6 +367,7 @@ export function openAFE(ctx, def, key) {
     const k = e.target.dataset.s;
     if (k === 'c') editStop(s => { s.c = unhex(e.target.value); });
     if (k === 't') editStop(s => { s.t = clamp((+e.target.value || 0) / 100, 0, 1); });
+    if (k === 'a') editStop(s => { s.a = clamp(+e.target.value || 0, 0, 1); });
   });
   stopbar.addEventListener('change', () => { endGesture(); renderTree(); });
   stopbar.addEventListener('click', e => {
@@ -364,7 +376,7 @@ export function openAFE(ctx, def, key) {
     if (sw) { editStop(s => { s.c = unhex(sw); }, true); endGesture(); }
     if (k === 'prev' || k === 'next') { stopSel = (stopSel + (k === 'next' ? 1 : n - 1)) % n; renderColour(); }
     if (k === 'del') removeStop(stopSel);
-    if (k === 'rev') { snap(); const st = stopsOf(p).map(s => ({ t: 1 - s.t, c: s.c })); writeStops(p, st); stopSel = n - 1 - stopSel; touched(false); renderTree(); }
+    if (k === 'rev') { snap(); const st = stopsOf(p).map(s => ({ t: 1 - s.t, c: s.c, a: s.a })); writeStops(p, st); stopSel = n - 1 - stopSel; touched(false); renderTree(); }
     if (k === 'even') { snap(); const st = stopsOf(p); st.forEach((s, i) => { s.t = n > 1 ? i / (n - 1) : 0; }); writeStops(p, st); touched(false); }
   });
   function removeStop(i) {
@@ -374,7 +386,6 @@ export function openAFE(ctx, def, key) {
   }
   B.addEventListener('input', e => {
     const p = particleOf(), k = e.target.dataset.b;
-    if (k === 'glow' && p) { snap(); const v = e.target.checked ? 0 : 1, T = stopsOf(p).map(s => s.t); p.ColourA = { ColourATimes: T, ColourAValues: T.map(() => v), wrap: 0 }; touched(false); }
     if (k === 'auto') auto = e.target.checked;
   });
   B.querySelector('[data-b=fire]').onclick = () => fire();
@@ -390,7 +401,7 @@ export function openAFE(ctx, def, key) {
     if (m) stopSel = +m.dataset.i;
     else {                                     // a click on the bar or below it: a new stop with the colour already there
       snap(); stopsBusy = true;
-      const t = gx(e), s = { t, c: colourAt(p, t) };
+      const t = gx(e), s = { t, c: colourAt(p, t), a: alphaAt(p, t) };
       st.push(s); writeStops(p, st); stopSel = stopsOf(p).findIndex(x => Math.abs(x.t - s.t) < 1e-3);
       touched(false); renderTree();
     }
@@ -453,11 +464,11 @@ export function openAFE(ctx, def, key) {
     const a = e.target.dataset.a; if (!a || e.target.tagName === 'SELECT') return;
     const n = N()[sel];
     if (a === 'add') {
-      // a new emitter starts with every setting at its lowest (no particles, no speed, sizes 0, shortest life;
-      // settings that go both ways at 0): you build it up from nothing, as in the game's designer
+      // a new emitter starts at the defaults: 1 particle, end time 1, lifetime 1, start / end size 1, everything else
+      // at its lowest (no speed or scatter, settings that go both ways at 0): you build it up from there
       snap(); const pid = newId();
-      N()[pid] = particle({ Name: 'Particle', Lifetime: 0.05, StartSize: 0, EndSize: 0, BurnSize: 0, SoundMinDist: 0, SoundMaxDist: 0 });
-      const eid = newId(); N()[eid] = emitter(+pid, { NumParticles: 0, SpeedRandom: 0, EndTime: 0 });
+      N()[pid] = particle({ Name: 'Particle', Lifetime: 1, StartSize: 1, EndSize: 1, BurnSize: 0, SoundMinDist: 0, SoundMaxDist: 0 });
+      const eid = newId(); N()[eid] = emitter(+pid, { NumParticles: 1, SpeedRandom: 0, StartTime: 0, EndTime: 1 });
       const h = holderOf(sel); h.ParticleEmitterDescs = [...(h.ParticleEmitterDescs || []), +eid]; collapsed.delete(String(sel)); sel = eid; touched(true);
     }
     if (a === 'dup' && n.kind === 'emitter') {
@@ -569,7 +580,8 @@ export const afeTourSteps = () => [
       html: `<p>The particle's colour from birth (left) to death (right), as a gradient. Click the bar (or just under it) to add a colour stop,
         drag a stop to move it, and drag it down off the bar (or right-click it) to remove it. For the selected stop: its <b>Color</b> (picker or a
         quick swatch), its <b>Location</b> in the particle's life, ◀ ▶ to step through the stops, <b>Reverse</b> and <b>Distribute</b>.
-        <b>Glow</b> draws it like a spark; off, it is solid (smoke).</p>` },
+        The texture decides how it is drawn: flares and fire glow; smoke, spray, bubbles and rubble are solid, and each stop's <b>Opacity</b>
+        fades them in and out.</p>` },
     { target: '.afe-tex', title: 'Texture',
       html: `<p>The game's particle pictures: flares, stars, sparkles, smoke, splashes. Click one to give it to the selected particle.</p>` },
     { target: '.afe-top', title: 'Load and save',

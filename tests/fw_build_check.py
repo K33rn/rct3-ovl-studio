@@ -61,7 +61,7 @@ for kind, ext in (('laser', 'las'), ('jet', 'wjt')):
         p = os.path.join(tempfile.gettempdir(), 'rt.' + ext)
         open(p, 'wb').write(blob)
         again = F._effect_file(p, kind)
-        keys = [k for k in d if k not in ('file', 'custom', 'name')]
+        keys = [k for k in d if k not in ('file', 'custom', 'ingame', 'name')]
         diff = [k for k in keys if not close(d[k], again[k])]
         if diff:
             bad += 1; print('  ', kind, d['file'], 'differs in', diff, '\n     ', str(d[diff[0]])[:200], '\n     ', str(again[diff[0]])[:200])

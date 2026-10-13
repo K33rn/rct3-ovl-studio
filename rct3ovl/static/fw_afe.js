@@ -1,5 +1,5 @@
 // Fireworks editor: the Advanced Firework Editor (RCT3's "Firework Designer", unlocked in the game by a guest named
-// Atari). A firework is a tree: the base releases particles through emitters, each particle can carry emitters of
+// Guido Fawkes). A firework is a tree: the base releases particles through emitters, each particle can carry emitters of
 // its own (trails while it flies, bursts when it ends). Left: the tree (add child emitter, duplicate, move, remove,
 // expand / collapse). Right: the selected emitter and its particle with the game's groups - emitter rate, speed,
 // rotation; particle basics, life, motion, special effects, modifiers. Bottom: the particle's colour over its life and
@@ -339,7 +339,7 @@ export function openAFE(ctx, def, key) {
     B.querySelector('.afe-col').classList.toggle('off', !p);
     if (!p) { marks.innerHTML = ''; look.textContent = ''; S$('n').textContent = 'Select an emitter to edit its particle\'s colour.'; return; }
     const solid = solidTex(p);
-    look.textContent = solid ? `${p.TextureNameReduced} has transparency: drawn solid, each stop's Opacity fades it in and out (as the game's smoke does).`
+    look.textContent = solid ? `${p.TextureNameReduced} has transparency: with Opacity above 0 it is drawn solid in the stop colours (its shape from the texture), fading with Opacity; Opacity 0 everywhere makes it glow instead.`
       : `${p.TextureNameReduced || 'This texture'} glows (drawn additively, like the game's flares and fire): Opacity does not apply.`;
     S$('a').disabled = !solid; S$('alab').style.opacity = solid ? 1 : 0.4;
     const st = stopsOf(p); stopSel = clamp(stopSel, 0, st.length - 1);

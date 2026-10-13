@@ -516,3 +516,14 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   kick(), animated launchers / scenery, drags) and at least once a second: an idle full-rate bloom render competed
   with timeline drags. Box selection restyles only when the set under the box changes; right-click on a selected
   effect removes the whole selection.
+
+## 2026-10-13: Black particles from the in-game designer (Steam RCT3 Platinum installed, app 2700)
+- Verified in the game: the Advanced firework editor is unlocked by a guest named "Guido Fawkes" (cheatpeepname_fawkes;
+  "Atari" only makes guests laugh) and opens by double-clicking a firework in the MixMaster effect picker (Scenery ->
+  MixMaster -> Add MixMaster display, click a timeline track). It saves to My Documents\RCT3\FireworkEffects
+  (64-byte 0xF11EDA2A header; new emitter: N 0, Parent 1, Move with parent on, empty colour curves, Flare_00).
+- Cause of the black blobs: several sheets are black where opaque - FWFlares01_07 and all LensFlares_* have RGB 0,
+  alpha ~254 (alpha-only masks); SmokeAnim RGB/alpha ~0.5, ConcreteAnim ~0.55, WaterAnim ~0.7 (Spray0, Bubble0 ~1).
+  Using the sheet RGB as colour drew them black (the game's Blood: red LensFlares_12, alpha 1). In the game,
+  CoasterSmoke draws light grey over a dark preview. Now: solid particles = particle colour with sheet alpha x alpha
+  curve as opacity (normal blending); glowing particles = max(sheet RGB, sheet alpha) x colour, additive.

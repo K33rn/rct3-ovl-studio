@@ -391,7 +391,7 @@ async function build() {
       // glowing particles: the game's flare sprites keep their glow in RGB with alpha 0, drawn additively (one + one)
       uniforms: { map: { value: page }, level: { value: 0 }, gain: { value: mirror ? 0.35 : 1 } }, transparent: true, depthWrite: false, depthTest: !mirror,
       ...(additive ? { blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendEquation: THREE.AddEquation }
-                   : { blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendEquation: THREE.AddEquation }),
+                   : { blending: THREE.NormalBlending }),
       ...(mirror ? { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp } : {}),
       defines: Object.assign(additive ? { ADDITIVE: 1 } : {}, mirror ? { MIRROR: 1 } : {}),
       vertexShader: `attribute vec3 iPos; attribute vec3 iVel; attribute vec2 iSize; attribute vec4 iCol; attribute vec4 iUV; attribute float iRot;
@@ -416,10 +416,14 @@ async function build() {
         void main() {
           vec4 t = texture2D(map, vUv);
         #ifdef ADDITIVE
-          gl_FragColor = vec4(t.rgb * vCol.rgb * vCol.a * gain, 1.0);
+          // glow: the sheet's brightness - in RGB for flares and fire, in alpha for the alpha-only sprites
+          // (LensFlares, FWFlares01_07: RGB 0) - tinted by the particle's colour
+          gl_FragColor = vec4(max(t.rgb, vec3(t.a)) * vCol.rgb * vCol.a * gain, 1.0);
         #else
-          // premultiplied: the sheet's RGB is already scaled by its alpha (smoke: RGB = alpha, i.e. white smoke)
-          gl_FragColor = vec4(t.rgb * vCol.rgb * gain, t.a * vCol.a * gain);
+          // solid: the sheet's alpha is the shape, the particle's colour curve the colour, its alpha curve the opacity
+          // (several sheets are black where opaque - LensFlares, FWFlares01_07 - and smoke is mid grey: their RGB
+          // as colour made black blobs, e.g. the game's red Blood)
+          gl_FragColor = vec4(vCol.rgb, t.a * vCol.a * gain); if (gl_FragColor.a < 0.003) discard;
         #endif
         }`,
     });
@@ -456,12 +460,10 @@ async function build() {
       pspin: (n.SpinRateX || n.SpinRateY) ? [n.SpinRateX || 0, n.SpinRateY || 0] : null,       // the particle turns: its bursts spin
       burnN: Math.max(0, Math.min(50, n.BurnLength | 0)), burnS: n.BurnSize ?? 0.2,              // a burning trail of copies
       R: curve(n.ColourR), G: curve(n.ColourG), B: curve(n.ColourB),
-      // How the game draws particles (premultiplied alpha): the sprite's colour is added and what is behind darkens by
-      // sprite alpha x the particle's alpha curve. Flares and fire have no alpha, so they always glow; smoke, spray,
-      // bubbles and rubble fade in and out with the alpha curve (the game's smoke goes 0 -> 1 -> 0); a flare with
-      // alpha 0 (Krakatoa's) still glows. Before, alpha >= 0.5 meant "straight-alpha solid": smoke came out near black
-      // and a flare with Glow off vanished. Particles whose alpha is 0 all life go to the additive layer (same look).
-      additive: !A.v.length || Math.max(...A.v) < 0.01, A,
+      // How particles are drawn: alpha 0 all life (or no alpha curve) -> glow, adding the sheet's brightness tinted by
+      // the colour; otherwise solid, the sheet's alpha as the shape with the colour curve's colour and the alpha curve
+      // as opacity. A sheet without transparency (Flare_00, FireAnim) always glows (nothing to draw solid with).
+      additive: !A.v.length || Math.max(...A.v) < 0.01 || (sp ? !sp.solid : false), A,
       useMod: !!n.ColourModifierEnable, anyC: fl.anyC,
       uv: sp ? toUV(sp.rect) : null,
       frames: sp?.frames ? sp.frames.map(toUV) : null, anim: n.AnimTimeScale ?? 1,   // animated sheets: a frame per moment of life

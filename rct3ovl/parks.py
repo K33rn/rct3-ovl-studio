@@ -921,7 +921,7 @@ def _path_supports(parts: dict, path: list, P, ground_at, inverted: bool, statio
     Columns whose way down is blocked by another part of the track move to the other side (suspended) or are
     left out; none stands on a station tile or under track too low or too steep for one."""
     x0, z0, T = grid
-    SPACING, BESIDE = 4.0, 1.6                         # metres of track between supports; column offset (suspended)
+    SPACING, BESIDE = 6.0, 1.6                         # metres of track between supports; column offset (suspended)
     out, placed = [], []
     Pxz, Py = P[:, [0, 2]], P[:, 1]
 

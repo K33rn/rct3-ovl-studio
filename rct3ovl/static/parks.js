@@ -349,7 +349,44 @@ function build() {
       m.userData.pick = { title: queue ? 'Queue' : `${spaced(style)} path`, detail: queue ? spaced(style.slice(6)) : '' };
       layers.paths.add(m);
       const rail = queue && (world.queue_rails || {})[style];
-      if (rail) buildRails(tiles, rail, style);
+      if (queue && style.slice(6).toLowerCase() === 'queueset1') buildPostRails(tiles, style);
+      else if (rail) buildRails(tiles, rail, style);
+    }
+  }
+  // the standard queue's railing, as the game draws it (it has no model for it): thin dark posts every 2 m along every
+  // edge a queue tile doesn't open on, two grey handrails between them following the ground
+  function buildPostRails(tiles, style) {
+    const W = world.cols, T = world.tile, inset = 0.12, STEP = 2, HEIGHTS = [0.5, 0.95];
+    const EDGE = [[0, 2], [1, 3], [0, 1], [2, 3]], corner = [[0, 0], [1, 0], [0, 1], [1, 1]];
+    const posts = new Map(), rails = [];
+    for (const [c, r, qs, qe] of tiles) {
+      const i = r * W + c, h = [tileH(i, 0), tileH(i, 1), tileH(i, 2), tileH(i, 3)];
+      for (let e = 0; e < 4; e++) {
+        if (e === qs || e === qe) continue;
+        const ix = e === 0 ? inset : e === 1 ? -inset : 0, iz = e === 2 ? inset : e === 3 ? -inset : 0;
+        const pt = k => new THREE.Vector3(world.x0 + (c + corner[k][0]) * T + ix, h[k] + 0.07, Z(world.z0 + (r + corner[k][1]) * T + iz));
+        const [a, b] = EDGE[e].map(pt), n = Math.max(1, Math.round(T / STEP));
+        for (let k = 0; k <= n; k++) {
+          const q = a.clone().lerp(b, k / n);
+          posts.set(`${q.x.toFixed(2)},${q.z.toFixed(2)}`, q);   // corners shared by neighbouring edges: one post
+        }
+        for (const y of HEIGHTS) rails.push([a.clone().setY(a.y + y), b.clone().setY(b.y + y)]);
+      }
+    }
+    if (!posts.size) return;
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), X = new THREE.Vector3(1, 0, 0);
+    const postGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 6); postGeo.translate(0, 0.5, 0);
+    const pm = new THREE.InstancedMesh(postGeo, new THREE.MeshLambertMaterial({ color: 0x2b2b2e }), posts.size);
+    [...posts.values()].forEach((p, j) => pm.setMatrixAt(j, m4.makeTranslation(p.x, p.y, p.z)));
+    const rm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.045, 0.045), new THREE.MeshLambertMaterial({ color: 0x9c9fa3 }), rails.length);
+    rails.forEach(([a, b], j) => {
+      const d = b.clone().sub(a);
+      rm.setMatrixAt(j, m4.compose(a.clone().add(b).multiplyScalar(0.5), q.setFromUnitVectors(X, d.clone().normalize()), s.set(d.length(), 1, 1)));
+    });
+    for (const m of [pm, rm]) {
+      m.computeBoundingSphere();
+      m.userData.pick = { title: 'Queue railing', detail: spaced(style.slice(6)) };
+      layers.paths.add(m);
     }
   }
   // queue railings: a 1 m panel along every edge a queue tile doesn't open on (edges 0 -col, 1 +col, 2 -row,

@@ -537,6 +537,7 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Coaster supports: not in the save (no support objects; TrackSection has no support data) - the game builds them.
   Steel/suspended now placed along the real centreline (rail splines, designs._piece_path), every 4 m of track,
   none on steep (>~49 deg) track or station tiles; suspended: column 1.6 m beside the track on the curve's outside,
-  2-tile girder (ts1_girder_2L, 2.66 m) resting on the track top. Game spacing looks ~1.5x sparser - not tuned yet.
+  2-tile girder (ts1_girder_2L, 2.66 m) resting on the track top. Spacing 6 m (4 m was ~1.5x denser than the game).
 - Queue type stub has deck models only (Straight/TurnL/TurnR/Slope*:sid, raised deck slabs); the game's railings
-  (thin dark posts, two grey handrails) are drawn by the engine - viewer still uses texture panels.
+  (thin dark posts, two grey handrails) are drawn by the engine - the viewer now builds them for QueueSet1: posts
+  every 2 m along closed edges, handrails at 0.5 / 0.95 m (fixed colours; themed sets keep their texture panels).

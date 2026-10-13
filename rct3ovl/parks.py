@@ -3,8 +3,9 @@
 A park is a whole saved game in the same self-describing format as ride designs and fireworks (trk.py): ~150 types,
 thousands of objects. What the viewer uses:
 - RCT3Terrain.EngineTerrain (blob): u8 cols, u8 rows, f32 x0, z0 (world corner, metres), f32 tile size x, z (4 m),
-  then 24 bytes per tile, row by row: f32 heights of its corners (x0z0, x1z0, x0z1, x1z1; neighbours share them),
-  u8 ground texture (terrain_NN), u8 cliff style, u8, u8 diagonal (which way the tile is split in two triangles),
+  then 24 bytes per tile, row by row: f32 heights of its corners (x0z0, x1z0, x0z1, x1z1; neighbours share them
+  except at cliffs, where the game builds a wall between the two edges), u8 ground texture (terrain_NN), u8 cliff
+  style (TerrainCliffN, the walls' texture), u8, u8 sloped (1 on most non-flat tiles; not the triangle split),
   u8 ownership bits (2 owned, 1/4 construction rights, 32 park entrance, 64 for sale), 3 more bytes.
 - WaterManager.WaterManager (blob): u8 cols, u8 rows, u32 bodies, each: f32 surface height, u32 n, n x (u8 col,
   u8 row, u8 triangle 0/1, u8 corner mask).
@@ -481,7 +482,7 @@ def park_world(lib: Library, rel: str) -> dict:
     hgrid = heights.reshape(H, W, 4)
     world = {'cols': W, 'rows': H, 'x0': x0, 'z0': z0, 'tile': sx,
              'heights': np.round(heights.ravel() * 100).astype(int).tolist(),          # cm, 4 corners per tile
-             'tex': raw[:, 16].tolist(), 'split': raw[:, 19].tolist(), 'own': raw[:, 20].tolist()}
+             'tex': raw[:, 16].tolist(), 'cliff': raw[:, 17].tolist(), 'split': raw[:, 19].tolist(), 'own': raw[:, 20].tolist()}
     # water
     wm = next((v for n, v in O.values() if n == 'WaterManager'), {}).get('WaterManager', b'')
     bodies = []

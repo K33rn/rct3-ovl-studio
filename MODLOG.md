@@ -541,3 +541,18 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Queue type stub has deck models only (Straight/TurnL/TurnR/Slope*:sid, raised deck slabs); the game's railings
   (thin dark posts, two grey handrails) are drawn by the engine - the viewer now builds them for QueueSet1: posts
   every 2 m along closed edges, handrails at 0.5 / 0.95 m (fixed colours; themed sets keep their texture panels).
+- Terrain (compared on Chequered Flag and Vanilla Hills): the game blends each tile's ground texture into its
+  neighbours' over about one tile (between tile centres) with terraindetail (grey, mean 127) over it as a x2
+  modulate; flat ground shows ~1.25x its texture colour (sand 174 -> ~220, grass 124 -> ~145). Steep faces (Chequered
+  Flag col 80, 0 -> 18 m) are side-projected, not stretched. Corner heights are not always shared: where two tiles'
+  edges differ the game builds a wall textured with the higher tile's byte 17 (cliff style -> TerrainCliffN, copies
+  of Terrain_13..18; style 5 dark olive under the go-kart track). Byte 19 is 1 on most sloped tiles (not the split).
+  Viewer: one ground mesh, shader blends a texture array by per-tile layer index (smoothstep bilinear), triplanar
+  on slopes, detail x2 then x1.6 linear; cliff walls per style. Not drawn yet: the park boundary fence.
+  TerrainType +0x20/+0x24 is exactly the texture's mean colour. Game vs viewer ground variation is about the same
+  (green std ~3.5 both); open: terrain_10's white daisies show in the viewer, not seen in the game at that distance.
+- Switching parks leaked GPU memory (headless Chrome 1.8 -> 4.5 GB over 6 parks; the 42-park run got OOM-killed):
+  clear() freed geometry only. Now it also frees materials, their textures (not cached ones) and skinned clones'
+  skeletons (bone textures, one per person / car / animal); texture and model caches drop what the new park didn't
+  ask for. Chrome stays ~2-2.5 GB; ui_parks_all: 42 parks, no problems. Supports at 6 m checked against the game
+  on the High Flier (station U-turn: ~6 girders both); the lift-hill "density" was two crossing sections.

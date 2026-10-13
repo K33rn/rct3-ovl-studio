@@ -158,8 +158,11 @@ function build() {
     g.fillStyle = gr; g.fillRect(0, 0, 2, 256);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
   }
-  const texCache = {};
+  // textures and models shared between items, kept from park to park; whatever a park didn't ask for is freed once
+  // it has loaded (texUsed / modelUsed collect what this load asked for)
+  const texCache = {}, texUsed = new Set(), modelUsed = new Set();
   function parkTex(name) {                         // any game texture by its full name (GroundQueueSet1:ftx)
+    texUsed.add(name);
     if (!texCache[name]) {
       const t = new THREE.TextureLoader().load('/api/park_tex?name=' + encodeURIComponent(name));
       t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; texCache[name] = t;
@@ -167,6 +170,7 @@ function build() {
     return texCache[name];
   }
   function gameTex(name, repeat = true) {
+    texUsed.add(name);
     if (!texCache[name]) {
       const t = new THREE.TextureLoader().load('/api/fw/tex?name=' + encodeURIComponent(name));
       t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
@@ -175,10 +179,29 @@ function build() {
     }
     return texCache[name];
   }
+  // free a mesh's GPU resources, except textures the caches still hold
+  const cached = new Set();
+  function disposeMesh(x) {
+    x.geometry?.dispose(); if (x.isSkinnedMesh) x.skeleton?.dispose();
+    for (const m of [x.material].flat()) {
+      if (!m) continue;
+      for (const v of Object.values(m)) if (v?.isTexture && !cached.has(v)) v.dispose();
+      for (const t of m.userData.textures || []) t.dispose();
+      m.dispose();
+    }
+  }
   function clear(group) {
+    cached.clear(); Object.values(texCache).forEach(t => cached.add(t));
     for (const o of [...group.children]) {
       group.remove(o);
-      o.traverse(x => { if (x.isMesh && !x.userData.shared) { x.geometry?.dispose(); } });
+      o.traverse(x => { if (x.isMesh && !x.userData.shared) disposeMesh(x); });
+    }
+  }
+  function evictUnused() {
+    for (const [k, t] of Object.entries(texCache)) if (!texUsed.has(k)) { t.dispose(); delete texCache[k]; }
+    for (const [k, pr] of Object.entries(modelCache)) if (!modelUsed.has(k)) {
+      delete modelCache[k];
+      pr.then(got => got?.g.scene.traverse(o => { if (o.isMesh) disposeMesh(o); }));
     }
   }
   function resize() {
@@ -221,39 +244,103 @@ function build() {
     if (o & 5) return [0.85, 0.9, 1.0];            // construction rights
     return [0.58, 0.6, 0.62];                      // not the park's
   }
+  // The ground, as the game draws it: each tile has one texture (terrain_NN), blended into its neighbours' across the
+  // tile (bilinear between tile centres, in the shader), with the game's grey detail texture over it (modulate x2).
+  // Where neighbouring tiles' edges are at different heights the game builds a cliff wall, textured with the tile's
+  // cliff style (TerrainCliffN).
+  const imgData = name => new Promise(res => {
+    const im = new Image(); im.crossOrigin = 'anonymous';
+    im.onload = () => {
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const g = c.getContext('2d'); g.drawImage(im, 0, 0, 256, 256); res(g.getImageData(0, 0, 256, 256).data);
+    };
+    im.onerror = () => res(null);
+    im.src = '/api/fw/tex?name=' + encodeURIComponent(name);
+  });
+  let detailTex = null;
+  function terrainMaterial(used, layerData) {
+    const W = world.cols, H = world.rows, idx = new Uint8Array(W * H);
+    const layerOf = new Map(used.map((t, k) => [t, k]));
+    for (let i = 0; i < W * H; i++) idx[i] = layerOf.get(world.tex[i]) ?? 0;
+    const tiles = new THREE.DataTexture(idx, W, H, THREE.RedFormat, THREE.UnsignedByteType); tiles.needsUpdate = true;
+    const arr = new Uint8Array(256 * 256 * 4 * used.length);
+    layerData.forEach((d, k) => { if (d) arr.set(d, k * 256 * 256 * 4); });
+    const layersTex = new THREE.DataArrayTexture(arr, 256, 256, used.length);
+    Object.assign(layersTex, { wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, minFilter: THREE.LinearMipmapLinearFilter,
+                               magFilter: THREE.LinearFilter, generateMipmaps: true, colorSpace: THREE.SRGBColorSpace, anisotropy: 8 });
+    layersTex.needsUpdate = true;
+    if (!detailTex) detailTex = gameTex('terraindetail'), detailTex.colorSpace = THREE.NoColorSpace;
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    mat.userData.textures = [tiles, layersTex];
+    mat.onBeforeCompile = sh => {
+      Object.assign(sh.uniforms, { uTiles: { value: tiles }, uLayers: { value: layersTex }, uDetail: { value: detailTex },
+                                   uGrid: { value: new THREE.Vector4(world.x0, world.z0, world.tile, 0) }, uSize: { value: new THREE.Vector2(W, H) } });
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP, vWN;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWN = normal;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vWP, vWN;
+uniform sampler2D uTiles, uDetail;
+uniform highp sampler2DArray uLayers;
+uniform vec4 uGrid;
+uniform vec2 uSize;
+float tileLayer(vec2 t) { return floor(texelFetch(uTiles, ivec2(clamp(t, vec2(0.0), uSize - 1.0)), 0).r * 255.0 + 0.5); }
+// steep ground takes its texture from the side, as in the game (no streaks down slopes)
+vec4 groundTex(float l, vec3 w) {
+  vec4 c = texture(uLayers, vec3(vWP.xz / 8.0, l)) * w.y;
+  if (w.y < 0.999) c += texture(uLayers, vec3(vWP.zy / 8.0, l)) * w.x + texture(uLayers, vec3(vWP.xy / 8.0, l)) * w.z;
+  return c;
+}`)
+        .replace('#include <map_fragment>', `
+{
+  vec2 g = vec2((vWP.x - uGrid.x) / uGrid.z, (-vWP.z - uGrid.y) / uGrid.z) - 0.5, i = floor(g), f = fract(g);
+  f = f * f * (3.0 - 2.0 * f);
+  vec3 w = pow(abs(normalize(vWN)), vec3(4.0)); w /= w.x + w.y + w.z;
+  float a = tileLayer(i), b = tileLayer(i + vec2(1.0, 0.0)), c = tileLayer(i + vec2(0.0, 1.0)), d = tileLayer(i + vec2(1.0, 1.0));
+  vec4 ta = groundTex(a, w);
+  vec4 tb = b == a ? ta : groundTex(b, w);
+  vec4 tc = c == a ? ta : groundTex(c, w);
+  vec4 td = d == a ? ta : d == b ? tb : d == c ? tc : groundTex(d, w);
+  vec4 col = mix(mix(ta, tb, f.x), mix(tc, td, f.x), f.y);
+  // the game's detail texture (grey, modulate x2 in gamma space); its ground is lit brighter than the models, flat
+  // ground coming out ~1.25x its texture (sand 174 -> 220, grass 124 -> 145 in screenshots)
+  col.rgb *= pow(texture2D(uDetail, vWP.xz / 2.0).rgb * 2.0, vec3(2.2)) * 1.6;
+  diffuseColor *= col;
+}`);
+    };
+    return mat;
+  }
   function buildTerrain() {
     clear(layers.terrain);
-    const W = world.cols, H = world.rows, T = world.tile, X0 = world.x0, Z0 = world.z0;
-    // smooth normals from the shared corner heights
-    const G = new Float32Array((W + 1) * (H + 1));
+    const W = world.cols, H = world.rows, T = world.tile, X0 = world.x0, Z0 = world.z0, seq = loadSeq;
+    // smooth normals from the corner heights (averaged where tiles meet)
+    const G = new Float32Array((W + 1) * (H + 1)), N = new Float32Array((W + 1) * (H + 1));
     for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
       const i = r * W + c;
-      G[r * (W + 1) + c] = tileH(i, 0); G[r * (W + 1) + c + 1] = tileH(i, 1);
-      G[(r + 1) * (W + 1) + c] = tileH(i, 2); G[(r + 1) * (W + 1) + c + 1] = tileH(i, 3);
+      for (let k = 0; k < 4; k++) { const j = (r + (k >> 1)) * (W + 1) + c + (k & 1); G[j] += tileH(i, k); N[j]++; }
     }
+    for (let j = 0; j < G.length; j++) G[j] /= N[j];
     const gh = (r, c) => G[Math.max(0, Math.min(H, r)) * (W + 1) + Math.max(0, Math.min(W, c))];
     const nrm = (r, c) => { const n = new THREE.Vector3(gh(r, c - 1) - gh(r, c + 1), 2 * T, gh(r + 1, c) - gh(r - 1, c)); return n.normalize(); };
-    const groups = {};
+    const p = [], n = [], col = [], corner = [[0, 0], [1, 0], [0, 1], [1, 1]];
     for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
-      const i = r * W + c, h = [tileH(i, 0), tileH(i, 1), tileH(i, 2), tileH(i, 3)];
-      const g = (groups[world.tex[i]] ??= { p: [], n: [], uv: [], col: [] });
-      const corner = [[0, 0], [1, 0], [0, 1], [1, 1]], col = ownColour(world.own[i]);
+      const i = r * W + c, h = [tileH(i, 0), tileH(i, 1), tileH(i, 2), tileH(i, 3)], oc = ownColour(world.own[i]);
       for (const tri of tris(h)) for (const k of tri) {
-        const x = X0 + (c + corner[k][0]) * T, z = Z(Z0 + (r + corner[k][1]) * T);
-        g.p.push(x, h[k], z); const n = nrm(r + corner[k][1], c + corner[k][0]); g.n.push(n.x, n.y, n.z);
-        g.uv.push(x / 8, z / 8); g.col.push(...col);
+        p.push(X0 + (c + corner[k][0]) * T, h[k], Z(Z0 + (r + corner[k][1]) * T));
+        const v = nrm(r + corner[k][1], c + corner[k][0]); n.push(v.x, v.y, v.z); col.push(...oc);
       }
     }
-    for (const [tex, g] of Object.entries(groups)) {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(g.p, 3));
-      geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.n, 3));
-      geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2));
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(g.col, 3));
-      const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: gameTex('terrain_' + String(tex).padStart(2, '0')), vertexColors: true }));
-      m.userData.pick = { title: 'Ground', tex: +tex };
-      layers.terrain.add(m);
-    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(n, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x8a8a70, vertexColors: true }));
+    ground.userData.pick = { title: 'Ground' }; ground.userData.ground = true;
+    layers.terrain.add(ground);
+    const used = [...new Set(world.tex)].sort((a, b) => a - b);
+    Promise.all(used.map(t => imgData('terrain_' + String(t).padStart(2, '0')))).then(data => {
+      if (seq === loadSeq && ground.parent) ground.material = terrainMaterial(used, data);
+    });
+    buildCliffs();
     // the land around the park
     let lo = Infinity;
     for (let i = 0; i < W * H; i++) lo = Math.min(lo, tileH(i, 0));
@@ -274,17 +361,40 @@ function build() {
     terrainObj = layers.terrain;
     buildGrid();
   }
+  // cliff walls: along every tile edge whose two sides are at different heights, from the lower side up to the higher,
+  // in the higher tile's cliff style
+  function buildCliffs() {
+    const W = world.cols, H = world.rows, T = world.tile, by = {};
+    const wall = (style, ax, az, a0, a1, bx, bz, b0, b1) => {
+      if (Math.max(Math.abs(a0 - a1), Math.abs(b0 - b1)) < 0.02) return;
+      const g = (by[style] ??= { p: [], uv: [] }), along = (x, z) => (x + z) / 8;
+      const A0 = [ax, Math.min(a0, a1), Z(az)], A1 = [ax, Math.max(a0, a1), Z(az)], B0 = [bx, Math.min(b0, b1), Z(bz)], B1 = [bx, Math.max(b0, b1), Z(bz)];
+      g.p.push(...A0, ...B0, ...B1, ...A0, ...B1, ...A1);
+      const ua = along(ax, az), ub = along(bx, bz);
+      g.uv.push(ua, A0[1] / 8, ub, B0[1] / 8, ub, B1[1] / 8, ua, A0[1] / 8, ub, B1[1] / 8, ua, A1[1] / 8);
+    };
+    const style = (i, j) => { const hi = (tileH(i, 0) + tileH(i, 3)) >= (tileH(j, 0) + tileH(j, 3)) ? i : j; return world.cliff?.[hi] ?? 0; };
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+      const i = r * W + c, x = world.x0 + c * T, z = world.z0 + r * T;
+      if (c + 1 < W) wall(style(i, i + 1), x + T, z, tileH(i, 1), tileH(i + 1, 0), x + T, z + T, tileH(i, 3), tileH(i + 1, 2));
+      if (r + 1 < H) wall(style(i, i + W), x, z + T, tileH(i, 2), tileH(i + W, 0), x + T, z + T, tileH(i, 3), tileH(i + W, 1));
+    }
+    for (const [s, g] of Object.entries(by)) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(g.p, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(g.uv, 2)); geo.computeVertexNormals();
+      const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: gameTex('terraincliff' + s), side: THREE.DoubleSide }));
+      m.userData.pick = { title: 'Cliff' };
+      layers.terrain.add(m);
+    }
+  }
   function recolourTerrain() {
     // ownership shading follows the same vertex order as buildTerrain
-    const W = world.cols, H = world.rows, fill = {};
-    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
-      const i = r * W + c, col = ownColour(world.own[i]);
-      const a = (fill[world.tex[i]] ??= []);
-      for (let k = 0; k < 6; k++) a.push(...col);
-    }
-    for (const m of layers.terrain.children) if (m.userData.pick?.tex != null) {
-      const attr = m.geometry.getAttribute('color'); attr.array.set(fill[m.userData.pick.tex]); attr.needsUpdate = true;
-    }
+    const ground = layers.terrain.children.find(m => m.userData.ground);
+    if (!ground) return;
+    const W = world.cols, H = world.rows, a = ground.geometry.getAttribute('color');
+    for (let i = 0; i < W * H; i++) { const oc = ownColour(world.own[i]); for (let k = 0; k < 6; k++) a.array.set(oc, (i * 6 + k) * 3); }
+    a.needsUpdate = true;
   }
   function buildGrid() {
     clear(layers.grid);
@@ -560,6 +670,7 @@ function build() {
   function sidModel(s) {
     const col = s.col ? s.col.join(',') : '';            // the object's own three colours (recolourable textures)
     const key = s.name + '|' + s.overlay + '|' + col;
+    modelUsed.add(key);
     if (!modelCache[key]) modelCache[key] = fetch(`/api/park_model?sid=${encodeURIComponent(s.name)}&overlay=${encodeURIComponent(s.overlay)}${col ? '&col=' + col : ''}`).then(async r => {
       if (!r.ok) return null;
       const meta = JSON.parse(r.headers.get('X-Info') || '{}');
@@ -717,6 +828,7 @@ function build() {
     history.replaceState(null, '', '#park=' + encodeURIComponent(file));
     status('Reading the park…', 0.02);
     for (const m of mixers) m.stopAllAction(); mixers = []; rideSpots = {};
+    texUsed.clear(); modelUsed.clear(); dressTex.clear();
     let d;
     try { d = await (await fetch('/api/park?file=' + encodeURIComponent(file))).json(); } catch (e) { d = { error: String(e) }; }
     if (seq !== loadSeq) return;
@@ -738,6 +850,7 @@ function build() {
     const np = world.people.filter(p => p[5] >= 0).length;
     await buildPersonModels(seq, (n, of) => status(`Loading people ${n} / ${of} (${np.toLocaleString()} guests and staff)…`, 0.7 + 0.3 * n / of));
     if (seq !== loadSeq) return;
+    evictUnused();
     status(null);
   }
   function applyLayers() {
@@ -920,6 +1033,6 @@ function build() {
   function tour(force) { if (root.style.display === 'none' || tourRunning()) return; runTour('parks', TOUR, { force }); }
   $('#pk-tour', root).onclick = () => tour(true);
 
-  window.__pkdebug = { scene, camera, controls, layers, get world() { return world; }, get info() { return info; }, rideSpots: () => rideSpots, load, heightAt, ROT, flyTo, get current() { return current; } };
+  window.__pkdebug = { scene, renderer, camera, controls, layers, get world() { return world; }, get info() { return info; }, rideSpots: () => rideSpots, load, heightAt, ROT, flyTo, get current() { return current; } };
   return { root, start, stop, load, ready, tour, parks: [], current: null, onBack: null };
 }

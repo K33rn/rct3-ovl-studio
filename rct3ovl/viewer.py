@@ -121,7 +121,8 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                         return self.js(parks.finite({'info': parks.park_info(lib, q['file']), 'world': parks.park_world(lib, q['file'])}))
                 if u.path == '/api/park_model':
                     with lock:
-                        res = parks.sid_model(lib, q['sid'], q.get('overlay', ''))
+                        col = [int(x) for x in q['col'].split(',')][:3] if q.get('col') else None
+                        res = parks.sid_model(lib, q['sid'], q.get('overlay', ''), col)
                     if res is None:
                         return self.js({'error': 'no model for this item'}, 404)
                     return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
@@ -133,7 +134,8 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
                 if u.path == '/api/park_car':
                     with lock:
-                        res = parks.car_model(lib, q['rit'], q.get('overlay', ''), int(q.get('slot', 2)), q.get('part', 'main'))
+                        col = [int(x) for x in q['col'].split(',')][:3] if q.get('col') else None
+                        res = parks.car_model(lib, q['rit'], q.get('overlay', ''), int(q.get('slot', 2)), q.get('part', 'main'), col)
                     if res is None:
                         return self.js({'error': 'no such car'}, 404)
                     return self.send(200, res[0], 'model/gltf-binary', {'X-Info': json.dumps(res[1], default=str)})
@@ -153,9 +155,10 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                         glb, info = parks.track_model(lib, q['file'], int(q['id']))
                     return self.js(info.get('supports', []))
                 if u.path == '/api/park_tex':
-                    name = q.get('name', '')
+                    name, _, col = q.get('name', '').partition('|')     # 'Name:ftx|23,9,14': in those colours
+                    cols = parks.flexi_colours([int(x) for x in col.split(',')][:3]) if col else None
                     with lock:
-                        img = lib.texture_image(name) if name.lower().endswith((':tex', ':ftx')) else None
+                        img = lib.texture_image(name, colors=cols) if name.lower().endswith((':tex', ':ftx')) else None
                     if img is None:
                         return self.js({'error': 'no such texture'}, 404)
                     b = io.BytesIO(); img.save(b, 'PNG')

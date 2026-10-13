@@ -168,12 +168,13 @@ class Library:
                     out.append(a)
         return out
 
-    def texture_image(self, name: str, prefer: Ovl | None = None):
+    def texture_image(self, name: str, prefer: Ovl | None = None, colors=None):
+        """colors: up to 3 (r, g, b) for a recolourable FlexiTexture (a placed object's own colours)."""
         hit = self.find(name, prefer)
         if not hit:
             return None
         o, r, ts = hit
         try:
-            return ts.image(r)
+            return ts.image(r, colors=colors)
         except Exception:
             return None

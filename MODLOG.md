@@ -527,3 +527,16 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   Using the sheet RGB as colour drew them black (the game's Blood: red LensFlares_12, alpha 1). In the game,
   CoasterSmoke draws light grey over a dark preview. Now: solid particles = particle colour with sheet alpha x alpha
   curve as opacity (normal blending); glowing particles = max(sheet RGB, sheet alpha) x colour, additive.
+
+## 2026-10-13: Parks compared with the game (Steam RCT3 Platinum)
+- Object colours: FlexiColourField COL0-2 index the game's 32 colours (flexicolour_0..31:gsi swatches, sampled ->
+  parks.FLEXI_COLOURS). Applied to recolourable ftx: placed items (their own or owner's FlexiColourField), track
+  (Track.TrackFlexiColours) and its supports, ride cars (ride's CarFlexiColours), queue floors / railings
+  (QueueTypeGroundSurface.Colours, passed as 'Name:ftx|a,b,c' to /api/park_tex). Placeholders (blue/magenta/yellow)
+  are gone; High Flier blue track on yellow supports and red cars as in the game.
+- Coaster supports: not in the save (no support objects; TrackSection has no support data) - the game builds them.
+  Steel/suspended now placed along the real centreline (rail splines, designs._piece_path), every 4 m of track,
+  none on steep (>~49 deg) track or station tiles; suspended: column 1.6 m beside the track on the curve's outside,
+  2-tile girder (ts1_girder_2L, 2.66 m) resting on the track top. Game spacing looks ~1.5x sparser - not tuned yet.
+- Queue type stub has deck models only (Straight/TurnL/TurnR/Slope*:sid, raised deck slabs); the game's railings
+  (thin dark posts, two grey handrails) are drawn by the engine - viewer still uses texture panels.

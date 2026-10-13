@@ -498,6 +498,7 @@ def park_world(lib: Library, rel: str) -> dict:
     # ground paths and queues
     paths = []
     styles = []
+    qcols = {}                                         # queue type -> its colours (QueueTypeGroundSurface.Colours)
     for oid, (n, v) in O.items():
         if n in ('PathTile', 'PathGround', 'PathQueue') and 'ColIndex' in v:
             surf = O.get(v.get('Surface'), ('', {}))
@@ -505,6 +506,9 @@ def park_world(lib: Library, rel: str) -> dict:
                 style = surf[1].get('SystemName', '')
             elif surf[0] == 'QueueTypeGroundSurface':
                 style = 'queue:' + O.get(surf[1].get('QueueType'), ('', {}))[1].get('SystemName', '')
+                c = surf[1].get('Colours')
+                if isinstance(c, dict):
+                    qcols.setdefault(style, [c.get(f'COL{i}', 0) for i in range(3)])
             else:
                 style = ''
             if style not in styles:
@@ -520,7 +524,7 @@ def park_world(lib: Library, rel: str) -> dict:
         if s.startswith('queue:'):
             h = lib.find(s[6:] + ':qtd')
             ftx = next((i for i in _imports(h[0], h[1]) if i.lower().endswith((':ftx', ':tex'))), None) if h else None
-            ptex[s] = ftx or ''
+            ptex[s] = (ftx + '|' + ','.join(map(str, qcols[s]))) if ftx and s in qcols else (ftx or '')
         elif s:
             ptex[s] = 'path_' + s.lower() + '_grounda:tex'
     world['path_tex'] = ptex
@@ -529,11 +533,13 @@ def park_world(lib: Library, rel: str) -> dict:
     sids, items = [], []
     sid_index = {}
 
-    def sid_of(ref):
+    def sid_of(ref, fc=None):
         e = O.get(ref, ('', {}))[1]
-        key = (e.get('SYMBOLNAME', ''), e.get('OVERLAYFILENAME', ''))
+        col = tuple(fc.get(f'COL{i}', 0) for i in range(3)) if isinstance(fc, dict) else None
+        key = (e.get('SYMBOLNAME', ''), e.get('OVERLAYFILENAME', ''), col)
         if key not in sid_index:
-            sid_index[key] = len(sids); sids.append({'name': key[0], 'overlay': key[1]})
+            sid_index[key] = len(sids)
+            sids.append({'name': key[0], 'overlay': key[1], **({'col': list(col)} if col else {})})
         return sid_index[key]
 
     def place(gd, sid, kind, ref=None, absolute=False):
@@ -554,10 +560,10 @@ def park_world(lib: Library, rel: str) -> dict:
                 continue                                   # laid by the track builder
             if own[0] == 'SceneryItemPlacementSingle':
                 continue                                   # placed below, with the ride or stall it belongs to
-            place(v['SceneryItemDataField'], sid_of(v['DATABASEENTRY']), kinds.get(own[0], 0),
+            place(v['SceneryItemDataField'], sid_of(v['DATABASEENTRY'], v.get('FlexiColourField') or own[1].get('FlexiColourField')), kinds.get(own[0], 0),
                   absolute=bool(v.get('FORCEABSOLUTEHEIGHT')) or own[0] != 'SceneryItem')
         elif n == 'SceneryItemPlacementSingle':
-            place(v['SceneryItemDataField'], sid_of(v['SIDDatabaseEntry']), 3, ref=v.get('Owner'))
+            place(v['SceneryItemDataField'], sid_of(v['SIDDatabaseEntry'], v.get('FlexiColourField')), 3, ref=v.get('Owner'))
     world['sids'] = sids
     # supports under raised paths and queues: the path piece's sid names its support style (pathcrazy,
     # pathasphalt, flatqueueset1...), stacked from the ground up to under the piece
@@ -590,7 +596,9 @@ def park_world(lib: Library, rel: str) -> dict:
     # queue railings: built along the edges a queue tile doesn't open on (StartDirection / EndDirection, numbered
     # 0 -col, 1 +col, 2 -row, 3 +row: fits every queue tile of every park), from the railing part of the queue
     # type's raised texture (the game draws them itself; no models)
-    world['queue_rails'] = {s: list(QUEUE_RAILS[s[6:].lower()]) for s in styles if s.startswith('queue:') and s[6:].lower() in QUEUE_RAILS}
+    world['queue_rails'] = {s: [QUEUE_RAILS[s[6:].lower()][0] + ('|' + ','.join(map(str, qcols[s])) if s in qcols else ''),
+                                QUEUE_RAILS[s[6:].lower()][1]]
+                            for s in styles if s.startswith('queue:') and s[6:].lower() in QUEUE_RAILS}
     world['items'] = items
     # tracked rides: one model each (/api/park_track)
     world['tracks'] = [{'id': oid, 'name': _name(lib, v.get('Name'))} for oid, (n, v) in O.items() if n == 'TrackedRideInstance']
@@ -625,6 +633,13 @@ def park_world(lib: Library, rel: str) -> dict:
     world['person_combos'] = combos
     # ride cars: where each car of each train stood (world position, Euler angles), and which car model it is
     cars, car_models, car_index = [], [], {}
+
+    def car_cols(tr):                                    # the ride's car colours (CarFlexiColours), as 3 indices
+        for val in tr.values():
+            if isinstance(val, int) and val in O and isinstance(O[val][1].get('CarFlexiColours'), dict):
+                fc = O[val][1]['CarFlexiColours']
+                return [fc.get(f'COL{i}', 0) for i in range(3)]
+        return None
     for oid, (n, v) in O.items():
         if n != 'RideCarInstance' or not isinstance(v.get('Stats'), dict):
             continue
@@ -634,9 +649,10 @@ def park_world(lib: Library, rel: str) -> dict:
         if not rit or not st.get('PosValid', 1):
             continue
         def model(part):
-            key = (rit, tr.get('RideTrainOverlayName', ''), v.get('WhichRideTrainCar', 2), part)
+            col = car_cols(tr)
+            key = (rit, tr.get('RideTrainOverlayName', ''), v.get('WhichRideTrainCar', 2), part, tuple(col) if col else None)
             if key not in car_index:
-                car_index[key] = len(car_models); car_models.append(list(key))
+                car_index[key] = len(car_models); car_models.append(list(key[:4]) + [col])
             return car_index[key]
         p = st.get('Pos') or [0, 0, 0]
         cars.append([model('main'), round(p[0], 3), round(p[1], 3), round(p[2], 3)] + _euler(st.get('Orient')))
@@ -650,9 +666,10 @@ def park_world(lib: Library, rel: str) -> dict:
         pp = v.get('PivotPos')
         if not rit or not pp:
             continue
-        key = (rit, tr.get('RideTrainOverlayName', ''), car.get('WhichRideTrainCar', 2), 'swing')
+        col = car_cols(tr)
+        key = (rit, tr.get('RideTrainOverlayName', ''), car.get('WhichRideTrainCar', 2), 'swing', tuple(col) if col else None)
         if key not in car_index:
-            car_index[key] = len(car_models); car_models.append(list(key))
+            car_index[key] = len(car_models); car_models.append(list(key[:4]) + [col])
         cars.append([car_index[key], round(pp[0], 3), round(pp[1], 3), round(pp[2], 3)] + [0.0, _euler(v.get('RotatedEndOrient'))[1], 0.0] + [round(v.get('Length') or 0, 3)])   # hangs straight down, turned like the car
     world['cars'] = cars
     world['car_models'] = car_models
@@ -689,10 +706,32 @@ def _sid_hit(lib: Library, name: str, overlay: str):
     return lib.find(name + ':sid', prefer=prefer)
 
 
-def sid_model(lib: Library, name: str, overlay: str = '') -> tuple[bytes, dict] | None:
-    """A placed item's model: sid -> visual (svd) -> highest-detail shs/bsh, with its bone animations."""
+# The game's 32 object colours (FlexiColourField COL0-2 index them): sampled from its own colour swatches
+# (flexicolour_0..31:gsi, the colour picker).
+FLEXI_COLOURS = [(48, 74, 74), (129, 146, 140), (242, 241, 242), (80, 79, 140), (138, 135, 187), (144, 105, 173),
+                 (58, 90, 169), (105, 158, 212), (183, 229, 250), (64, 163, 159), (212, 238, 243), (54, 161, 72),
+                 (98, 156, 116), (125, 164, 67), (101, 188, 69), (158, 179, 108), (153, 159, 72), (254, 241, 86),
+                 (248, 213, 32), (164, 111, 41), (246, 134, 45), (223, 83, 38), (203, 160, 84), (144, 100, 38),
+                 (141, 126, 100), (220, 162, 120), (189, 91, 90), (172, 30, 35), (238, 34, 36), (164, 31, 91),
+                 (229, 92, 162), (247, 174, 173)]
+
+
+def flexi_colours(fc) -> tuple | None:
+    """FlexiColourField {COL0, COL1, COL2} (or a list of 3 indices) -> three (r, g, b), or None."""
+    if not fc:
+        return None
+    idx = [fc.get(f'COL{i}') for i in range(3)] if isinstance(fc, dict) else list(fc)[:3]
+    if not any(isinstance(i, int) and 0 <= i < 32 for i in idx):
+        return None
+    return tuple(FLEXI_COLOURS[i] if isinstance(i, int) and 0 <= i < 32 else None for i in idx)
+
+
+def sid_model(lib: Library, name: str, overlay: str = '', col=None) -> tuple[bytes, dict] | None:
+    """A placed item's model: sid -> visual (svd) -> highest-detail shs/bsh, with its bone animations.
+    col: its three colour indices (FlexiColourField) for recolourable textures."""
     cache = lib.__dict__.setdefault('_sid_models', {})
-    key = (name.lower(), overlay.lower())
+    colors = flexi_colours(col)
+    key = (name.lower(), overlay.lower(), tuple(col) if col else None)
     if key in cache:
         return cache[key]
     res = None
@@ -733,7 +772,7 @@ def sid_model(lib: Library, name: str, overlay: str = '') -> tuple[bytes, dict] 
                         pass
             for a, short in zip(anims, _short([a.name.split(':')[0] for a in anims])):
                 a.name = short[:1].upper() + short[1:]
-            glb = shape_to_glb(shape, lambda n: lib.texture_image(n, prefer=hm[0]), anims if shape.bones else None)
+            glb = shape_to_glb(shape, lambda n: lib.texture_image(n, prefer=hm[0], colors=colors), anims if shape.bones else None)
             res = (glb, {'name': name, 'squares': squares, 'size': size,
                          'animations': [a.name for a in anims] if shape.bones else []})
             break
@@ -775,11 +814,15 @@ def _track_model(lib: Library, rel: str, ride_id: int) -> tuple[bytes, dict]:
     shift = np.array([x0 + 2, 0, z0 + 2], np.float32)          # grid tile n (centred on 4n) -> park tile n
     for m in merged.meshes:
         m.positions = m.positions + shift
+    merged.path = [(C + shift, L) for C, L in getattr(merged, 'path', [])]
+    trk = next((v for n, v in O.values() if n == 'Track' and v.get('TrackedRideInstance') == ride_id), {})
+    fc = trk.get('TrackFlexiColours') or next(iter(pieces.values())).get('FlexiColourField')
+    col = [fc.get(f'COL{i}', 0) for i in range(3)] if fc else None
     style = _track_support_style(lib, ts, pieces)
     stations = frozenset((v['SceneryItemDataField']['POSX'], v['SceneryItemDataField']['POSZ'])
                          for v in pieces.values() if 'station' in v['SYMBOLNAME'].lower())
     inverted = any(v['SYMBOLNAME'].lower().lstrip('45').startswith('inv') for v in pieces.values())
-    return track_glb(lib, merged), {'name': _name(lib, ride.get('Name')), 'type': sym, 'pieces': len(pieces),
+    return track_glb(lib, merged, flexi_colours(col)), {'name': _name(lib, ride.get('Name')), 'type': sym, 'pieces': len(pieces), 'col': col,
                                     'placed': placed, 'missing': sorted(missing),
                                     'closure_gap': round(max(gaps), 3) if gaps else None,
                                     'support_style': style, 'inverted': inverted,
@@ -841,6 +884,8 @@ def support_parts(lib: Library) -> dict:
         elif typ == 'support girder':
             if '1l' in name or 'girder' not in e:
                 e['girder'] = real
+            if '2l' in name:
+                e['girder2'] = real
         elif typ == 'support cap':
             e.setdefault('cap', real)
     lib._support_parts = out
@@ -867,6 +912,87 @@ def _stack(parts: dict, x, z, y0, y1, yaw, out: list):
 
 
 THIN_SUPPORTS = {'ts1', 'ts1a', 'ts4', 'ts7', 'ts8', 'ts9', 'ts10', 'steel'}     # a single column under the track
+
+
+def _path_supports(parts: dict, path: list, P, ground_at, inverted: bool, stations, grid, clear: float) -> list:
+    """Supports along the track's centreline (its rail splines), one every SPACING metres of track, as the game builds
+    them for steel coasters: a single column under the track (its bottom), or for suspended / inverted tracks a
+    column beside the track with a girder on top reaching over it, the track hanging just under the girder.
+    Columns whose way down is blocked by another part of the track move to the other side (suspended) or are
+    left out; none stands on a station tile or under track too low or too steep for one."""
+    x0, z0, T = grid
+    SPACING, BESIDE = 4.0, 1.6                         # metres of track between supports; column offset (suspended)
+    out, placed = [], []
+    Pxz, Py = P[:, [0, 2]], P[:, 1]
+
+    def near_track(x, z, r, y0, y1):                  # track vertices within r m (horizontal), between y0 and y1
+        m = (np.abs(Pxz[:, 0] - x) < r) & (np.abs(Pxz[:, 1] - z) < r) & (Py > y0) & (Py < y1)
+        return Py[m]
+
+    def free(x, z, g, top):
+        return near_track(x, z, 0.45, g + 0.3, top - 0.6).size == 0 and \
+            not any((x - a) ** 2 + (z - b) ** 2 < 2.2 ** 2 for a, b in placed)
+
+    def tile(x, z):
+        return int((x - x0) // T), int((z - z0) // T)
+
+    # one polyline (pieces in order, each turned to continue the last), then samples every SPACING m
+    pts = []
+    for C, _L in path:
+        if pts and np.linalg.norm(C[-1] - pts[-1]) < np.linalg.norm(C[0] - pts[-1]):
+            C = C[::-1]
+        pts.extend(C if not pts else C[1:])
+    pts = np.array(pts)
+    if len(pts) < 2:
+        return []
+    seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+    dist = np.r_[0, np.cumsum(seg)]
+    for d in np.arange(SPACING / 2, dist[-1], SPACING):
+        i = min(int(np.searchsorted(dist, d)) - 1, len(pts) - 2)
+        i = max(i, 0)
+        k = (d - dist[i]) / max(seg[i], 1e-6)
+        c = pts[i] + (pts[i + 1] - pts[i]) * k
+        tng = pts[i + 1] - pts[i]
+        tn = tng / max(np.linalg.norm(tng), 1e-6)
+        if abs(tn[1]) > 0.75:                          # steep or vertical (lift hills, loops): no support
+            continue
+        if tile(c[0], c[2]) in stations:               # stations stand on their platforms
+            continue
+        h = np.array([tn[0], tn[2]]); h /= max(np.linalg.norm(h), 1e-6)
+        across = np.array([-h[1], h[0]])               # horizontal, perpendicular to the track
+        along = float(np.arctan2(-h[1], h[0]))
+        ys = near_track(c[0], c[2], 0.9, c[1] - 3.0, c[1] + 3.0)
+        if ys.size == 0:
+            continue
+        if inverted:
+            top = float(ys.max())                      # the track's top here: the girder rests on it
+            # turn: the column on the outside of the curve (the game keeps it clear of the inside)
+            j = min(i + 3, len(pts) - 2)
+            t2 = pts[j + 1] - pts[j]
+            turn = h[0] * t2[2] - h[1] * t2[0]
+            sides = [1.0, -1.0] if turn <= 0 else [-1.0, 1.0]
+            for sgn in sides:
+                sx, sz = c[0] + sgn * BESIDE * across[0], c[2] + sgn * BESIDE * across[1]
+                g = ground_at(sx, sz)
+                if g is None or top - g < 2 or tile(sx, sz) in stations:
+                    continue
+                if not free(sx, sz, g, top):
+                    continue
+                _stack(parts, sx, sz, g, top, along, out)      # the column up to the girder's underside
+                placed.append((sx, sz))
+                if parts.get('girder2') or parts.get('girder'):
+                    gx, gz = c[0] + sgn * (BESIDE - 1.33 + 0.36) * across[0], c[2] + sgn * (BESIDE - 1.33 + 0.36) * across[1]
+                    out.append([parts.get('girder2') or parts['girder'], float(gx), top + 0.22, float(gz),
+                                float(np.arctan2(-across[1] * sgn, across[0] * sgn))])
+                break
+            continue
+        bottom = float(ys.min()) - 0.1                 # under the track's lowest point here
+        g = ground_at(c[0], c[2])
+        if g is None or bottom - g < clear or not free(c[0], c[2], g, bottom):
+            continue
+        _stack(parts, float(c[0]), float(c[2]), g, bottom, along, out)
+        placed.append((c[0], c[2]))
+    return [[s, round(float(x), 3), round(float(y), 3), round(float(z), 3), round(float(a), 4)] for s, x, y, z, a in out]
 
 
 def _supports(lib: Library, merged, ter: bytes, style: str, inverted: bool, stations=frozenset(), clear: float = 1.0) -> list:
@@ -901,11 +1027,14 @@ def _supports(lib: Library, merged, ter: bytes, style: str, inverted: bool, stat
         return any((x - a) ** 2 + (z - b) ** 2 < gap * gap for a, b in placed)
 
     P = np.concatenate([m.positions for m in merged.meshes])
+    thin = style in THIN_SUPPORTS
+    path = getattr(merged, 'path', None)
+    if path and (thin or inverted):
+        return _path_supports(parts, path, P, ground_at, inverted, stations, (x0, z0, T), clear)
     cells = np.floor((P[:, [0, 2]] - [x0, z0]) / T).astype(np.int64)
     order = np.lexsort((cells[:, 1], cells[:, 0]))
     cells, P = cells[order], P[order]
     split = np.flatnonzero(np.any(np.diff(cells, axis=0), axis=1)) + 1
-    thin = style in THIN_SUPPORTS
     out = []
     for grp, k in zip(np.split(P, split), cells[np.r_[0, split]]):
         if len(grp) < 6 or (int(k[0]), int(k[1])) in stations:      # stations stand on their platforms
@@ -1010,12 +1139,13 @@ def person_model(lib: Library, groups: list[str], lod: int = 1) -> tuple[bytes, 
     return res
 
 
-def car_model(lib: Library, rit: str, overlay: str, slot: int, part: str = 'main') -> tuple[bytes, dict] | None:
+def car_model(lib: Library, rit: str, overlay: str, slot: int, part: str = 'main', col=None) -> tuple[bytes, dict] | None:
     """A ride car: the train (rit) lists its cars at +8 + 4 * slot (front, second, middle, second to last, rear,
     link); the car (ric) holds its visual at +0x0C (the car, or a swinging car's bogie on the track) and the swinging
     part's at +0x14 (part='swing')."""
     cache = lib.__dict__.setdefault('_car_models', {})
-    key = (rit.lower(), overlay.lower(), slot, part)
+    key = (rit.lower(), overlay.lower(), slot, part, tuple(col) if col else None)
+    colors = flexi_colours(col)
     if key in cache:
         return cache[key]
     res = None
@@ -1054,6 +1184,6 @@ def car_model(lib: Library, rit: str, overlay: str, slot: int, part: str = 'main
                 hm = (lib.find_near(lods[0].model, hv[0]) or lib.find(lods[0].model)) if lods else None
                 if hm:
                     shape = load_shape(hm[0], hm[1])
-                    res = (shape_to_glb(shape, lambda n: lib.texture_image(n, prefer=hm[0])), {'car': ric, 'model': lods[0].model})
+                    res = (shape_to_glb(shape, lambda n: lib.texture_image(n, prefer=hm[0], colors=colors)), {'car': ric, 'model': lods[0].model})
     cache[key] = res
     return res

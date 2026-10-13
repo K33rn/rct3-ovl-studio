@@ -465,9 +465,9 @@ function build() {
     const by = {};
     for (const c of world.cars || []) (by[c[0]] ??= []).push(c);
     for (const [mi, list] of Object.entries(by)) {
-      const [rit, overlay, slot, part] = world.car_models[mi];
+      const [rit, overlay, slot, part, col] = world.car_models[mi];
       try {
-        const r = await fetch(`/api/park_car?rit=${encodeURIComponent(rit)}&overlay=${encodeURIComponent(overlay)}&slot=${slot}&part=${part || 'main'}`);
+        const r = await fetch(`/api/park_car?rit=${encodeURIComponent(rit)}&overlay=${encodeURIComponent(overlay)}&slot=${slot}&part=${part || 'main'}${col ? '&col=' + col.join(',') : ''}`);
         if (!r.ok || seq !== loadSeq) continue;
         const g = await gltf.parseAsync(await r.arrayBuffer(), '');
         if (seq !== loadSeq) return;
@@ -482,11 +482,11 @@ function build() {
     }
   }
   // coaster supports, built from the ride's own support style pieces (/api/park_supports: [sid, x, y, z, yaw])
-  async function addSupports(list, name, seq) {
+  async function addSupports(list, name, seq, col) {
     const by = new Map();
     for (const s of list || []) { if (!by.has(s[0])) by.set(s[0], []); by.get(s[0]).push(s); }
     for (const [sid, parts] of by) {
-      const got = await sidModel({ name: sid, overlay: '' });
+      const got = await sidModel({ name: sid, overlay: '', col });   // in the ride's colours
       if (!got || seq !== loadSeq) continue;
       const mats = parts.map(([, x, y, z, yaw]) => new THREE.Matrix4().makeRotationY(-yaw).setPosition(x, y, Z(z)));
       got.g.scene.traverse(o => {
@@ -521,8 +521,9 @@ function build() {
   // placed items: one model per sid, instanced; animated ones cloned so each plays its animation
   const modelCache = {};
   function sidModel(s) {
-    const key = s.name + '|' + s.overlay;
-    if (!modelCache[key]) modelCache[key] = fetch(`/api/park_model?sid=${encodeURIComponent(s.name)}&overlay=${encodeURIComponent(s.overlay)}`).then(async r => {
+    const col = s.col ? s.col.join(',') : '';            // the object's own three colours (recolourable textures)
+    const key = s.name + '|' + s.overlay + '|' + col;
+    if (!modelCache[key]) modelCache[key] = fetch(`/api/park_model?sid=${encodeURIComponent(s.name)}&overlay=${encodeURIComponent(s.overlay)}${col ? '&col=' + col : ''}`).then(async r => {
       if (!r.ok) return null;
       const meta = JSON.parse(r.headers.get('X-Info') || '{}');
       const g = await gltf.parseAsync(await r.arrayBuffer(), '');
@@ -624,7 +625,7 @@ function build() {
         layers.rides.add(g.scene); trackScenes.push(g.scene);
         const box = new THREE.Box3().setFromObject(g.scene); rideSpots[tr.id] = box.getCenter(new THREE.Vector3());
         const sr = await fetch(`/api/park_supports?file=${encodeURIComponent(world.file)}&id=${tr.id}`);
-        if (sr.ok) await addSupports(await sr.json(), tr.name, seq);
+        if (sr.ok) await addSupports(await sr.json(), tr.name, seq, meta.col);
       } catch (e) {}
     }
   }

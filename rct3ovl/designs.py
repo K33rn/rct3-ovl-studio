@@ -22,7 +22,7 @@ from .gltf import shape_to_glb
 from .library import Library
 from .meshes import Shape, SubMesh, load_shape
 from .rides import _imports, track_sets
-from .structs import load_spline
+from .structs import load_spline, spline_points
 from .trk import Trk, TrkError
 
 
@@ -52,6 +52,22 @@ def _piece_geometry(lib, o, r):
         return None
     unit = lambda v: v / max(np.linalg.norm(v), 1e-9)
     return np.mean(starts, 0), unit(np.mean(sd, 0)), np.mean(ends, 0), unit(np.mean(ed, 0))
+
+
+def _piece_path(lib, o, r):
+    """The piece's centreline in its own space, sampled along its two rail splines: (points (n, 3), across (n, 3)
+    from the left rail to the right one, or None for a single spline)."""
+    spl = [n for n in _imports(o, r) if n.lower().endswith(':spl')][:2]
+    lines = []
+    for s in spl:
+        h = lib.find_near(s, o)
+        if h:
+            lines.append(np.array(spline_points(load_spline(h[0], h[1]), 8), float))
+    if not lines:
+        return None
+    if len(lines) == 2 and len(lines[0]) == len(lines[1]):
+        return (lines[0] + lines[1]) / 2, lines[1] - lines[0]
+    return lines[0], None
 
 
 def _roty(k: int) -> np.ndarray:
@@ -121,11 +137,12 @@ def build_design(lib: Library, path: str) -> tuple[bytes, dict]:
     return track_glb(lib, merged), info
 
 
-def track_glb(lib: Library, merged: Shape) -> bytes:
+def track_glb(lib: Library, merged: Shape, colors=None) -> bytes:
+    """colors: the ride's three track colours (r, g, b) for its recolourable textures."""
     lookup_ovl = {}
 
     def tex(n):
-        return lib.texture_image(n, prefer=lookup_ovl.get(n))
+        return lib.texture_image(n, prefer=lookup_ovl.get(n), colors=colors)
     for m in merged.meshes:
         lookup_ovl.setdefault(m.texture, getattr(m, '_ovl', None))
     return shape_to_glb(merged, tex)
@@ -140,7 +157,8 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
         raise OvlError(f'no track pieces found for {ride_symbol}')
     where = {n.lower(): (o, n) for o, n in ts['pieces']}
     merged = Shape(name, 'shs', ((0, 0, 0), (0, 0, 0)))
-    geo_cache, shape_cache, missing = {}, {}, set()
+    merged.path = []                                  # the centreline, piece by piece: [(points, across)]
+    geo_cache, shape_cache, path_cache, missing = {}, {}, {}, set()
     placed, gaps = 0, []
 
     def geometry(name):
@@ -152,6 +170,7 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
             o, _ = lib.open(ovl); r = next(x for x in o.resources if x.name == real)
             geo_cache[key] = _piece_geometry(lib, o, r)
             shape_cache[key] = _piece_shape(lib, o, r)
+            path_cache[key] = _piece_path(lib, o, r)
         if geo_cache[key] is None or shape_cache[key] is None:
             return None
         return geo_cache[key], shape_cache[key]
@@ -198,6 +217,10 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
                 T = cur_pos - R @ ip
                 out_p, out_d = R @ op + T, R @ odir
             _append(merged, shp, R, T)
+            pp = path_cache.get(v['SYMBOLNAME'].lower())
+            if pp is not None:
+                C, L = pp
+                merged.path.append((C @ R.T + T, None if L is None else L @ R.T))
             if first_in is None:
                 first_in, out_first = R @ s + T, R @ e + T   # where a circuit has to come back to
             cur_pos, cur_dir = out_p, out_d

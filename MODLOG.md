@@ -556,3 +556,19 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   skeletons (bone textures, one per person / car / animal); texture and model caches drop what the new park didn't
   ask for. Chrome stays ~2-2.5 GB; ui_parks_all: 42 parks, no problems. Supports at 6 m checked against the game
   on the High Flier (station U-turn: ~6 girders both); the lift-hill "density" was two crossing sections.
+- Park fence (engine-drawn, no objects in the save): chain-link panels from perimiterfence:ftx (top-left panel: posts,
+  top rail, concrete base), ~2 m wide x 2 m tall, dark (~0.3 of the texture's brightness), along every edge between
+  owned (bit 2) and other land, gap where a path crosses. Viewer: same, alpha-to-coverage so the mesh shows.
+- RCT3Terrain.SkirtTrees: u32 n + n x (u32 SceneryItem copied, u32 0, f32 x y z); all outside the map (VH 857, CF
+  163). The game draws hilly land with these trees beyond the map edge (its camera can't go there). Viewer: trees as
+  items of kind 5 (world x/z); land beyond the map = 4 m grid, heights inverse-distance from the map edge + tree
+  heights, fading to flat 240-320 m out, textured with the commonest edge texture (per-edge-tile stretching striped).
+- QueueSet1 railing in the game (closer look, VH station queue, 3 tiles): square dark posts ~3 m apart along each
+  straight run (4 gaps over 12 m) and one thick grey top rail at ~0.85 m. Viewer changed to that.
+- Brightness vs game (same spot): path 0.86, grass 0.9, queue floor 0.85, supports ~1.0 -> hemisphere light
+  1.25 -> 1.5 (flat surfaces gain more than vertical ones).
+- Daisies (terrain_10): game shows none even close up near the station, identical Terrain_RCT3 OVL in both installs;
+  probably the game's texture detail setting (couldn't reach the options from inside a park). Left as is.
+- Tests waited for the loader's opacity to read 0, which it still does for a moment after a new load starts (0.3 s
+  fade) - fast (cached) parks were measured before loading (Gemini Basin "tracks 0/2"). The viewer now sets
+  __pkdebug.loaded = file when a load finishes; ui_parks / ui_parks_all wait for that.

@@ -6,7 +6,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 base = sys.argv[1]
-DONE = "getComputedStyle(document.getElementById('pk-load')).opacity === '0'"
+DONE = 'window.__pkdebug.loaded === f'           # set when the park has finished loading
 STATS = """() => { const D = window.__pkdebug, n = g => { let k = 0; g.traverse(o => { if (o.isInstancedMesh) k += o.count; else if (o.isMesh) k++; }); return k; };
   const tracks = D.world.tracks.length, built = Object.keys(D.rideSpots()).filter(k => D.world.tracks.some(t => String(t.id) === k)).length;
   return [D.world.items.length, n(D.layers.scenery) + n(D.layers.rides), tracks, built, (D.world.animals || []).length]; }"""
@@ -26,7 +26,7 @@ with sync_playwright() as p:
         before = len(errors); t0 = time.time()
         pg.evaluate('f => [...document.querySelectorAll("#pk .pk")].find(e => e.dataset.f === f).click()', f)
         try:
-            pg.wait_for_function('f => window.__pkdebug.world?.file === f && ' + DONE, arg=f, timeout=300000)
+            pg.wait_for_function('f => ' + DONE, arg=f, timeout=300000)
         except Exception:
             bad.append((f, 'timeout', pg.inner_text('#pk-load'))); continue
         items, meshes, tracks, built, animals = pg.evaluate(STATS)

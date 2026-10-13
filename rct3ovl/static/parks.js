@@ -143,12 +143,12 @@ function build() {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.12; controls.maxPolarAngle = Math.PI * 0.495; controls.screenSpacePanning = false;
   controls.keyPanSpeed = 22; controls.listenToKeyEvents(window);
-  scene.add(new THREE.HemisphereLight(0xdcecff, 0x55603a, 1.25));
+  scene.add(new THREE.HemisphereLight(0xdcecff, 0x55603a, 1.5));
   const sun = new THREE.DirectionalLight(0xfff4e0, 1.9); sun.position.set(-300, 500, 220); scene.add(sun);
   const gltf = new GLTFLoader();
   const layers = {};
   for (const k of ['terrain', 'water', 'paths', 'scenery', 'rides', 'people', 'grid']) { layers[k] = new THREE.Group(); scene.add(layers[k]); }
-  let mixers = [], world = null, info = null, loadSeq = 0, terrainObj = null, rideSpots = {};
+  let mixers = [], world = null, info = null, loadSeq = 0, terrainObj = null, rideSpots = {}, loaded = null;
   const show = { scenery: true, rides: true, paths: true, water: true, people: true, own: true, grid: false, anim: true };
 
   function skyTexture() {
@@ -261,6 +261,11 @@ function build() {
   function terrainMaterial(used, layerData) {
     const W = world.cols, H = world.rows, idx = new Uint8Array(W * H);
     const layerOf = new Map(used.map((t, k) => [t, k]));
+    // beyond the map: the texture most common along its edge (stretching each edge tile outwards would make stripes)
+    const freq = new Map();
+    for (let c = 0; c < W; c++) for (const i of [c, (H - 1) * W + c]) freq.set(world.tex[i], (freq.get(world.tex[i]) || 0) + 1);
+    for (let r = 0; r < H; r++) for (const i of [r * W, r * W + W - 1]) freq.set(world.tex[i], (freq.get(world.tex[i]) || 0) + 1);
+    const outLayer = layerOf.get([...freq].sort((a, b) => b[1] - a[1])[0][0]) ?? 0;
     for (let i = 0; i < W * H; i++) idx[i] = layerOf.get(world.tex[i]) ?? 0;
     const tiles = new THREE.DataTexture(idx, W, H, THREE.RedFormat, THREE.UnsignedByteType); tiles.needsUpdate = true;
     const arr = new Uint8Array(256 * 256 * 4 * used.length);
@@ -274,7 +279,7 @@ function build() {
     mat.userData.textures = [tiles, layersTex];
     mat.onBeforeCompile = sh => {
       Object.assign(sh.uniforms, { uTiles: { value: tiles }, uLayers: { value: layersTex }, uDetail: { value: detailTex },
-                                   uGrid: { value: new THREE.Vector4(world.x0, world.z0, world.tile, 0) }, uSize: { value: new THREE.Vector2(W, H) } });
+                                   uGrid: { value: new THREE.Vector4(world.x0, world.z0, world.tile, outLayer) }, uSize: { value: new THREE.Vector2(W, H) } });
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWP, vWN;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWN = normal;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
@@ -283,7 +288,10 @@ uniform sampler2D uTiles, uDetail;
 uniform highp sampler2DArray uLayers;
 uniform vec4 uGrid;
 uniform vec2 uSize;
-float tileLayer(vec2 t) { return floor(texelFetch(uTiles, ivec2(clamp(t, vec2(0.0), uSize - 1.0)), 0).r * 255.0 + 0.5); }
+float tileLayer(vec2 t) {
+  if (any(lessThan(t, vec2(0.0))) || any(greaterThanEqual(t, uSize))) return uGrid.w;
+  return floor(texelFetch(uTiles, ivec2(t), 0).r * 255.0 + 0.5);
+}
 // steep ground takes its texture from the side, as in the game (no streaks down slopes)
 vec4 groundTex(float l, vec3 w) {
   vec4 c = texture(uLayers, vec3(vWP.xz / 8.0, l)) * w.y;
@@ -337,10 +345,13 @@ vec4 groundTex(float l, vec3 w) {
     ground.userData.pick = { title: 'Ground' }; ground.userData.ground = true;
     layers.terrain.add(ground);
     const used = [...new Set(world.tex)].sort((a, b) => a - b);
+    let skirt = null;
     Promise.all(used.map(t => imgData('terrain_' + String(t).padStart(2, '0')))).then(data => {
-      if (seq === loadSeq && ground.parent) ground.material = terrainMaterial(used, data);
+      if (seq !== loadSeq || !ground.parent) return;
+      ground.material = terrainMaterial(used, data);
+      if (skirt) skirt.material = ground.material;
     });
-    buildCliffs();
+    buildCliffs(); buildFence();
     // the land around the park
     let lo = Infinity;
     for (let i = 0; i < W * H; i++) lo = Math.min(lo, tileH(i, 0));
@@ -358,8 +369,52 @@ vec4 groundTex(float l, vec3 w) {
     out.position.set(X0 + W * T / 2, sea ? seaH.sort((a, b) => a - b)[seaH.length >> 1] - 0.02 : lo - 0.6, Z(Z0 + H * T / 2));
     if (sea) out.userData.pick = { title: 'Water', detail: 'the sea around the park' };
     layers.terrain.add(out);
+    if (!sea) { skirt = buildSkirt(gh, lo - 0.6); if (skirt) skirt.material = ground.material; }
     terrainObj = layers.terrain;
     buildGrid();
+  }
+  // The land beyond the map's edge. The game draws hills there with trees on them (SkirtTrees, items of kind 5); the
+  // save holds no heights for it, so the trees' own heights and the map's edge give the shape (inverse-distance
+  // weighted), fading to the flat land further out. Same ground shader: the edge tiles' textures carry on outwards.
+  function buildSkirt(gh, floorH) {
+    const W = world.cols, H = world.rows, T = world.tile, X0 = world.x0, Z0 = world.z0, E = 320, n = Math.ceil(E / T);
+    const sx = [], sz = [], sy = [];
+    for (let c = 0; c <= W; c++) for (const r of [0, H]) { sx.push(X0 + c * T); sz.push(Z0 + r * T); sy.push(gh(r, c)); }
+    for (let r = 1; r < H; r++) for (const c of [0, W]) { sx.push(X0 + c * T); sz.push(Z0 + r * T); sy.push(gh(r, c)); }
+    for (const it of world.items) if (it[6] === 5) { sx.push(it[1]); sz.push(it[2]); sy.push(it[3]); }
+    const cols = W + 2 * n + 1, rows = H + 2 * n + 1, pos = new Float32Array(cols * rows * 3);
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const c = i - n, r = j - n, x = X0 + c * T, z = Z0 + r * T;
+      let h;
+      if (c >= 0 && c <= W && r >= 0 && r <= H) h = gh(r, c);          // on (or inside) the map's edge: its own height
+      else {
+        let ws = 0, hs = 0;
+        for (let k = 0; k < sx.length; k++) {
+          const d2 = (x - sx[k]) ** 2 + (z - sz[k]) ** 2 + 1, w = 1 / (d2 * Math.sqrt(d2));
+          ws += w; hs += w * sy[k];
+        }
+        const d = Math.hypot(Math.max(X0 - x, 0, x - X0 - W * T), Math.max(Z0 - z, 0, z - Z0 - H * T));
+        const f = Math.min(1, Math.max(0, (d - 0.75 * E) / (0.25 * E))), t = f * f * (3 - 2 * f);
+        h = (hs / ws) * (1 - t) + floorH * t;
+      }
+      pos.set([x, h, Z(z)], (j * cols + i) * 3);
+    }
+    const idx = [];
+    for (let j = 0; j < rows - 1; j++) for (let i = 0; i < cols - 1; i++) {
+      const c = i - n, r = j - n;
+      if (c >= 0 && c < W && r >= 0 && r < H) continue;                  // the map itself
+      const a = j * cols + i, b = a + 1, d = a + cols, e = d + 1;
+      idx.push(a, b, d, b, e, d);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+    const oc = ownColour(0), col = new Float32Array(cols * rows * 3);
+    for (let k = 0; k < cols * rows; k++) col.set(oc, k * 3);
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const m = new THREE.Mesh(geo);
+    m.userData.pick = { title: 'Ground', detail: 'beyond the map' }; m.userData.skirt = true;
+    layers.terrain.add(m);
+    return m;
   }
   // cliff walls: along every tile edge whose two sides are at different heights, from the lower side up to the higher,
   // in the higher tile's cliff style
@@ -388,6 +443,45 @@ vec4 groundTex(float l, vec3 w) {
       layers.terrain.add(m);
     }
   }
+  // the park fence: the engine draws it along every edge between the park's land (ownership bit 2) and land that
+  // isn't, open where a path crosses; 2 m panels from perimiterfence (its top-left panel: posts, top rail, concrete
+  // base), dark as in the game
+  function buildFence() {
+    const W = world.cols, H = world.rows, T = world.tile, P = 2, HT = 2, V0 = 1 - 126 / 256;
+    const owned = i => i >= 0 && (world.own[i] & 2) !== 0, path = new Set();
+    for (const [c, r] of world.paths) path.add(r * W + c);
+    const p = [], uv = [];
+    const edge = (x0, z0, h0, x1, z1, h1) => {
+      for (let k = 0; k < T / P; k++) {
+        const a = k / (T / P), b = (k + 1) / (T / P);
+        const ax = x0 + (x1 - x0) * a, az = z0 + (z1 - z0) * a, ah = h0 + (h1 - h0) * a;
+        const bx = x0 + (x1 - x0) * b, bz = z0 + (z1 - z0) * b, bh = h0 + (h1 - h0) * b;
+        p.push(ax, ah, Z(az), bx, bh, Z(bz), bx, bh + HT, Z(bz), ax, ah, Z(az), bx, bh + HT, Z(bz), ax, ah + HT, Z(az));
+        uv.push(0, V0, 0.5, V0, 0.5, 1, 0, V0, 0.5, 1, 0, 1);
+      }
+    };
+    // between tile i (corners ki0, ki1) and neighbour j (corners kj0, kj1; -1 off the map), from (x0, z0) to (x1, z1)
+    const side = (i, j, ki0, ki1, kj0, kj1, x0, z0, x1, z1) => {
+      if (owned(i) === owned(j) || (path.has(i) && path.has(j))) return;
+      const h0 = j < 0 ? tileH(i, ki0) : Math.max(tileH(i, ki0), tileH(j, kj0));
+      const h1 = j < 0 ? tileH(i, ki1) : Math.max(tileH(i, ki1), tileH(j, kj1));
+      edge(x0, z0, h0, x1, z1, h1);
+    };
+    for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+      const i = r * W + c, x = world.x0 + c * T, z = world.z0 + r * T;
+      side(i, c + 1 < W ? i + 1 : -1, 1, 3, 0, 2, x + T, z, x + T, z + T);
+      side(i, r + 1 < H ? i + W : -1, 2, 3, 0, 1, x, z + T, x + T, z + T);
+      if (c === 0) side(i, -1, 0, 2, 0, 0, x, z, x, z + T);
+      if (r === 0) side(i, -1, 0, 1, 0, 0, x, z, x + T, z);
+    }
+    if (!p.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: parkTex('perimiterfence:ftx'), color: 0x6a6a6a, alphaTest: 0.1, alphaToCoverage: true, side: THREE.DoubleSide }));
+    m.userData.pick = { title: 'Park fence', detail: 'the edge of the park\'s land' };
+    layers.terrain.add(m);
+  }
   function recolourTerrain() {
     // ownership shading follows the same vertex order as buildTerrain
     const ground = layers.terrain.children.find(m => m.userData.ground);
@@ -395,6 +489,8 @@ vec4 groundTex(float l, vec3 w) {
     const W = world.cols, H = world.rows, a = ground.geometry.getAttribute('color');
     for (let i = 0; i < W * H; i++) { const oc = ownColour(world.own[i]); for (let k = 0; k < 6; k++) a.array.set(oc, (i * 6 + k) * 3); }
     a.needsUpdate = true;
+    const skirt = layers.terrain.children.find(m => m.userData.skirt);
+    if (skirt) { const sa = skirt.geometry.getAttribute('color'), oc = ownColour(0); for (let k = 0; k < sa.count; k++) sa.array.set(oc, k * 3); sa.needsUpdate = true; }
   }
   function buildGrid() {
     clear(layers.grid);
@@ -463,32 +559,45 @@ vec4 groundTex(float l, vec3 w) {
       else if (rail) buildRails(tiles, rail, style);
     }
   }
-  // the standard queue's railing, as the game draws it (it has no model for it): thin dark posts every 2 m along every
-  // edge a queue tile doesn't open on, two grey handrails between them following the ground
+  // the standard queue's railing, as the game draws it (it has no model for it): along every edge a queue tile doesn't
+  // open on, joined into straight runs, square dark posts spaced evenly about 3 m apart and one thick grey top rail
+  // between them, following the ground
   function buildPostRails(tiles, style) {
-    const W = world.cols, T = world.tile, inset = 0.12, STEP = 2, HEIGHTS = [0.5, 0.95];
-    const EDGE = [[0, 2], [1, 3], [0, 1], [2, 3]], corner = [[0, 0], [1, 0], [0, 1], [1, 1]];
-    const posts = new Map(), rails = [];
+    const W = world.cols, T = world.tile, inset = 0.12, STEP = 3, TOP = 0.85;
+    const runs = new Map();                  // straight lines: 'x|z' + the fixed coordinate -> [from, to] spans
+    const add = (key, span) => { if (!runs.has(key)) runs.set(key, []); runs.get(key).push(span); };
     for (const [c, r, qs, qe] of tiles) {
-      const i = r * W + c, h = [tileH(i, 0), tileH(i, 1), tileH(i, 2), tileH(i, 3)];
+      const x0 = world.x0 + c * T, z0 = world.z0 + r * T;
       for (let e = 0; e < 4; e++) {
         if (e === qs || e === qe) continue;
-        const ix = e === 0 ? inset : e === 1 ? -inset : 0, iz = e === 2 ? inset : e === 3 ? -inset : 0;
-        const pt = k => new THREE.Vector3(world.x0 + (c + corner[k][0]) * T + ix, h[k] + 0.07, Z(world.z0 + (r + corner[k][1]) * T + iz));
-        const [a, b] = EDGE[e].map(pt), n = Math.max(1, Math.round(T / STEP));
-        for (let k = 0; k <= n; k++) {
-          const q = a.clone().lerp(b, k / n);
-          posts.set(`${q.x.toFixed(2)},${q.z.toFixed(2)}`, q);   // corners shared by neighbouring edges: one post
-        }
-        for (const y of HEIGHTS) rails.push([a.clone().setY(a.y + y), b.clone().setY(b.y + y)]);
+        // edges 0 -col, 1 +col (lines of constant x), 2 -row, 3 +row (constant z)
+        if (e < 2) add('x' + (e === 0 ? x0 + inset : x0 + T - inset).toFixed(2), [z0, z0 + T]);
+        else add('z' + (e === 2 ? z0 + inset : z0 + T - inset).toFixed(2), [x0, x0 + T]);
       }
     }
-    if (!posts.size) return;
+    const posts = [], rails = [];
+    const at = (key, v) => { const f = +key.slice(1), [x, z] = key[0] === 'x' ? [f, v] : [v, f]; return new THREE.Vector3(x, heightAt(x, Z(z)) + 0.07, Z(z)); };
+    for (const [key, spans] of runs) {
+      spans.sort((a, b) => a[0] - b[0]);
+      const merged = [];
+      for (const sp of spans) { const last = merged[merged.length - 1]; if (last && sp[0] <= last[1] + 0.01) last[1] = Math.max(last[1], sp[1]); else merged.push([...sp]); }
+      for (const [from, to] of merged) {
+        const n = Math.max(1, Math.round((to - from) / STEP));
+        let prev = null;
+        for (let k = 0; k <= n; k++) {
+          const q = at(key, from + (to - from) * k / n);
+          posts.push(q);
+          if (prev) rails.push([prev.clone().setY(prev.y + TOP), q.clone().setY(q.y + TOP)]);
+          prev = q;
+        }
+      }
+    }
+    if (!posts.length) return;
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), X = new THREE.Vector3(1, 0, 0);
-    const postGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 6); postGeo.translate(0, 0.5, 0);
-    const pm = new THREE.InstancedMesh(postGeo, new THREE.MeshLambertMaterial({ color: 0x2b2b2e }), posts.size);
-    [...posts.values()].forEach((p, j) => pm.setMatrixAt(j, m4.makeTranslation(p.x, p.y, p.z)));
-    const rm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.045, 0.045), new THREE.MeshLambertMaterial({ color: 0x9c9fa3 }), rails.length);
+    const postGeo = new THREE.BoxGeometry(0.1, TOP + 0.08, 0.1); postGeo.translate(0, (TOP + 0.08) / 2, 0);
+    const pm = new THREE.InstancedMesh(postGeo, new THREE.MeshLambertMaterial({ color: 0x2b2b2e }), posts.length);
+    posts.forEach((p, j) => pm.setMatrixAt(j, m4.makeTranslation(p.x, p.y, p.z)));
+    const rm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 0.08, 0.08), new THREE.MeshLambertMaterial({ color: 0x8e9195 }), rails.length);
     rails.forEach(([a, b], j) => {
       const d = b.clone().sub(a);
       rm.setMatrixAt(j, m4.compose(a.clone().add(b).multiplyScalar(0.5), q.setFromUnitVectors(X, d.clone().normalize()), s.set(d.length(), 1, 1)));
@@ -689,7 +798,8 @@ vec4 groundTex(float l, vec3 w) {
   const EDGE = { 'wall': 2.0, 'path edge outer': 1.85, 'path edge join': 1.85, 'path edge inner': 1.35, 'half tile': 1.0 };
   const ROT = { off: 2, sign: -1 };       // the same turn as track pieces: checked on raised path slopes (they rise towards -x)
   function itemMatrix(it, meta) {
-    const [, c, r, y, dir, corner] = it, T = world.tile;
+    const [, c, r, y, dir, corner, kind] = it, T = world.tile;
+    if (kind === 5) return new THREE.Matrix4().makeRotationY(ROT.sign * ((dir + ROT.off) % 4) * Math.PI / 2).setPosition(c, y, Z(r));   // beyond the map: world x / z
     let x = world.x0 + c * T + T / 2, z = world.z0 + r * T + T / 2;
     const sq = meta.squares || [1, 1];
     if (sq[0] > 1 || sq[1] > 1) {
@@ -823,7 +933,7 @@ vec4 groundTex(float l, vec3 w) {
   }
   async function load(file) {
     if (!file) return;
-    const seq = ++loadSeq; current = file; ui.current = file; renderList();
+    const seq = ++loadSeq; current = file; ui.current = file; loaded = null; renderList();
     list.querySelector('.pk.sel')?.scrollIntoView({ block: 'nearest' });
     history.replaceState(null, '', '#park=' + encodeURIComponent(file));
     status('Reading the park…', 0.02);
@@ -851,7 +961,7 @@ vec4 groundTex(float l, vec3 w) {
     await buildPersonModels(seq, (n, of) => status(`Loading people ${n} / ${of} (${np.toLocaleString()} guests and staff)…`, 0.7 + 0.3 * n / of));
     if (seq !== loadSeq) return;
     evictUnused();
-    status(null);
+    status(null); loaded = file;
   }
   function applyLayers() {
     layers.scenery.visible = show.scenery; layers.rides.visible = show.rides; layers.paths.visible = show.paths;
@@ -1033,6 +1143,6 @@ vec4 groundTex(float l, vec3 w) {
   function tour(force) { if (root.style.display === 'none' || tourRunning()) return; runTour('parks', TOUR, { force }); }
   $('#pk-tour', root).onclick = () => tour(true);
 
-  window.__pkdebug = { scene, renderer, camera, controls, layers, get world() { return world; }, get info() { return info; }, rideSpots: () => rideSpots, load, heightAt, ROT, flyTo, get current() { return current; } };
+  window.__pkdebug = { scene, renderer, camera, controls, layers, get world() { return world; }, get info() { return info; }, rideSpots: () => rideSpots, load, heightAt, ROT, flyTo, get current() { return current; }, get loaded() { return loaded; } };
   return { root, start, stop, load, ready, tour, parks: [], current: null, onBack: null };
 }

@@ -7,6 +7,8 @@ thousands of objects. What the viewer uses:
   except at cliffs, where the game builds a wall between the two edges), u8 ground texture (terrain_NN), u8 cliff
   style (TerrainCliffN, the walls' texture), u8, u8 sloped (1 on most non-flat tiles; not the triangle split),
   u8 ownership bits (2 owned, 1/4 construction rights, 32 park entrance, 64 for sale), 3 more bytes.
+  RCT3Terrain.SkirtTrees: u32 n, n x (u32 SceneryItem, u32 0, f32 x, y, z): trees on the land beyond the map's edge,
+  each a copy of a placed tree. The park fence along the edge of the park's land has no objects: the engine draws it.
 - WaterManager.WaterManager (blob): u8 cols, u8 rows, u32 bodies, each: f32 surface height, u32 n, n x (u8 col,
   u8 row, u8 triangle 0/1, u8 corner mask).
 - Placed things (scenery, track pieces, flat rides, stalls, path pieces) each have a SceneryItemDataField: POSX/POSZ
@@ -471,10 +473,21 @@ def _condition(lib: Library, O: dict, n: str, v: dict) -> dict:
 
 
 # ---- the world: terrain, water, paths, placed things, people ------------------------------------------------------
+def _skirt_trees(ter_obj: dict) -> list:
+    """RCT3Terrain.SkirtTrees: u32 n, then n x (u32 SceneryItem it copies, u32 0, f32 x, y, z) - the trees the game
+    draws on the land beyond the map's edge (all outside it), copies of trees near the edge."""
+    s = ter_obj.get('SkirtTrees') or b''
+    n = struct.unpack_from('<I', s, 0)[0] if len(s) >= 4 else 0
+    if len(s) < 4 + 20 * n:
+        return []
+    return [(oid, x, y, z) for oid, _, x, y, z in struct.iter_unpack('<2I3f', s[4:4 + 20 * n])]
+
+
 def park_world(lib: Library, rel: str) -> dict:
     t = _load(lib, rel)
     O = t.objects
-    ter = next(v for n, v in O.values() if n == 'RCT3Terrain')['EngineTerrain']
+    ter_obj = next(v for n, v in O.values() if n == 'RCT3Terrain')
+    ter = ter_obj['EngineTerrain']
     W, H = ter[0], ter[1]
     x0, z0, sx, sz = struct.unpack_from('<4f', ter, 2)
     raw = np.frombuffer(ter, np.uint8, W * H * 24, 18).reshape(H * W, 24)
@@ -565,6 +578,12 @@ def park_world(lib: Library, rel: str) -> dict:
                   absolute=bool(v.get('FORCEABSOLUTEHEIGHT')) or own[0] != 'SceneryItem')
         elif n == 'SceneryItemPlacementSingle':
             place(v['SceneryItemDataField'], sid_of(v['SIDDatabaseEntry'], v.get('FlexiColourField')), 3, ref=v.get('Owner'))
+    # trees on the land around the map: kind 5, world x / z in place of column / row
+    for oid, x, y, z in _skirt_trees(ter_obj):
+        v = O.get(oid, ('', {}))[1]
+        if v.get('DATABASEENTRY') is not None:
+            items.append([sid_of(v['DATABASEENTRY'], v.get('FlexiColourField')), round(x, 2), round(z, 2), round(y, 3),
+                          v['SceneryItemDataField']['DIRECTION'], -1, 5, -1])
     world['sids'] = sids
     # supports under raised paths and queues: the path piece's sid names its support style (pathcrazy,
     # pathasphalt, flatqueueset1...), stacked from the ground up to under the piece

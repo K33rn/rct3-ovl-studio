@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright
 base, out = sys.argv[1], sys.argv[2]
 want = sys.argv[3:] or ['Campaigns\\Base\\VanillaHills.dat']
 os.makedirs(out, exist_ok=True)
-DONE = "getComputedStyle(document.getElementById('pk-load')).opacity === '0'"
+DONE = 'window.__pkdebug.loaded === f'           # set when the park has finished loading
 with sync_playwright() as p:
     b = p.chromium.launch(channel='chrome', headless=True, args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader'])
     pg = b.new_page(viewport={'width': 1600, 'height': 920})
@@ -23,7 +23,7 @@ with sync_playwright() as p:
     print('parks listed:', pg.eval_on_selector_all('#pk .pk', 'es => es.length'), '| groups:', pg.eval_on_selector_all('#pk .grp', 'es => es.map(e => e.textContent)'))
     for i, f in enumerate(want):
         pg.evaluate('f => [...document.querySelectorAll("#pk .pk")].find(e => e.dataset.f === f).click()', f)
-        pg.wait_for_function('f => window.__pkdebug.world?.file === f && ' + DONE, arg=f, timeout=300000); pg.wait_for_timeout(1500)
+        pg.wait_for_function('f => ' + DONE, arg=f, timeout=300000); pg.wait_for_timeout(1500)
         st = pg.evaluate("""() => { const D = window.__pkdebug, n = g => { let k = 0; g.traverse(o => { if (o.isInstancedMesh) k += o.count; else if (o.isMesh) k++; }); return k; };
           return { title: document.getElementById('pk-title').textContent, items: D.world.items.length, scenery: n(D.layers.scenery), rides: n(D.layers.rides),
                    paths: D.layers.paths.children.length, water: D.layers.water.children.length, people: D.world.people.length, tracks: D.world.tracks.length }; }""")

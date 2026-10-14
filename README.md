@@ -165,8 +165,10 @@ The buttons at the top:
   - It has its own walkthrough, the first time it opens (**? Tour** replays it).
 - **Textures & GUI** opens two editors full-window, switched at the top: the **Texture Editor** and the **GUI Editor**.
   What you change is saved back into the game's own files. Before the first change to a game file, the file is
-  copied (to `.rct3ovlackups` in your user folder); **Changed files** (top right) lists what you changed and
-  **Restore original** puts a file back. Close RollerCoaster Tycoon 3 before saving.
+  copied (to `.rct3ovl\backups` in your user folder); **Changed files** (top right) lists what you changed and
+  **Restore original** puts a file back. Close RollerCoaster Tycoon 3 before saving. The game checks the main
+  interface and style files against the `.CHK` files beside them when it starts, so those are updated with every
+  save (and put back on restore). Tried in the game: a changed front-screen picture and changed menu texts show up.
   - **Texture Editor:** every texture in the game (2,366: ground, paths, buildings, rides, people, signs, the menus
     and icon sheets), searchable and filtered by folder and kind (256-colour, recolourable, animated, interface, changed
     by you). Tools: brush, pencil, eraser, fill, colour picker, line, rectangle, ellipse, text and select (drag inside a

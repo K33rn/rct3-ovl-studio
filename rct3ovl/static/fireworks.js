@@ -505,16 +505,13 @@ async function build() {
     return [x, y, z];
   }
   let parts = [], silent = false;
-  // the firework's own frame (b: its tube's direction, bu: an up across it): a launch's world +Y / +Z when the tube stands
-  // straight; emitters that are not ParticleRelative fire in it, whatever their parent particle is doing
-  function baseFrame(h) {
-    const z = Math.abs(h[2]) < 0.99 ? [0, 0, 1] : [1, 0, 0], k = z[0] * h[0] + z[1] * h[1] + z[2] * h[2];
-    const u = [z[0] - k * h[0], z[1] - k * h[1], z[2] - k * h[2]], l = Math.hypot(...u);
-    return { b: h, bu: u.map(x => x / l) };
-  }
-  function spawn(d, x, y, z, vx, vy, vz, h, parent, mods, u, base) {
+  // emitters that are not ParticleRelative fire in the world's frame (up +Y, its up +Z), whatever their parent is doing
+  // and however the tube leans: from the game's Mortar wall x 8 (tubes 20 deg off vertical) Gemini Rockets' shells
+  // (a non-relative emitter) climb almost straight up
+  const WORLD_DIR = [0, 1, 0], WORLD_UP = [0, 0, 1];
+  function spawn(d, x, y, z, vx, vy, vz, h, parent, mods, u) {
     if (parts.length >= MAX_PARTICLES) return null;
-    const p = { d, x, y, z, vx, vy, vz, h, u: u || [0, 0, 1], base: base || baseFrame(h), age: 0, life: Math.max(1e-3, d.life + Math.random() * d.lifeR), em: new Float32Array(d.emitters.length),
+    const p = { d, x, y, z, vx, vy, vz, h, u: u || [0, 0, 1], age: 0, life: Math.max(1e-3, d.life + Math.random() * d.lifeR), em: new Float32Array(d.emitters.length),
                 r0: Math.random(), parent, mods, delays: d.emitters.map(e => e.tr ? Math.random() * e.tr : 0) };
     parts.push(p);
     if (d.sound && !silent) playSound(d.sound, x, y, z, d.sndMin, d.sndMax);
@@ -537,10 +534,10 @@ async function build() {
       p.em[i] += n;
       const cd = descInfo(p.d.fw, e.desc);
       // the new particle's frame (RCT3plus.exe 0x9cbdf0): its parent's when ParticleRelative - along the parent's travel,
-      // with its up - else the firework's own (straight up the tube); then turned by the emitter's spin
+      // with its up - else the world's (straight up); then turned by the emitter's spin
       const sp = Math.hypot(p.vx, p.vy, p.vz);
-      let h = e.rel ? (sp > 0.05 ? [p.vx / sp, p.vy / sp, p.vz / sp] : p.h) : p.base.b;
-      let u = e.rel ? p.u : p.base.bu;
+      let h = e.rel ? (sp > 0.05 ? [p.vx / sp, p.vy / sp, p.vz / sp] : p.h) : WORLD_DIR;
+      let u = e.rel ? p.u : WORLD_UP;
       if (e.rel && p.d.pspin) { h = rotXYZ(h, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); u = rotXYZ(u, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); }
       if (e.spin[0] || e.spin[1] || e.spin[2] || e.spin0[0] || e.spin0[1] || e.spin0[2]) {
         const a = [e.spin0[0] + e.spin[0] * p.age, e.spin0[1] + e.spin[1] * p.age, e.spin0[2] + e.spin[2] * p.age];
@@ -554,7 +551,7 @@ async function build() {
         const vz = h[2] * e.speed + s[2] * sr + c[2] * e.src + p.vz * e.psf;
         let x = p.x + ps[0] * pr, y = p.y + ps[1] * pr, z = p.z + ps[2] * pr;
         if (pc) { x += pc[0] * e.prc; y += pc[1] * e.prc; z += pc[2] * e.prc; }
-        if (!spawn(cd, x, y, z, vx, vy, vz, h, e.rel ? p : null, p.mods, u, p.base)) return;
+        if (!spawn(cd, x, y, z, vx, vy, vz, h, e.rel ? p : null, p.mods, u)) return;
       }
     }
   }
@@ -562,6 +559,10 @@ async function build() {
   // of travel (realigned to the velocity every step) and whose third, its 'up', stays across it; the up turns about the
   // path by SpinRateY x dt and the particle is pushed along it by UpScale x 9.81 m/s2 - a sideways pull that bends the
   // path, and with SpinRateY a corkscrew
+  // The code reads 9.81 x UpScale, but in the game the push is weaker: a test firework in the MixMaster picker's
+  // preview (plain star, UpScale 20 without spin, Thunder Blitz's star) rises 0.42 as high as the plain star without
+  // spin and 0.94 with it - 0.64 x the push (fitted with fine steps; 1.0 gives 0.31) matches both. Measured, not derived.
+  const UP_SEEN = 0.64;
   function upPush(p, d, dt) {
     let u = p.u;
     const sp = Math.hypot(p.vx, p.vy, p.vz);
@@ -578,7 +579,7 @@ async function build() {
       }
       p.u = u;
     }
-    const a = GRAVITY * d.up * dt;
+    const a = GRAVITY * d.up * UP_SEEN * dt;
     p.vx += u[0] * a; p.vy += u[1] * a; p.vz += u[2] * a;
   }
   function step(dt) {
@@ -586,10 +587,15 @@ async function build() {
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i], d = p.d;
       p.age += dt;
-      if (d.grav) p.vy -= g * d.grav;
-      if (d.up) upPush(p, d, dt);
-      if (d.drag) { const k = Math.max(0, 1 - d.drag * dt); p.vx *= k; p.vy *= k; p.vz *= k; }
-      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      // a pushed particle whose up turns fast (Thunder Blitz: 31 rad/s) is moved in steps of at most 0.1 rad of
+      // turn: at 1/60 s the push no longer averages out round the path and the stars drift and climb far too much
+      const n = d.up && d.spinY ? Math.min(16, Math.ceil(Math.abs(d.spinY) * dt / 0.1)) : 1, h = dt / n;
+      for (let s = 0; s < n; s++) {
+        if (d.grav) p.vy -= g / n * d.grav;
+        if (d.up) upPush(p, d, h);
+        if (d.drag) { const k = Math.max(0, 1 - d.drag * h); p.vx *= k; p.vy *= k; p.vz *= k; }
+        p.x += p.vx * h; p.y += p.vy * h; p.z += p.vz * h;
+      }
       if (p.parent && p.parent.age < p.parent.life) { p.x += p.parent.vx * dt; p.y += p.parent.vy * dt; p.z += p.parent.vz * dt; }
       if (d.emitters.length) emit(p, Math.min(1, p.age / p.life));
     }

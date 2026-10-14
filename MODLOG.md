@@ -774,3 +774,26 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - First try: the coaster's lift hill and the OPEN sign covered the SETUP button (art drawn larger / higher than
   guessed) -> art scaled 0.8 and moved down. Screenshots: Desktop\RCT3_NeonNights_StartMenu(.png, _hover.png).
 - apply.py tested on the scratch copy (all saved; restore byte-identical).
+
+## 2026-10-14: The three untested items, tried in the game
+- Icon rectangles (gsi) work in the game: FrontScreen_Icon_Play moved to the Sandbox cell -> the RIDE button showed
+  the cube; FrontScreen_Icon_Options cut to its top half -> SETUP showed half a gear. Both put back afterwards.
+- Route to fireworks in the game (scripted, scratchpad topicker.sh): Play 110,194 > Sandbox 106,414 > Start game
+  96,194 (~45 s) > Scenery 27,472 > MixMaster 68,455 > Add display 185,683 > a timeline track 400,640 opens the
+  effect picker (Fireworks + at 79,328; preview pane 500,316 228 x 228; wheel scrolls the list). The picker lists
+  Fireworks\*.frw read at game start only (a new file needs a restart). Bases: barrel 148,718, Mortar wall x 8 at
+  238,750; red dot on the effect bar then the base links it (green); sequencer Play 180,702; PageDown tilts the camera.
+- UpScale: Thunder Blitz in the preview is a narrow column of curling stars; the viewer threw them into separate
+  clumps. A test firework built with /api/fw/build from Thunder Blitz's parts (ZZUpScaleTest: plain star, UpScale 20
+  without spin, Thunder Blitz's star, each with a still 3 s trail; copied into Fireworks\ for the test, removed after)
+  measured in the preview (launch y ~159, plain star's top 84 px = 20.4 m): no-spin star 0.42 of the plain star's
+  height, Thunder Blitz's 0.94, its hook ~5 m. Model (offline, tbfit.py): the spin star's height and drift depend
+  strongly on the step (C/A 1.37 at 1/60 s, 1.0 at 1/480 s; 31 rad/s x 1/60 = 0.52 rad per step), and the no-spin
+  star needs a push of ~125 m/s2, not 9.81 x 20 = 196 (B/A 0.31 at any step). Viewer: pushed particles with a turning
+  up are sub-stepped (<= 0.1 rad per step, up to 16) and the push is x 0.64 (UP_SEEN - measured, not found in the
+  code; the update's 9.81 x [0x164] reading stands). Now: 0.42 / 1.02 / 6.5 m; Thunder Blitz a column of curls.
+- Non-relative emitters and tilted tubes: Mortar wall x 8's tubes lean +-20 deg alternately along the wall (glb
+  effect points). Gemini Rockets (shells from a non-relative emitter, 100 m/s) fired from it in the game climb almost
+  straight up (~5-10 deg on screen, where following the tube would show ~25). So non-relative = world +Y / +Z,
+  as 0x9cbdf0's identity frame says - the viewer's earlier "tube's frame" guess is dropped (WORLD_DIR / WORLD_UP).
+- All 29 fireworks run without NaN; ui_fireworks passes (only the favicon 404).

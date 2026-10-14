@@ -16,6 +16,11 @@ def find_pairs(root: str) -> list[str]:
                    for dp, _, fs in os.walk(root) for f in fs if f.lower().endswith('.ovl')})
 
 
+def _mtime(common: str) -> float:
+    """When an OVL pair last changed (the later of its two files)."""
+    return max((os.path.getmtime(p) for p in pair_paths(common) if os.path.exists(p)), default=0)
+
+
 class Library:
     """Lazily opens OVLs; resolves 'name:tag' to (Ovl, LoaderRef) across the whole game folder."""
 
@@ -26,6 +31,7 @@ class Library:
         self._open: OrderedDict[str, tuple[Ovl, TextureSet | None]] = OrderedDict()
         self.max_open = max_open
         self.index: dict = self._load_index()
+        self.refresh_index()        # OVLs (folders, mods) added or changed since the cached index was made
 
     # ---- index ---------------------------------------------------------------------------------------------
     def _index_path(self) -> str:
@@ -66,10 +72,48 @@ class Library:
                 counts[r.loader.tag] = counts.get(r.loader.tag, 0) + 1
                 if r.name:
                     names.setdefault(r.name.lower(), rel)
-            ovls.append({'path': rel, 'version': o.version, 'counts': counts})
+            ovls.append({'path': rel, 'version': o.version, 'counts': counts, 'mtime': _mtime(base)})
         idx = {'version': INDEX_VERSION, 'root': self.root, 'language': lang, 'ovls': ovls, 'names': names}
         json.dump(idx, open(self._index_path(), 'w'))
         return idx
+
+    def refresh_index(self) -> dict:
+        """Catch up with the game folder: OVLs added (new folders, mods) or changed since the index was built are
+        read, removed ones dropped; the rest is kept as it is. {'added': [rel], 'removed': [rel], 'changed': [rel]}.
+        Anything built from the old contents (ride, scenery, firework lists...) is rebuilt on its next use."""
+        idx = self.index
+        have = {o['path']: o for o in idx['ovls']}
+        now = {os.path.relpath(b, self.root): b for b in find_pairs(self.root)}
+        removed = [p for p in have if p not in now]
+        changed = [p for p in now if p in have and have[p].get('mtime') not in (None, _mtime(now[p]))]
+        added = [p for p in now if p not in have]
+        for p in now:      # entries from before mtimes were kept: take the file as it is now
+            if p in have and have[p].get('mtime') is None:
+                have[p]['mtime'] = _mtime(now[p])
+        if not (added or removed or changed):
+            return {'added': [], 'removed': [], 'changed': []}
+        gone = set(removed) | set(changed)
+        idx['names'] = {n: rel for n, rel in idx['names'].items() if rel not in gone}
+        idx['ovls'] = [o for o in idx['ovls'] if o['path'] not in gone]
+        for p in sorted(changed + added):
+            try:
+                o = Ovl(now[p])
+            except Exception as e:
+                idx['ovls'].append({'path': p, 'error': str(e), 'mtime': _mtime(now[p])})
+                continue
+            counts = {}
+            for r in o.resources:
+                counts[r.loader.tag] = counts.get(r.loader.tag, 0) + 1
+                if r.name:
+                    idx['names'].setdefault(r.name.lower(), p)
+            idx['ovls'].append({'path': p, 'version': o.version, 'counts': counts, 'mtime': _mtime(now[p])})
+        idx['ovls'].sort(key=lambda o: o['path'].lower())
+        for p in gone:
+            self._open.pop(pair_paths(os.path.join(self.root, p))[0], None)
+        for k in [k for k in vars(self) if k.startswith('_') and k != '_open']:   # lists built from the old contents
+            delattr(self, k)
+        json.dump(idx, open(self._index_path(), 'w'))
+        return {'added': added, 'removed': removed, 'changed': changed}
 
     # ---- access --------------------------------------------------------------------------------------------
     def open(self, rel_or_abs: str) -> tuple[Ovl, TextureSet]:

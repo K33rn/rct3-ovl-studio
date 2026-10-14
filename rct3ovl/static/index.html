@@ -33,7 +33,7 @@
   #doc .gf-sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; border: 1px solid #fff3; }
   #doc .gf-draw { background: #05070c; border-radius: 8px; display: block; width: 100%; max-width: 420px; aspect-ratio: 1; }
   .badge { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 8px; margin-left: 4px; background: #333a48; color: var(--dim); }
-  .b-shs { background: #2b4a3a; color: #9fe0b8; } .b-tex { background: #4a3b2b; color: #f2c58a; } .b-snd { background: #2b3b4a; color: #9fc8f0; }
+  .b-new { background: #1f5a8a; color: #dff0ff; } .b-shs { background: #2b4a3a; color: #9fe0b8; } .b-tex { background: #4a3b2b; color: #f2c58a; } .b-snd { background: #2b3b4a; color: #9fc8f0; }
   .group { padding: 8px 12px 2px; color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
   .group small { color: var(--dim); text-transform: none; letter-spacing: 0; }
   .group .help { float: right; cursor: pointer; color: var(--dim); border: 1px solid var(--line); border-radius: 50%; width: 16px; height: 16px;
@@ -135,7 +135,7 @@
         <button id="b-parks" title="Every campaign and sandbox park in full 3D, with everything about it: goals for each difficulty, rides, shops, guests, money (opens full window)">Parks</button>
       </nav>
       <div class="sub" id="rootinfo">loading…</div>
-      <input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="margin-top:8px"></div>
+      <div style="display:flex;gap:6px;margin-top:8px"><input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="flex:1;min-width:0"><button id="treerefresh" title="Look for new folders and files in the game folder (also checked when you come back to this window)">⟳ Refresh</button></div></div>
     <div class="scroll tree" id="tree"></div>
     <div class="resizer" data-col="1" title="Drag to resize · double-click to reset"></div>
   </div>
@@ -276,14 +276,31 @@ let ovls = [], selOvl = null, tracksets = [], gameFiles = [];
 // the loose firework files beside the OVLs (fireworks, particle effects, shows, lasers, water jets, laser drawings, music)
 const GF = { firework: ['🎆', 'Firework'], effect: ['✨', 'Particle effect'], show: ['🎇', 'Firework show (MixMaster display)'],
   laser: ['✳', 'Laser'], jet: ['⛲', 'Water jet'], drawing: ['✎', 'Laser drawing'], music: ['♪', 'Music'] };
-async function loadTree() {
-  const t = await (await fetch('/api/tree')).json();
+// folders start closed; the ones you open stay open while the tree is redrawn (filtering opens everything that matches)
+const openDirs = new Set();
+let newPaths = new Set(), lastCheck = 0;
+async function loadTree(refresh) {
+  const t = await (await fetch('/api/tree' + (refresh ? '?refresh=1' : ''))).json();
+  if (refresh) {   // what appeared since the last look: OVLs (new folders, mods) and loose firework files
+    const before = new Set([...ovls.map(o => o.path), ...gameFiles.map(g => 'file:' + g.path)]);
+    const now = [...t.ovls.map(o => o.path), ...(t.files || []).map(g => 'file:' + g.path)];
+    const fresh = now.filter(p => !before.has(p)).concat(t.changes?.changed || []);
+    fresh.forEach(p => newPaths.add(p));
+    const gone = t.changes?.removed?.length || 0;
+    msg([fresh.length && `Found ${fresh.length} new or changed (marked new in the tree)`, gone && `${gone} removed from the game folder`]
+      .filter(Boolean).join(' · ') || 'No new folders or files');
+  }
   ovls = t.ovls; gameFiles = t.files || [];
   $('rootinfo').textContent = `${ovls.length} OVL pairs · ${gameFiles.length} firework files · ${t.root}`;
-  renderTree(''); msg('Pick an OVL on the left, or a tab: Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks');
+  renderTree($('treefilter').value);
+  if (!refresh) msg('Pick an OVL on the left, or a tab: Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks');
   // track pieces per ride arrive a moment later (the first time, the server scans the track files)
-  fetch('/api/tracksets').then(r => r.json()).then(s => { tracksets = s; renderTree($('treefilter').value); }).catch(() => {});
+  if (!refresh || t.changes?.added?.length || t.changes?.removed?.length || t.changes?.changed?.length)
+    fetch('/api/tracksets').then(r => r.json()).then(s => { tracksets = s; renderTree($('treefilter').value); }).catch(() => {});
 }
+$('treerefresh').onclick = () => { lastCheck = Date.now(); loadTree(true); };
+// coming back to the window (after copying folders into the game): look for new ones, at most every 15 s
+window.addEventListener('focus', () => { if (Date.now() - lastCheck > 15000) { lastCheck = Date.now(); loadTree(true).catch(() => {}); } });
 function renderTree(filter) {
   const f = filter.toLowerCase(), root = {};
   for (const o of ovls) {
@@ -307,16 +324,24 @@ function renderTree(filter) {
     for (const p of parts.slice(0, -1)) node = (node[p + '/'] ??= {});
     node[parts.at(-1)] = { path: 'file:' + g.path, gfile: g };
   }
-  const html = (node, depth) => Object.keys(node).sort((a, b) => (b.endsWith('/') - a.endsWith('/')) || a.localeCompare(b)).map(k => {
+  const NEW = '<span class="badge b-new" title="appeared since the program started (or since the last check)">new</span>';
+  const hasNew = node => Object.entries(node).some(([k, v]) => k.endsWith('/') ? hasNew(v) : newPaths.has(v.path));
+  const html = (node, dir) => Object.keys(node).sort((a, b) => (b.endsWith('/') - a.endsWith('/')) || a.localeCompare(b)).map(k => {
     const v = node[k];
-    if (k.endsWith('/')) return `<details${f || depth < 1 ? ' open' : ''}><summary>${esc(k.slice(0, -1))}</summary>${html(v, depth + 1)}</details>`;
-    if (v.gfile) return `<div class="ovl gfile${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="${esc(GF[v.gfile.type][1])} · ${(v.gfile.size / 1024).toFixed(0)} KB${v.gfile.custom ? ' · made with this program' : ''}"><span class="gi">${GF[v.gfile.type][0]}</span> ${esc(k)}${v.gfile.custom ? '<span class="badge b-tex">yours</span>' : ''}${v.gfile.ingame ? '<span class="badge b-tex" title="made in the game&#39;s own designer (My Documents, RCT3 folder)">made in game</span>' : ''}</div>`;
+    if (k.endsWith('/')) { const d = dir + k; return `<details data-d="${esc(d)}"${f || openDirs.has(d) ? ' open' : ''}><summary>${esc(k.slice(0, -1))}${hasNew(v) ? NEW : ''}</summary>${html(v, d)}</details>`; }
+    const nw = newPaths.has(v.path) ? NEW : '';
+    if (v.gfile) return `<div class="ovl gfile${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="${esc(GF[v.gfile.type][1])} · ${(v.gfile.size / 1024).toFixed(0)} KB${v.gfile.custom ? ' · made with this program' : ''}"><span class="gi">${GF[v.gfile.type][0]}</span> ${esc(k)}${v.gfile.custom ? '<span class="badge b-tex">yours</span>' : ''}${v.gfile.ingame ? '<span class="badge b-tex" title="made in the game&#39;s own designer (My Documents, RCT3 folder)">made in game</span>' : ''}${nw}</div>`;
     if (v.trackset) return `<div class="ovl trackset${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="Pieces from ${esc(v.trackset.track_ovls.join(', '))}">🛤 ${esc(k.slice(1))}<span class="badge b-shs">${v.trackset.count}</span></div>`;
     const c = v.counts || {}, m = (c.shs || 0) + (c.bsh || 0) + (c.mms || 0) + (c.ssk || 0), x = (c.tex || 0) + (c.ftx || 0), s = c.snd || 0;
-    return `<div class="ovl${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="${esc(v.path)} · v${v.version}">${esc(k)}${m ? `<span class="badge b-shs">${m}</span>` : ''}${x ? `<span class="badge b-tex">${x}</span>` : ''}${s ? `<span class="badge b-snd">♪${s}</span>` : ''}${v.error ? '<span class="badge err">!</span>' : ''}</div>`;
+    return `<div class="ovl${selOvl === v.path ? ' sel' : ''}" data-p="${esc(v.path)}" title="${esc(v.path)} · v${v.version}">${esc(k)}${m ? `<span class="badge b-shs">${m}</span>` : ''}${x ? `<span class="badge b-tex">${x}</span>` : ''}${s ? `<span class="badge b-snd">♪${s}</span>` : ''}${v.error ? '<span class="badge err">!</span>' : ''}${nw}</div>`;
   }).join('');
-  $('tree').innerHTML = html(root, 0);
+  $('tree').innerHTML = html(root, '');
 }
+// remember which folders you opened (not while filtering: a filter opens every matching folder)
+$('tree').addEventListener('toggle', e => {
+  const d = e.target.dataset?.d; if (d == null || $('treefilter').value) return;
+  if (e.target.open) openDirs.add(d); else openDirs.delete(d);
+}, true);
 $('tree').onclick = e => { const d = e.target.closest('.ovl'); if (d) openOvl(d.dataset.p); };
 let tf; $('treefilter').oninput = e => { clearTimeout(tf); tf = setTimeout(() => renderTree(e.target.value), 150); };
 
@@ -332,10 +357,17 @@ const LABEL = { shs: 'Static models', bsh: 'Skinned models', mdl: 'Wild! animal 
   ter: 'Terrain types', rcg: 'Research categories', psi: 'Particle skins', mam: 'Manifold meshes', fct: 'Fonts',
   ent: 'Entertainers', sat: 'Special attractions', flic: 'Texture pixel data', btbl: 'Bitmap tables' };
 let seq = 0;   // newest request wins; older responses are dropped
+// opened some other way (a link, another tab): open its folders so the selected entry shows
+function revealInTree(path) {
+  const el = [...document.querySelectorAll('#tree .ovl')].find(d => d.dataset.p === path); if (!el) return;
+  for (let d = el.parentElement.closest('details'); d; d = d.parentElement.closest('details')) { d.open = true; openDirs.add(d.dataset.d); }
+  el.scrollIntoView({ block: 'nearest' });
+}
 async function openOvl(path, auto = true) {
   if (String(path).startsWith('file:')) return openGameFile(path.slice(5));
   if (!String(path).startsWith('trackset:')) setTab(null);
   selOvl = path; document.querySelectorAll('.ovl').forEach(d => d.classList.toggle('sel', d.dataset.p === path));
+  revealInTree(path);
   if (path.startsWith('trackset:')) {
     $('ovlsub').textContent = 'loading…';
     const t = await (await fetch('/api/trackset?ride=' + encodeURIComponent(path.slice(9)))).json();
@@ -897,7 +929,7 @@ const TOUR = [
   { target: '#tree', title: '1. The game\'s OVL files',
     html: `<p>RCT3 keeps nearly everything in <b>OVL files</b> (pairs of <code>.common.ovl</code> / <code>.unique.ovl</code>). This list shows all of them, in the
       game's own folders (Animals, Characters, Rides, Style, Scenery, tracks…).</p>
-      <ul><li>Click ▸ to open a folder, click an OVL to see what is in it.</li>
+      <ul><li>Click ▸ to open a folder, click an OVL to see what is in it.</li><li><b>⟳ Refresh</b> looks for folders and files added to the game folder (also checked when you come back to the window); they are marked <b>new</b>.</li>
       <li>The coloured numbers say how many <b>models</b> (green), <b>pictures</b> (orange) and <b>sounds</b> (blue) it holds.</li></ul>` },
   { target: '#treefilter', title: 'Finding an OVL',
     html: `<p>Type part of a name to filter the list, for example <b>duck</b>, <b>coaster</b> or <b>chess</b>. Clear it to see everything again.</p>

@@ -20,6 +20,7 @@ def open_res(pg, ovl, res):
 with sync_playwright() as p:
     b = p.chromium.launch(channel='chrome', headless=True)
     pg = b.new_page(viewport={'width': 1400, 'height': 850})
+    pg.add_init_script("try { localStorage.setItem('rct3ovl.tour.main', '1'); } catch (e) {}")
     errors = []
     pg.on('pageerror', lambda e: errors.append(str(e)))
     open_res(pg, 'Cars%5CCoasterCars%5CMineRide%5CMineRide.common.ovl', 'MineTrainflex%3Aftx')

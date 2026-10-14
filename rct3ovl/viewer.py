@@ -110,8 +110,10 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     return self.send(200, data, 'audio/ogg')
                 if u.path == '/filetypes.md':
                     return self.send(200, open(os.path.join(STATIC, 'filetypes.md'), 'rb').read(), 'text/markdown; charset=utf-8')
-                if u.path == '/api/tree':
-                    return self.js({'root': lib.root, 'ovls': lib.index['ovls'], 'files': fw.list_files(lib)})
+                if u.path == '/api/tree':     # ?refresh=1: first look for OVLs added, changed or removed since
+                    with lock:
+                        changes = lib.refresh_index() if q.get('refresh') else None
+                        return self.js({'root': lib.root, 'ovls': lib.index['ovls'], 'files': fw.list_files(lib), 'changes': changes})
                 if u.path == '/api/parks':
                     with lock:
                         return self.js(parks.list_parks(lib))

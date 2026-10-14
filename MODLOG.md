@@ -590,3 +590,16 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Open… (and dropping files on the MixMaster) also takes .frw / .las / .wjt from anywhere (POST /api/fw/parse,
   fireworks.parse_upload): added to your effects, selected and previewed; opening the same file again replaces it.
   tests/ui_fw_open.py. Not compared with the game yet (user at the PC).
+
+## 2026-10-13: OVL tree - new folders, all folders closed at start
+- Library.refresh_index(): walks the game folder (~0.15 s for 7484 pairs) and reads only OVL pairs added or changed
+  (index entries now keep `mtime`, the later of the pair's two files; old entries take it on first sight) and drops
+  removed ones and their names; caches built on the library (`_rides`, `_scenery`, `_fireworks`...) are dropped and
+  rebuilt on next use, the scenery disk cache follows the index file's mtime. Runs at start (folders copied in while
+  the viewer was closed) and from /api/tree?refresh=1.
+- Viewer: ⟳ Refresh beside the filter, and a check when the window regains focus (at most every 15 s). New / changed
+  OVLs and loose firework files get a "new" badge, as do the (closed) folders holding them; the message line says
+  what was found / removed.
+- Every folder starts closed (was: the top level open). Folders you open stay open through redraws (filter,
+  refresh, track sets arriving); a filter opens every matching folder; an OVL opened from a link opens its folders.
+- tests/ui_tree_refresh.py (scratch game folder: copies an OVL pair in and out). ui_checks skips the welcome tour.

@@ -727,3 +727,9 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   used to be drawn over the old icon (its pixels showed through the clear parts); an imported picture now clears the
   place first, in the preview and when put down. Saved, read back (red where opaque, clear where clear, neighbours
   untouched), restored byte-identical.
+- Fireworks viewer: emitters that are not ParticleRelative now fire in the firework's own frame (tube direction, an up
+  across it - world +Y / +Z for a straight tube, as 0x9cbdf0's identity frame) instead of along the parent particle's
+  travel, and the parent's SpinRate no longer turns them. Most such emitters hang off the stationary launch particle,
+  so they were already right; with a seeded Math.random over all 29 fireworks + 1 own (6 s each) only Shanghai
+  Surprise (top 40 -> 37 m) and Solar Blaster (its 40 sparks thrown off the falling shell now leave upward) change; no
+  NaN, no page errors. Assumes a tilted tube tilts the identity frame too (untested in game: needs a tilted launcher).

@@ -505,9 +505,16 @@ async function build() {
     return [x, y, z];
   }
   let parts = [], silent = false;
-  function spawn(d, x, y, z, vx, vy, vz, h, parent, mods, u) {
+  // the firework's own frame (b: its tube's direction, bu: an up across it): a launch's world +Y / +Z when the tube stands
+  // straight; emitters that are not ParticleRelative fire in it, whatever their parent particle is doing
+  function baseFrame(h) {
+    const z = Math.abs(h[2]) < 0.99 ? [0, 0, 1] : [1, 0, 0], k = z[0] * h[0] + z[1] * h[1] + z[2] * h[2];
+    const u = [z[0] - k * h[0], z[1] - k * h[1], z[2] - k * h[2]], l = Math.hypot(...u);
+    return { b: h, bu: u.map(x => x / l) };
+  }
+  function spawn(d, x, y, z, vx, vy, vz, h, parent, mods, u, base) {
     if (parts.length >= MAX_PARTICLES) return null;
-    const p = { d, x, y, z, vx, vy, vz, h, u: u || [0, 0, 1], age: 0, life: Math.max(1e-3, d.life + Math.random() * d.lifeR), em: new Float32Array(d.emitters.length),
+    const p = { d, x, y, z, vx, vy, vz, h, u: u || [0, 0, 1], base: base || baseFrame(h), age: 0, life: Math.max(1e-3, d.life + Math.random() * d.lifeR), em: new Float32Array(d.emitters.length),
                 r0: Math.random(), parent, mods, delays: d.emitters.map(e => e.tr ? Math.random() * e.tr : 0) };
     parts.push(p);
     if (d.sound && !silent) playSound(d.sound, x, y, z, d.sndMin, d.sndMax);
@@ -529,10 +536,12 @@ async function build() {
       if (n <= 0) continue;
       p.em[i] += n;
       const cd = descInfo(p.d.fw, e.desc);
+      // the new particle's frame (RCT3plus.exe 0x9cbdf0): its parent's when ParticleRelative - along the parent's travel,
+      // with its up - else the firework's own (straight up the tube); then turned by the emitter's spin
       const sp = Math.hypot(p.vx, p.vy, p.vz);
-      let h = sp > 0.05 ? [p.vx / sp, p.vy / sp, p.vz / sp] : p.h;
-      let u = e.rel ? p.u : [0, 0, 1];      // the new particle's up: its parent's when it moves with it, else the world's (game)
-      if (p.d.pspin) { h = rotXYZ(h, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); u = rotXYZ(u, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); }
+      let h = e.rel ? (sp > 0.05 ? [p.vx / sp, p.vy / sp, p.vz / sp] : p.h) : p.base.b;
+      let u = e.rel ? p.u : p.base.bu;
+      if (e.rel && p.d.pspin) { h = rotXYZ(h, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); u = rotXYZ(u, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); }
       if (e.spin[0] || e.spin[1] || e.spin[2] || e.spin0[0] || e.spin0[1] || e.spin0[2]) {
         const a = [e.spin0[0] + e.spin[0] * p.age, e.spin0[1] + e.spin[1] * p.age, e.spin0[2] + e.spin[2] * p.age];
         h = rotXYZ(h, ...a); u = rotXYZ(u, ...a);
@@ -545,7 +554,7 @@ async function build() {
         const vz = h[2] * e.speed + s[2] * sr + c[2] * e.src + p.vz * e.psf;
         let x = p.x + ps[0] * pr, y = p.y + ps[1] * pr, z = p.z + ps[2] * pr;
         if (pc) { x += pc[0] * e.prc; y += pc[1] * e.prc; z += pc[2] * e.prc; }
-        if (!spawn(cd, x, y, z, vx, vy, vz, h, e.rel ? p : null, p.mods, u)) return;
+        if (!spawn(cd, x, y, z, vx, vy, vz, h, e.rel ? p : null, p.mods, u, p.base)) return;
       }
     }
   }

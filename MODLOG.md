@@ -723,3 +723,7 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   all kinds open (anim / recolour preview / DXT3 with 8 mips), SceneryIcons sheets, English texts; md5 of Main and
   English unchanged.
 - Not tried in the game yet (needs the user's PC): a saved texture / icon rect / text showing in RCT3.
+- GUI Editor "Replace with picture…" tested (scratch copy): a PNG with a transparent corner put into an icon's place
+  used to be drawn over the old icon (its pixels showed through the clear parts); an imported picture now clears the
+  place first, in the preview and when put down. Saved, read back (red where opaque, clear where clear, neighbours
+  untouched), restored byte-identical.

@@ -533,7 +533,7 @@ function texEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld }) {
       if (t.width !== doc.info.w || t.height !== doc.info.h) { t.width = doc.info.w; t.height = doc.info.h; }
       g.globalCompositeOperation = 'copy'; g.globalAlpha = 1; g.drawImage(c, 0, 0); g.globalCompositeOperation = 'source-over';
       if (stroke) putStroke(g);
-      if (float) g.drawImage(float.cv, float.x, float.y);
+      if (float) { if (float.replace) g.clearRect(float.x, float.y, float.cv.width, float.cv.height); g.drawImage(float.cv, float.x, float.y); }
       c = t;
     }
     if (st.chan === 'rgba') return c;
@@ -668,16 +668,17 @@ function texEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld }) {
   function commitFloat() {
     if (!float || !doc) return;
     if (!float.lifted) snapshot();
+    if (float.replace) work().getContext('2d').clearRect(float.x, float.y, float.cv.width, float.cv.height);   // an imported picture takes the place's transparency too
     work().getContext('2d').drawImage(float.cv, float.x, float.y);
     sel = [float.x, float.y, float.x + float.cv.width, float.y + float.cv.height].map(Math.round);
     float = null; changed();
   }
-  function pasteCanvas(c) {
+  function pasteCanvas(c, replace = false) {
     if (!doc) return;
     commitFloat();
     let x = 0, y = 0;
     if (sel) { x = sel[0]; y = sel[1]; } else { x = Math.round((doc.info.w - c.width) / 2); y = Math.round((doc.info.h - c.height) / 2); }
-    float = { cv: c, x, y, lifted: false }; setTool('select'); view.redraw();
+    float = { cv: c, x, y, lifted: false, replace }; setTool('select'); view.redraw();
   }
   let clip = null;
   function copySel(cut) {
@@ -834,7 +835,7 @@ function texEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld }) {
     if (img.width === doc.info.w && img.height === doc.info.h && !sel) {
       snapshot(); const g = work().getContext('2d'); g.clearRect(0, 0, img.width, img.height); g.drawImage(img, 0, 0); changed(); toast('Imported ' + file.name);
     } else if (sel) {          // into the selection, scaled to it
-      const c = canvasOf(sel[2] - sel[0], sel[3] - sel[1]), g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, c.width, c.height); pasteCanvas(c);
+      const c = canvasOf(sel[2] - sel[0], sel[3] - sel[1]), g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, c.width, c.height); pasteCanvas(c, true);
       toast(`Imported ${file.name} into the selection (move it, then click outside)`);
     } else {
       snapshot(); const g = work().getContext('2d'); g.imageSmoothingQuality = 'high'; g.clearRect(0, 0, doc.info.w, doc.info.h); g.drawImage(img, 0, 0, doc.info.w, doc.info.h); changed();

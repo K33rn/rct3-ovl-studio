@@ -347,6 +347,8 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                         return self.js(tx.set_icon_rect(lib, body['path'], body['name'], body['rect']))
                     if u.path == '/api/tx/text':
                         return self.js(tx.set_text(lib, body['path'], body['name'], body['text']))
+                    if u.path == '/api/tx/exe':
+                        return self.js({'edits': tx.patch_exe(lib, body.get('name', 'RCT3plus.exe'), body['patches'], body.get('what', 'layout'))})
             if u.path == '/api/fw/build':
                 with lock:
                     blob = fw.build(lib, body['kind'], body['data'])

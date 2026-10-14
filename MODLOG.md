@@ -797,3 +797,27 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   straight up (~5-10 deg on screen, where following the tube would show ~25). So non-relative = world +Y / +Z,
   as 0x9cbdf0's identity frame says - the viewer's earlier "tube's frame" guess is dropped (WORLD_DIR / WORLD_UP).
 - All 29 fireworks run without NaN; ui_fireworks passes (only the favicon 404).
+
+## 2026-10-14: Neon Nights v2 - buttons moved and restyled (RCT3plus.exe patched, user approved)
+- Front-screen layout is code, not data. Buttons: 0xa47190(type, slot, button, icon, menu, flag) -> x 0xa45110(type)
+  = radius (650/560/470/435/520/275 for types 0-5), y 0xa451d0(type, slot) = angle start + step x slot (type 0: 3.06 +
+  0.165 n; 1: 3.2 + 0.17 n; 2: 3.3 + 0.2 n; 3: 2.7 + 0.15 n; 4: 3.7 + 0.08 n; 5: 2.4 / 5.9 + 0.25 n), size 0xa45570
+  (83 / 64 / 100), placed by 0xa45670 on a circle round (734, 527) of a 1024 x 768 layout minus half the size;
+  measured: disc centres at (734 + r cos t, 239.5 - r sin t) (the parent panel's offset). Type 0 = the main menu and
+  the Tools menu's four designers (slots 0-3); its constants (0xf8db6c / 84 / 80) are used nowhere else.
+- Bars: the label control's colour is an immediate ARGB in the code (0xa4b48e mov [eax], 0xfff7f2f2 ->
+  0x6ad0b0); the bar's rounded end is FrontScreen_IconCircle_Back, the slanted end FrontScreen_Triangle, the badge
+  behind the icon FrontScreen_IconCircle_New (global 0x12fce8c via the stub at 0xecc380; the stubs write
+  "push 1; push 0x1303cfc; push name; mov ecx, global - 8; call 0x41cb90"). FrontEndLogo (the kids) is anchored to
+  the window's bottom-left by code (0xa55c80), no constant - so the big picture was redrawn in place instead.
+- Tried in the game (several launches): r 350 (stack inside the circle), r 330 / 3.234 / 0.333 (curved column
+  mid-screen; the Tools menu's 3rd/4th bars overlapped where the arc turns), r 460 / 2.7216 / 0.29 (even gaps but the
+  badges under the ring), final r 360, start 2.7216 (pi - 0.42), step 0.29: buttons on an even arc at the top of the
+  circle, Tools' four readable. Bar colour 0xff28f0ff (neon cyan) + flat cyan bar ends; hexagon badges; giant neon
+  ferris wheel + coaster + OPEN sign as the big picture. RIDE opens the Play menu, BUILD the Tools menu (checked).
+- texedit.patch_exe (POST /api/tx/exe {name, patches: [{va, f32 | u32, old}], what}): checks each old value (refuses
+  another program version), copies the original to the backups folder first, writes via tmp + replace, lists it in
+  edits.json; restore('RCT3plus.exe') copies it back. Tested on a copy: patch, restore byte-identical, wrong old value
+  refused with nothing written. The Steam exe was restored to the original and re-patched through it (same 12 bytes).
+  The first manual backup is also at ~/.rct3ovl/exe_backup/RCT3plus.exe (md5 c73be70d...).
+- Screenshots: Desktop\RCT3_NeonNights_StartMenu_v2.png, RCT3_NeonNights_BuildMenu_v2.png.

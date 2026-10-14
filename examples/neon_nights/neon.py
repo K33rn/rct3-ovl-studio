@@ -147,8 +147,9 @@ parts = Image.new('RGBA', P.size, (0, 0, 0, 0))
 
 def disc(box, ring):
     x0, y0, x1, y1 = box; w, h = x1 - x0, y1 - y0
-    m = Image.fromarray(PA[y0:y1, x0:x1].astype(np.uint8))
-    d = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+    # a hexagon badge instead of the round disc (the game only draws the picture; its shape is the alpha)
+    m = Image.new('L', (w, h), 0); cx, cy, R = w / 2, h / 2, w / 2 - 1
+    ImageDraw.Draw(m).polygon([(cx + R * math.cos(math.pi / 6 + k * math.pi / 3), cy + R * math.sin(math.pi / 6 + k * math.pi / 3)) for k in range(6)], fill=255)
     g = np.zeros((h, w, 4), np.uint8); yy, xx = np.mgrid[0:h, 0:w]
     rr = np.hypot(xx - w / 2, yy - h / 2) / (w / 2)
     g[..., 0] = np.clip(20 + 40 * (1 - rr), 0, 255); g[..., 1] = np.clip(6 + 10 * (1 - rr), 0, 255); g[..., 2] = np.clip(50 + 70 * (1 - rr), 0, 255); g[..., 3] = 255
@@ -161,13 +162,13 @@ def disc(box, ring):
 
 disc((2, 2, 89, 89), PINK)                 # Circle: behind the menu icons
 disc((186, 2, 264, 82), CYAN)              # IconCircle_New
-# button-bar end (half disc) and the triangle: pale glass with a pink edge, so the black labels stay readable
+# button-bar end (half disc) and the triangle: bright neon cyan with a pink edge
 for box in [(90, 2, 185, 99), (2, 95, 97, 180)]:
     x0, y0, x1, y1 = box; w, h = x1 - x0, y1 - y0
     m = Image.fromarray(PA[y0:y1, x0:x1].astype(np.uint8))
     yy = np.linspace(0, 1, h)[:, None]
     g = np.zeros((h, w, 4), np.uint8)
-    g[..., 0] = (255 - 25 * yy).astype(np.uint8); g[..., 1] = (240 - 30 * yy).astype(np.uint8); g[..., 2] = 255; g[..., 3] = 255
+    g[..., 0] = 40; g[..., 1] = 240; g[..., 2] = 255; g[..., 3] = 255   # flat neon cyan = the bar colour patched into the exe (0xff28f0ff)
     d = Image.fromarray(g)
     edge = ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(7)))
     d.alpha_composite(Image.merge('RGBA', [Image.new('L', (w, h), c) for c in PINK] + [edge]))
@@ -225,14 +226,25 @@ def coaster(size, scale=1.0, ox=0, oy=0):
     return img
 
 
-# FrontEndLogo (the main menu's picture, where the two kids were): a neon coaster and an OPEN sign
+# FrontEndLogo (the main menu's big picture, where the two kids were; drawn in the bottom-left corner, from y ~310 of
+# 800): a giant neon ferris wheel with the coaster running in front and an OPEN sign
 logo = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
-logo.alpha_composite(coaster((512, 512), 0.8, 0, 110))   # kept below the menu buttons (the game draws this from y ~310 of 800)
+cx, cy, R = 250, 250, 205
+wheel = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
+wheel.alpha_composite(glow((512, 512), lambda dr, v, w: (dr.line((cx, cy, cx - 120, 505), fill=v, width=w), dr.line((cx, cy, cx + 120, 505), fill=v, width=w)), PURP, radius=(8, 3), width=9))
+wheel.alpha_composite(glow((512, 512), lambda dr, v, w: [dr.line((cx, cy, cx + R * math.cos(a), cy + R * math.sin(a)), fill=v, width=w) for a in np.linspace(0, 2 * math.pi, 17)[:-1]], CYAN, radius=(6, 2), width=3))
+wheel.alpha_composite(glow((512, 512), lambda dr, v, w: (dr.ellipse((cx - R, cy - R, cx + R, cy + R), outline=v, width=w), dr.ellipse((cx - R + 22, cy - R + 22, cx + R - 22, cy + R - 22), outline=v, width=w)), PINK, radius=(12, 5, 2), width=6))
+wheel.alpha_composite(glow((512, 512), lambda dr, v, w: dr.ellipse((cx - 34, cy - 34, cx + 34, cy + 34), outline=v, width=w), YEL, radius=(8, 3), width=6))
+for k, a in enumerate(np.linspace(0, 2 * math.pi, 17)[:-1]):
+    x, y = cx + R * math.cos(a), cy + R * math.sin(a); col = [YEL, CYAN, ORNG, PINK][k % 4]
+    wheel.alpha_composite(glow((512, 512), lambda dr, v, w: dr.rounded_rectangle((x - 15, y + 2, x + 15, y + 28), 6, outline=v, width=w), col, radius=(5, 2), width=4))
+logo.alpha_composite(wheel)
+logo.alpha_composite(coaster((512, 512), 0.82, 10, 105))
 sign = Image.new('RGBA', (512, 512), (0, 0, 0, 0)); sd = ImageDraw.Draw(sign)
-sd.rounded_rectangle((345, 250, 505, 318), 14, fill=(20, 6, 40, 220))
-sign.alpha_composite(glow((512, 512), lambda dr, v, w: dr.rounded_rectangle((345, 250, 505, 318), 14, outline=v, width=w), PINK, radius=(6, 3), width=4))
-sign.alpha_composite(neon_text((512, 512), 'OPEN', F('impact.ttf', 50), YEL, (425, 284), stroke=2))
-sign.alpha_composite(neon_text((512, 512), 'ALL NIGHT', F('bahnschrift.ttf', 22), CYAN, (425, 338), stroke=1))
+sd.rounded_rectangle((4, 4, 176, 70), 14, fill=(20, 6, 40, 230))
+sign.alpha_composite(glow((512, 512), lambda dr, v, w: dr.rounded_rectangle((4, 4, 176, 70), 14, outline=v, width=w), PINK, radius=(6, 3), width=4))
+sign.alpha_composite(neon_text((512, 512), 'OPEN', F('impact.ttf', 46), YEL, (90, 36), stroke=2))
+sign.alpha_composite(neon_text((512, 512), 'ALL NIGHT', F('bahnschrift.ttf', 20), CYAN, (90, 86), stroke=1))
 logo.alpha_composite(sign)
 save(logo, 'FrontEndLogo')
 

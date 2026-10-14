@@ -296,7 +296,63 @@ def write_texture(lib, rel: str, name: str, png: bytes, frame: int = 0) -> dict:
     return info(lib, rel, name)
 
 
+def _exe_offset(exe: bytes, va: int) -> int:
+    """File offset of a virtual address in a 32-bit PE (from its section table)."""
+    pe = struct.unpack_from('<I', exe, 0x3c)[0]
+    nsec, optsize = struct.unpack_from('<H', exe, pe + 6)[0], struct.unpack_from('<H', exe, pe + 20)[0]
+    base = struct.unpack_from('<I', exe, pe + 24 + 28)[0]
+    for i in range(nsec):
+        s = pe + 24 + optsize + i * 40
+        vsize, vaddr, rsize, raw = struct.unpack_from('<IIII', exe, s + 8)
+        if vaddr <= va - base < vaddr + max(vsize, rsize):
+            return raw + va - base - vaddr
+    raise ValueError(f'{va:#x} is not in the program')
+
+
+def patch_exe(lib, name: str, patches: list[dict], what: str) -> dict:
+    """Values written into the game's program (front-screen layout and colours: see examples/neon_nights).
+    patches: [{va, f32 | u32, old (optional, checked)}]. The original is copied first; restore() puts it back."""
+    if os.path.basename(name) != name or not name.lower().endswith('.exe'):
+        raise ValueError('not the game program')
+    p = os.path.join(lib.root, name)
+    d = bytearray(open(p, 'rb').read())
+    for x in patches:
+        o = _exe_offset(d, int(x['va']))
+        fmt, v = ('<f', float(x['f32'])) if 'f32' in x else ('<I', int(x['u32']))
+        if 'old' in x and abs(struct.unpack_from(fmt, d, o)[0] - x['old']) > 1e-4:
+            raise ValueError(f"{int(x['va']):#x} does not hold {x['old']} - a different version of {name}?")
+        struct.pack_into(fmt, d, o, v)
+    dst = os.path.join(_backup_dir(lib), name)
+    if not os.path.exists(_lp(dst)):
+        os.makedirs(_lp(os.path.dirname(dst)), exist_ok=True)
+        shutil.copy2(_lp(p), _lp(dst))
+    tmp = p + '.rct3ovl-tmp'
+    open(tmp, 'wb').write(d)
+    try:
+        os.replace(tmp, p)
+    except PermissionError:
+        os.remove(tmp)
+        raise PermissionError(f'{name} is in use - close RollerCoaster Tycoon 3 and try again')
+    e = edits(lib)
+    ent = e.setdefault(name, {'changes': []})
+    if what not in ent['changes']:
+        ent['changes'].append(what)
+    ent['time'] = time.strftime('%Y-%m-%d %H:%M')
+    _save_edits(lib, e)
+    return e
+
+
 def restore(lib, rel: str) -> None:
+    if rel.lower().endswith('.exe'):          # the program (patch_exe)
+        src, p = os.path.join(_backup_dir(lib), rel), os.path.join(lib.root, rel)
+        if os.path.exists(_lp(src)):
+            try:
+                shutil.copy2(_lp(src), _lp(p))
+            except PermissionError:
+                raise PermissionError(f'{rel} is in use - close RollerCoaster Tycoon 3 and try again')
+            os.remove(_lp(src))
+        e = edits(lib); e.pop(rel, None); _save_edits(lib, e)
+        return
     rel = norm(lib, rel)
     e = edits(lib)
     bdir = _backup_dir(lib)

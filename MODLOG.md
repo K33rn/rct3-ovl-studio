@@ -821,3 +821,27 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   refused with nothing written. The Steam exe was restored to the original and re-patched through it (same 12 bytes).
   The first manual backup is also at ~/.rct3ovl/exe_backup/RCT3plus.exe (md5 c73be70d...).
 - Screenshots: Desktop\RCT3_NeonNights_StartMenu_v2.png, RCT3_NeonNights_BuildMenu_v2.png.
+
+## 2026-10-14: Front screen designer (GUI Editor > Main menus) - every front-screen menu customisable
+- Request: build the main-menu customisation into the program.
+- All front-screen buttons (0xa47190 call sites): type 0 = every menu (main 3, Play 4, Tools 4, Sandbox / Custom
+  scenario 2, plus 4 dynamic ones at 0xa4f720.. with register slots), type 4 = Back / Quit (slots 4, 5) and the
+  in-game scenario-end menu (slots 0-5), type 3 = scenario / campaign lists, type 5 = tutorial pages (slot -1 =
+  forward). Each number is read by one `fld dword [addr]` (D9 05) in 0xa45110 / 0xa451d0 / 0xa45570; types 1-5 share
+  constants with unrelated code (560, 3.2, 0.2, 0.25, 64, 100 ...), so frontscreen.py points the instruction's
+  address at its own 4-byte slot in the int3 padding between functions near 0xa450c4 (never executed, in .text so
+  readable) and writes the value there. reset_layout points them back, refills the slots with CC and restores
+  constants an earlier in-place patch wrote. _check refuses a program where any of the 16 instructions is not
+  fld [original | slot], or a slot not CC while unused, or the colour's mov opcode differs.
+- Verified in the game: with the Neon numbers redirected into slots the menu looks exactly as before, and
+  corner_r 420 / corner_start 4.3 moved the Quit badge from (540, 695) to (900, 680) as computed. Put back afterwards
+  (Steam exe now: Neon layout only, through slots).
+- API: GET /api/tx/menu (params with original values, colour, themes), POST /api/tx/menu {values, colour},
+  /api/tx/menu/reset, /api/tx/menu/theme {name, restore_main}. Themes: rct3ovl/themes/neon_nights.py (moved from the
+  example) drawn from the game's own textures, then textures + English menu words + layout saved.
+- UI: canvas preview 1280 x 800 from the game's pictures (BG1/BG1b, BG2 halves, logo, badges, bar ends, icon cuts,
+  menu words) with the live-park area as a stand-in; drag the first button = r + start, another = step; inputs in
+  degrees; colour picker; words with max lengths; picture shortcuts to the Texture Editor; theme buttons. Tests on the
+  scratch copy (fstest.py backend, tfront.py UI): set / bad value refused / reset byte-identical / theme twice
+  (second needs restore_main) / restore all byte-identical; UI drag -> save -> menus -> reset -> restore, no page
+  errors. Race fixed: openOvl's icons arriving after another item was opened.

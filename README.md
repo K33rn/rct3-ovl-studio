@@ -190,14 +190,16 @@ The buttons at the top:
     sheets and font letter sheets in the Texture Editor. **Menu text** edits every text of each language (a text can be
     as long as the one it replaces).
   - It has its own walkthrough, the first time it opens (**? Tour** replays it).
-  - **Example – Neon Nights:** `examples/neon_nights` turns the front screen (the Play / Tools / Options menu) into a
-    neon night theme: night sky with a city and a synthwave sun, pink neon ring, new logo, new icons, a giant neon
-    ferris wheel and coaster with an OPEN sign instead of the kids, neon expansion badges, and new menu words (RIDE,
-    BUILD, SETUP, NEON PARK). The buttons become hexagon badges on neon cyan bars and move from the left edge to an
-    arc at the top of the big circle - their positions and bar colour are numbers in the game's program, so this
-    also patches `RCT3plus.exe` (four values; the original is copied first and **Changed files** lists it).
-    With the viewer running and the game closed: `python examples/neon_nights/apply.py http://localhost:8766`
-    (needs Pillow and numpy). **Changed files** › Restore puts the original menu (and program) back.
+  - **Front screen designer** (GUI Editor › **Main menus**): the game's main menus - the front screen with Play,
+    Tools and Options and the Play, Tools and Sandbox menus behind them. A preview built from the game's own pictures
+    shows each menu; drag the first button to move the arc all the buttons sit on (distance and angle from the big
+    circle's centre), drag another to change the spacing, or type the numbers; set the badge size and the bars'
+    colour. **More numbers** moves the Back / Quit buttons, the scenario lists and the tutorial pages. **Menu words**
+    renames the buttons and titles, **Pictures** opens each front-screen picture in the Texture Editor, and **Themes**
+    applies a whole new front screen in one go (**Neon Nights**: night sky, neon ring, hexagon badges on cyan bars
+    along the top of the circle, a giant neon ferris wheel). The layout and colour are numbers in the game's program,
+    so they are saved into `RCT3plus.exe` (the original is copied first and **Changed files** puts it back; another
+    version of the program is refused untouched). `examples/neon_nights/apply.py` applies the theme from a script.
 - **Walkthrough:** a guided tour starts the first time you open the viewer. It highlights each part of the screen, explains it and opens examples on every tab. The MixMaster has its own tour the first time it opens, and it opens and walks through the Advanced Firework Editor, the laser designer and the water jet designer on the way. **? Tour** (top left in the viewer, next to MixMaster in the MixMaster) replays it; pressed while the firework editor or a designer is open, it explains that editor. ← → or Enter move, Esc stops.
 - **File types** opens the guide to every file type: the OVL resource types and the loose firework files (`.frw`, `.fwd`, `.las`, `.wjt`, `.lwr`, `.wma`). A firework file's summary has a **?** that jumps to its entry.
 - The eight tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks, Parks, Textures & GUI) sit under the title; the one in use is highlighted.

@@ -19,6 +19,7 @@ from .scenery import build_scenery, list_scenery
 from . import fireworks as fw
 from . import parks
 from . import texedit as tx
+from . import frontscreen
 from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
@@ -141,6 +142,9 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 if u.path == '/api/tx/texts':
                     with lock:
                         return self.js(tx.texts(lib, q['path']))
+                if u.path == '/api/tx/menu':
+                    with lock:
+                        return self.js({**frontscreen.layout(lib), 'themes': frontscreen.themes()})
                 if u.path == '/api/parks':
                     with lock:
                         return self.js(parks.list_parks(lib))
@@ -347,6 +351,13 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                         return self.js(tx.set_icon_rect(lib, body['path'], body['name'], body['rect']))
                     if u.path == '/api/tx/text':
                         return self.js(tx.set_text(lib, body['path'], body['name'], body['text']))
+                    if u.path == '/api/tx/menu':
+                        return self.js(frontscreen.set_layout(lib, body.get('values', {}), body.get('colour')))
+                    if u.path == '/api/tx/menu/reset':
+                        return self.js(frontscreen.reset_layout(lib))
+                    if u.path == '/api/tx/menu/theme':
+                        r = frontscreen.apply_theme(lib, body['name'], bool(body.get('restore_main')))
+                        return self.js({**r, 'edits': tx.edits(lib)})
                     if u.path == '/api/tx/exe':
                         return self.js({'edits': tx.patch_exe(lib, body.get('name', 'RCT3plus.exe'), body['patches'], body.get('what', 'layout'))})
             if u.path == '/api/fw/build':

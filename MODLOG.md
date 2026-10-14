@@ -706,8 +706,8 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   pairs and resources; restore copies back and drops the entry. Writes go to <file>.rct3ovl-tmp then os.replace (a
   PermissionError says to close the game); the pair is re-parsed after writing; the Library forgets the open copy
   and derived caches (texedit._reload keeps the texture catalogue: names / sizes don't change).
-- .CHK files next to Main.*.ovl and Style\Vanilla\Style.*.ovl (4 bytes, not a CRC32 of the file): neither exe
-  mentions .CHK (narrow or UTF-16) - not checked by the game, left alone.
+- .CHK files next to Main.*.ovl and Style\Vanilla\Style.*.ovl: WRONG at first ("not checked") - see the in-game
+  test below; the exe builds the name from "CHK" (0xf29cac) and the game quits at start-up on a mismatch.
 - Catalogue: 2,366 textures (1,601 ftx, 765 tex: 404 DXT3, 188 DXT1, 173 BGRA; 2,013 distinct names), built in ~39 s
   the first time, cached in ~/.rct3ovl/texcat_<root>.json keyed on the OVLs' mtimes. GUI: 18 OVLs with gsi (Main 1,887;
   Style\SceneryIcons 1,161; Style\Vanilla\Scenery 241; RideIcons 208; FrontScreen logos; CarriedItems; ...), texts in
@@ -733,3 +733,21 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   so they were already right; with a seeded Math.random over all 29 fireworks + 1 own (6 s each) only Shanghai
   Surprise (top 40 -> 37 m) and Solar Blaster (its 40 sparks thrown off the falling shell now leave upward) change; no
   NaN, no page errors. Assumes a tilted tube tilts the identity frame too (untested in game: needs a tilted launcher).
+
+## 2026-10-14: Textures & GUI edits tried in the game (Steam RCT3 Platinum, app 2700; user approved writing to it)
+- Steam folder (C:\Program Files (x86)\Steam\steamapps\common\Rollercoaster Tycoon 3 Gold) = the one the game runs;
+  its Main and English OVLs are identical to the Desktop copy. Extra backup of the 4 files + md5 in the scratchpad.
+- Menu texts (gui\English): FrontScreen_Career_TT -> "CLAUDE TEST" shows as the Career button's label under Play;
+  FrontScreen_SandboxMenu -> "CLAUDE MENU!" is the Sandbox screen's title. Works as written.
+- FrontEndLogo (Main, DXT3 512x512, 5 mips; the two kids on the front screen): the game quit ~4 s after start (Steam
+  log: process added / removed), with or without the text edit; the originals start. Cause: the .CHK beside
+  Main.*.ovl and Style\Vanilla\Style.*.ovl. RCT3plus.exe 0x457e10(name, ?, write): appends "CHK" (0xf29cac) to the
+  name, computes the file's checksum (object 0x457da0: CRC table 0x457740 = reflected 0x04C11DB7, i.e. CRC-32;
+  0x456e60 reads a byte at a time and tests EOF after the update, so the last byte is counted twice), then writes it
+  ("wb") or compares it with the .CHK (4 bytes LE); 0x457fa0 runs it for Main.common/unique and Style.common/unique.
+  CHK = zlib.crc32(data + data[-1:]) matches all four. texedit.game_crc; _patch backs the .CHK up with the pair and
+  rewrites it after every change; restore copies it back. With that the logo edit loads: pink "EDITED!" sign and blue
+  balloon on the front screen (screenshot ingame_logo.png in the scratchpad).
+- Restored through the editor: all four OVLs and both .CHK byte-identical to the originals. tgui / trep UI tests on the
+  scratch copy with .CHK files present: pass, restore byte-identical including .CHK.
+- Clicking in RCT3 needs a hover first: move to the icon, wait ~1 s, click (clicks on the label text do nothing).

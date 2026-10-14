@@ -8,7 +8,8 @@ Edits keep each resource's size and layout, so only bytes inside the OVL change 
 - gsi: an icon's rectangle on its sheet (4 x u32);
 - txt: a text (UTF-16), up to the length of the one it replaces.
 Before the first change to an OVL pair both of its files are copied to ~/.rct3ovl/backups/<game>/<path>, and
-restore() puts them back.
+restore() puts them back. Main and Style\\Vanilla also have a .CHK beside each file (the game's CRC of it, checked at
+start-up): it is backed up with them and rewritten after every change.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ import os
 import shutil
 import struct
 import time
+import zlib
 
 import numpy as np
 from PIL import Image
@@ -219,15 +221,28 @@ def _reload(lib, rel: str):
     json.dump(lib.index, open(lib._index_path(), 'w'))
 
 
+def game_crc(data: bytes) -> int:
+    """The checksum RCT3plus.exe keeps in <ovl>.CHK (0x456e60): CRC-32, but its read loop only notices the end of the
+    file after a failed read, so the last byte is counted twice. Main and Style\\Vanilla have one; at start-up the game
+    quits if a file's CRC is not the one in its .CHK (0x457e10, called for the four files from 0x457fa0)."""
+    return zlib.crc32(data + data[-1:]) if data else 0
+
+
+def _with_chk(p: str) -> list[str]:
+    """An OVL file and its .CHK, if the game keeps one for it."""
+    return [p] + ([p + '.CHK'] if os.path.exists(_lp(p + '.CHK')) else [])
+
+
 def _patch(lib, rel: str, o: Ovl, writes: list[tuple[str, int, bytes]], what: str):
     """writes: (part, file offset, bytes). Backs the pair up (first time only), writes, checks it still reads."""
     files = {f.part: f.path for f in o.files}
     bdir = _backup_dir(lib)
     for part, p in files.items():
-        dst = os.path.join(bdir, os.path.relpath(p, lib.root))
-        if not os.path.exists(_lp(dst)):
-            os.makedirs(_lp(os.path.dirname(dst)), exist_ok=True)
-            shutil.copy2(_lp(p), _lp(dst))
+        for q in _with_chk(p):
+            dst = os.path.join(bdir, os.path.relpath(q, lib.root))
+            if not os.path.exists(_lp(dst)):
+                os.makedirs(_lp(os.path.dirname(dst)), exist_ok=True)
+                shutil.copy2(_lp(q), _lp(dst))
     data = {part: bytearray(open(p, 'rb').read()) for part, p in files.items()}
     for part, off, b in writes:
         buf = data[part]
@@ -242,6 +257,8 @@ def _patch(lib, rel: str, o: Ovl, writes: list[tuple[str, int, bytes]], what: st
         except PermissionError:
             os.remove(tmp)
             raise PermissionError(f'{os.path.basename(p)} is in use - close RollerCoaster Tycoon 3 and try again')
+        if os.path.exists(p + '.CHK'):          # else the game refuses to start
+            open(p + '.CHK', 'wb').write(struct.pack('<I', game_crc(data[part])))
     Ovl(files['common'] if 'common' in files else next(iter(files.values())))      # still a readable OVL
     rel = norm(lib, rel)
     e = edits(lib)
@@ -283,7 +300,7 @@ def restore(lib, rel: str) -> None:
     rel = norm(lib, rel)
     e = edits(lib)
     bdir = _backup_dir(lib)
-    for p in pair_paths(os.path.join(lib.root, rel)):
+    for p in [q for p in pair_paths(os.path.join(lib.root, rel)) for q in (p, p + '.CHK')]:
         src = os.path.join(bdir, os.path.relpath(p, lib.root))
         if os.path.exists(_lp(src)):
             try:

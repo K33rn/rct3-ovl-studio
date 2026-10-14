@@ -642,6 +642,11 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   instanced capsules shown while loading, kept now: a near person's instance is scaled to 0) and their mixers stop
   (crowdLod, rechecked when the camera moves > 1 m). Whole-park view after: 1,095 calls / 19 ms (people 4 calls); the
   rest is mostly the go-kart tracks (~900 meshes in rides: track glbs aren't merged - next if it's still slow).
+- Ride tracks merged: each /api/park_track glb (hundreds of piece meshes, ~5 materials; Formula RCT 02 is 401
+  meshes) becomes one mesh per material + attribute set on load (mergeByMaterial, BufferGeometryUtils.mergeGeometries,
+  pieces baked to world; a glb with animations, skinned meshes or multi-materials is left as it is). Rides layer 876
+  -> 142 meshes; whole-park view 1,095 -> 361 calls, 19 -> 14 ms. Picking (one title per track) and clearOfTracks
+  (raycasts the track) unchanged.
 - parks._supports' rounding unpacked 5 values per piece; the squashed piece's 6th crashed every coaster's supports
   (/api/park_supports 500) until fixed - ui_parks_all (tracks n/n) is the check that catches it.
 - ui_parks_all now also checks path supports: 42 parks, 1,686 columns, none off, none overlapping.

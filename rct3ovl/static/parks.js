@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { runTour, tourRunning } from './tour.js';
 
 let ui = null;
@@ -932,6 +933,27 @@ vec4 groundTex(float l, vec3 w) {
     }
     return out;
   }
+  // a track is hundreds of piece meshes sharing a few materials: one mesh per material draws it in a few calls
+  function mergeByMaterial(root) {
+    let odd = false; root.traverse(o => { if (o.isSkinnedMesh || o.isPoints || o.isLine || (o.isMesh && Array.isArray(o.material))) odd = true; });
+    if (odd) return root;
+    root.updateMatrixWorld(true);
+    const by = new Map(), out = new THREE.Group();
+    root.traverse(o => {
+      if (!o.isMesh) return;
+      const geo = o.geometry, k = o.material.uuid + '|' + Object.keys(geo.attributes).sort().join() + '|' + !!geo.index;
+      if (!by.has(k)) by.set(k, { mat: o.material, list: [], keep: [] });
+      by.get(k).list.push(geo.clone().applyMatrix4(o.matrixWorld)); by.get(k).keep.push(o);
+    });
+    for (const { mat, list, keep } of by.values()) {
+      const merged = list.length > 1 ? mergeGeometries(list) : list[0];
+      const geos = merged ? [merged] : list;      // pieces that can't be merged stay apart, already placed
+      if (merged && list.length > 1) list.forEach(x => x.dispose());
+      for (const geo of geos) { const m = new THREE.Mesh(geo, mat); m.castShadow = keep[0].castShadow; m.receiveShadow = keep[0].receiveShadow; out.add(m); }
+    }
+    root.traverse(o => { if (o.isMesh) o.geometry.dispose(); });
+    return out;
+  }
   async function buildTracks(seq) {
     trackScenes = [];
     for (const tr of world.tracks) {
@@ -942,9 +964,10 @@ vec4 groundTex(float l, vec3 w) {
         const meta = JSON.parse(r.headers.get('X-Info') || '{}');
         const g = await gltf.parseAsync(await r.arrayBuffer(), '');
         if (seq !== loadSeq) return;
-        g.scene.userData.pick = { title: tr.name, detail: 'coaster / tracked ride' };
-        layers.rides.add(g.scene); trackScenes.push(g.scene);
-        const box = new THREE.Box3().setFromObject(g.scene); rideSpots[tr.id] = box.getCenter(new THREE.Vector3());
+        const o = g.animations.length ? g.scene : mergeByMaterial(g.scene);
+        o.userData.pick = { title: tr.name, detail: 'coaster / tracked ride' };
+        layers.rides.add(o); trackScenes.push(o);
+        const box = new THREE.Box3().setFromObject(o); rideSpots[tr.id] = box.getCenter(new THREE.Vector3());
         const sr = await fetch(`/api/park_supports?file=${encodeURIComponent(world.file)}&id=${tr.id}`);
         if (sr.ok) await addSupports(await sr.json(), tr.name, seq, meta.col);
       } catch (e) {}

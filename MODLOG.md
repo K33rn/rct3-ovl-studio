@@ -603,3 +603,17 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Every folder starts closed (was: the top level open). Folders you open stay open through redraws (filter,
   refresh, track sets arriving); a filter opens every matching folder; an OVL opened from a link opens its folders.
 - tests/ui_tree_refresh.py (scratch game folder: copies an OVL pair in and out). ui_checks skips the welcome tour.
+
+## 2026-10-13: Comet in daylight - no black trail (checked in the game)
+- User's screenshots: in a day sky the Comet left a black column (its 100 FWFlares01_07 trail particles, alpha 1,
+  colour 0-0.095, drawn premultiplied over the alpha blob in that cell).
+- Game (Steam, sandbox, MixMaster): Scenery > MixMaster (68,455) > Add display (185,683); bases: MixMaster Bases
+  (barrel icon 148,718) > single mortar (288,701), place on owned land (green ghost); a timeline track click opens the
+  effect picker (Fireworks list, preview pane on black; WP-W1-Co-G-Comet listed from Fireworks\); the effect bar's red
+  dot -> click it, then the mortar (green dot = linked); Play 182,702. The display also fires on its own at its start
+  time (9 pm). In daylight the Comet is a pink-white glowing head with yellow sparks at the mortar - no dark trail.
+- FWFlares01_07's cell: RGB a star, alpha the Puke blob (Puke's own cell two rows down has alpha 0) - a misplaced alpha
+  in the texture. _sprite_solid now also needs the RGB under the opaque alpha to be visible (mean max(RGB) >= 16):
+  FWFlares01_07 is no longer "solid", and on ParticlePage01 a non-solid sprite's alpha curve doesn't dim what is
+  behind (`covers`). Only FWFlares01_07 changes (smoke, spray, rubble, bubbles, lightning keep their alpha).
+- The Comet file was copied into the Steam game's Fireworks folder for the test (left there: it plays in the game).

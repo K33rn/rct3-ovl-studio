@@ -223,7 +223,11 @@ def _sprite_solid(lib: Library, page: str, rect, cache: dict) -> bool:
     H, W = im.shape[:2]
     x0, y0, x1, y1 = rect
     reg = im[int(y0 * H):max(int(y0 * H) + 1, int(y1 * H)), int(x0 * W):max(int(x0 * W) + 1, int(x1 * W))]
-    return bool(reg[..., 3].mean() >= 8)
+    # its alpha must sit under its picture: FWFlares01_07's cell holds a star in RGB but, in alpha, Puke's blob (the
+    # puke picture two cells down has none) - black where opaque. The game draws it as a plain glow (the Comet's
+    # trail, checked in daylight): no dark blob.
+    hi = reg[..., 3] > 128
+    return bool(reg[..., 3].mean() >= 8 and (not hi.any() or reg[..., :3][hi].max(-1).mean() >= 16))
 
 
 def page_png(lib: Library, page: str, opaque: bool = False) -> bytes | None:

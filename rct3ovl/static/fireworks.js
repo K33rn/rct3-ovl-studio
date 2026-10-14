@@ -465,6 +465,7 @@ async function build() {
       burnN: Math.max(0, Math.min(50, n.BurnLength | 0)), burnS: n.BurnSize ?? 0.2,              // a burning trail of copies
       R: curve(n.ColourR), G: curve(n.ColourG), B: curve(n.ColourB),
       page: sp?.page || 'ParticlePage01', A,                                        // drawn by its sheet's layer
+      covers: !sp || sp.blend === 'add' || sp.solid,   // on ParticlePage01 only sprites whose alpha is their own picture dim what is behind
       useMod: !!n.ColourModifierEnable, anyC: fl.anyC,
       uv: sp ? toUV(sp.rect) : null,
       frames: sp?.frames ? sp.frames.map(toUV) : null, anim: n.AnimTimeScale ?? 1,   // animated sheets: a frame per moment of life
@@ -583,7 +584,7 @@ async function build() {
       l.at.pos.array.set([p.x, p.y, p.z], i * 3);
       l.at.vel.array.set([p.vx, p.vy, p.vz], i * 3);
       l.at.size.array.set([size, sp * d.stretch], i * 2);
-      const op = d.A ? clamp(curveAt(d.A, f), 0, 1) : 0;   // water jet drops (no alpha curve) glow
+      const op = d.A && d.covers ? clamp(curveAt(d.A, f), 0, 1) : 0;   // water jet drops (no alpha curve) glow
       l.at.col.array.set([r, g, b, op], i * 4);
       const uv = d.frames ? d.frames[Math.min(d.frames.length - 1, Math.floor((f * d.anim % 1) * d.frames.length))] : d.uv;
       l.at.uv.array.set(uv, i * 4);
@@ -2470,7 +2471,7 @@ async function build() {
 
   window.__fwdebug = {   // for tests
     count: () => parts.length, parts: () => parts, step, launch, FW, REG, descInfo, S, ribbons, terrain, openEditor, ctx, seek, applyAims, renderAll,
-    sceneryObjs: () => sceneryObjs, music: () => musicEl, launcherObjs: () => launcherObjs, tubeWorld, camera, controls, kick };
+    sceneryObjs: () => sceneryObjs, music: () => musicEl, launcherObjs: () => launcherObjs, tubeWorld, camera, controls, kick, applyScene };
   return { root, resize, start, stop, tour, openFile, onBack: null };
 }
 

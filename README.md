@@ -190,6 +190,11 @@ The buttons at the top:
     sheets and font letter sheets in the Texture Editor. **Menu text** edits every text of each language (a text can be
     as long as the one it replaces).
   - It has its own walkthrough, the first time it opens (**? Tour** replays it).
+  - **Example – Neon Nights:** `examples/neon_nights` turns the front screen (the Play / Tools / Options menu) into a
+    neon night theme: night sky with a city and a synthwave sun, pink neon ring, new logo, new icons, a neon coaster
+    and OPEN sign instead of the kids, neon expansion badges, and new menu words (RIDE, BUILD, SETUP, NEON PARK).
+    With the viewer running and the game closed: `python examples/neon_nights/apply.py http://localhost:8766`
+    (needs Pillow and numpy). **Changed files** › Restore puts the original menu back.
 - **Walkthrough:** a guided tour starts the first time you open the viewer. It highlights each part of the screen, explains it and opens examples on every tab. The MixMaster has its own tour the first time it opens, and it opens and walks through the Advanced Firework Editor, the laser designer and the water jet designer on the way. **? Tour** (top left in the viewer, next to MixMaster in the MixMaster) replays it; pressed while the firework editor or a designer is open, it explains that editor. ← → or Enter move, Esc stops.
 - **File types** opens the guide to every file type: the OVL resource types and the loose firework files (`.frw`, `.fwd`, `.las`, `.wjt`, `.lwr`, `.wma`). A firework file's summary has a **?** that jumps to its entry.
 - The eight tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks, Parks, Textures & GUI) sit under the title; the one in use is highlighted.

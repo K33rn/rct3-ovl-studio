@@ -751,3 +751,26 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Restored through the editor: all four OVLs and both .CHK byte-identical to the originals. tgui / trep UI tests on the
   scratch copy with .CHK files present: pass, restore byte-identical including .CHK.
 - Clicking in RCT3 needs a hover first: move to the icon, wait ~1 s, click (clicks on the label text do nothing).
+
+## 2026-10-14: "Neon Nights" custom front screen (in the game, Steam install; left installed for the user)
+- fal could not be used (API key rejected, 401) - all art drawn with Pillow: examples/neon_nights/neon.py (+ apply.py,
+  which drives the viewer's /api/tx endpoints).
+- Front-screen layout found with labelled test textures (one launch): a 1024 x 768 layout stretched to the window
+  (1280 x 800 here). FrontEndBG1 = top-left 512 x 512 (blue band, a see-through grey band - pale RGB, alpha 187-204
+  with scan lines - and a white ring, alpha 221-255); FrontEndBG2 rows 0-255 at (0, 512), rows 257-511 at (512, 512)
+  (the bottom bar: light blue bar, title pill with a black line); FrontEndBG4 = the pieces over the 3D park circle;
+  BG1b / BG3 not seen on the main menu. The 3D park behind is live (AttractSequences). FrontEndParts: icon discs
+  (Circle 2,2-89,89), button-bar end (IconCircle_Back, white half disc) + Triangle (white), People (other menus),
+  RCT3Logo (275,0-512,140). The white button bars' bodies are drawn by the game (not textured). FrontEndLogo (the
+  kids) is drawn over the left side from y ~310 of 800 (tex y 40 -> screen 345, 0.875 px/px). The shark / tiger
+  badges are GUI2Main2 (320,0-420,100 / 320,100-420,200). Labels: black text, so pills must stay pale.
+- Theme: the night (gradient, stars, striped synthwave sun, skyline with lit windows, pink perspective grid) painted
+  as one 1024 x 768 picture and cut where each piece sits; veil -> violet glass (alpha 150); rings -> pink neon with a
+  glow; title pill pale with a cyan rim (thick white found by a 31 px erosion grown back inside the white - with the
+  black line counted in, else the line splits the pill and it erodes away); bar -> violet-pink gradient with a cyan
+  top line. 18 neon line icons, neon discs, RCT3 / NEON NIGHTS logo, neon coaster (lift hill, loop, train) + OPEN
+  ALL NIGHT sign, a neon ferris wheel for the crowd picture, SOAKED / WILD badges. Texts: RIDE, BUILD, SETUP,
+  NEON PARK, RIDE MENU, BUILD MENU, EXIT and three help lines.
+- First try: the coaster's lift hill and the OPEN sign covered the SETUP button (art drawn larger / higher than
+  guessed) -> art scaled 0.8 and moved down. Screenshots: Desktop\RCT3_NeonNights_StartMenu(.png, _hover.png).
+- apply.py tested on the scratch copy (all saved; restore byte-identical).

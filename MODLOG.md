@@ -572,3 +572,21 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Tests waited for the loader's opacity to read 0, which it still does for a moment after a new load starts (0.3 s
   fade) - fast (cached) parks were measured before loading (Gemini Basin "tracks 0/2"). The viewer now sets
   __pkdebug.loaded = file when a load finishes; ui_parks / ui_parks_all wait for that.
+
+## 2026-10-13: Downloaded firework (WP-W1-Co-G-Comet.frw, an AFE-made comet) - particle sheets, emission timing, open
+- Each particle sheet's tex names its texture style (import at +44): LensFlares -> ParticleAdditive, ParticlePage01 ->
+  ParticlePreMultipliedAlpha (BurnTrail -> ParticleBurnTrail). sprites() now carries `blend` ('add' / 'pre').
+- The client bound only ParticlePage01: LensFlares_* sprites used their LensFlares rects on ParticlePage01 (drawing
+  pieces of the smoke / fire sheets). LensFlares is RGB shapes with alpha 255 everywhere (the 10-13 note "RGB 0" was
+  wrong). Now one layer per sheet: 'add' = sheet RGB x colour x alpha curve, added (Blood's red LensFlares_12 still
+  red); 'pre' = sheet RGB x colour added, dst x (1 - sheet alpha x alpha curve). Replaces the glow / solid guess.
+  FWFlares01_07: RGB is a small star glow, alpha an off-centre blob (artist leftover) - with alpha 1 it draws dark;
+  the Comet uses it with colour 0-0.095 as its dark smoke trail. Water jet drops: alpha 0 (glow).
+- Emission: the first particle leaves at the window's start (count = floor(N (f - a) / (b - a)) + 1), not at
+  a + (b - a)/N. Titan Missile / Monkey Missile / Thunder Blitz stars release 1 glow at 1% that lives exactly as long
+  as the star; at the window's end it outlived it. The Comet's 1-particle shell over 0-63% of a 4 s base left 2.5 s
+  late. Timeline burst lines follow.
+- Empty colour curves stay 1 (white): the game's flamethrower / pan fire / brazier FireAnim particles have them.
+- Open… (and dropping files on the MixMaster) also takes .frw / .las / .wjt from anywhere (POST /api/fw/parse,
+  fireworks.parse_upload): added to your effects, selected and previewed; opening the same file again replaces it.
+  tests/ui_fw_open.py. Not compared with the game yet (user at the PC).

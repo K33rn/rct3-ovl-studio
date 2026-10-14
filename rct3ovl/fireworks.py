@@ -106,9 +106,9 @@ def _title(lib: Library, name: str, fallback: str) -> str:
     return name if name and not name.startswith('%%') else fallback
 
 
-def load_firework(lib: Library, path: str) -> dict:
+def load_firework(lib: Library, path: str, blob: bytes | None = None) -> dict:
     """{name, title, cost, colour, root, nodes: {id: {kind, ...fields}}} - the particle tree by object id."""
-    t = Trk(open(path, 'rb').read())
+    t = Trk(blob if blob is not None else open(path, 'rb').read())
     nodes, root = {}, None
     for oid, (n, v) in t.objects.items():
         if n not in ('ParticleBaseDesc', 'ParticleEmitterDesc', 'ParticleDesc'):
@@ -171,10 +171,12 @@ def list_displays(lib: Library) -> list[dict]:
 
 def sprites(lib: Library) -> dict:
     """{psi name: {page, rect: [x0, y0, x1, y1] as fractions from the top-left, frames: [rect...] if animated,
-    solid}}. solid: the sprite has transparency (smoke, spray, bubbles, rubble), so the particle's alpha curve fades
-    it in and out; flares and fire keep their glow in RGB with alpha 0 and always glow. The sheets are premultiplied
-    (smoke: RGB = alpha, white smoke)."""
-    out, pix = {}, {}
+    solid, blend}}. blend: how the game draws the sprite's sheet (the sheet's texture style): 'add' (ParticleAdditive,
+    LensFlares: the sheet's RGB x colour x alpha curve, added) or 'pre' (ParticlePreMultipliedAlpha, ParticlePage01:
+    the sheet's RGB x colour added, what is behind dimmed by the sheet's alpha x the alpha curve). solid: the sprite has
+    transparency (smoke, spray, bubbles, rubble), so its alpha curve matters; flares and fire keep their glow in RGB
+    with alpha 0 and always glow."""
+    out, pix, blends = {}, {}, {}
     for n, rel in lib.index['names'].items():
         if not n.endswith(':psi'):
             continue
@@ -195,8 +197,19 @@ def sprites(lib: Library) -> dict:
             continue
         page = imp.get(r.data + 8, '').split(':')[0]
         out[r.name.split(':')[0]] = {'page': page, 'rect': frames[0], 'solid': _sprite_solid(lib, page, frames[0], pix),
+                                     'blend': _page_blend(lib, page, blends),
                                      **({'frames': frames} if len(frames) > 1 else {})}
     return out
+
+
+def _page_blend(lib: Library, page: str, cache: dict) -> str:
+    """'add' for a sheet whose texture style (the tex's import at +44) is ParticleAdditive, else 'pre'
+    (ParticlePreMultipliedAlpha)."""
+    if page not in cache:
+        h = lib.find(page + ':tex')
+        style = next((n for n, site in h[0].symbol_refs if site == h[1].data + 44), '') if h else ''
+        cache[page] = 'add' if style.lower().startswith('particleadditive') else 'pre'
+    return cache[page]
 
 
 def _sprite_solid(lib: Library, page: str, rect, cache: dict) -> bool:
@@ -345,8 +358,8 @@ def _letter(v) -> dict:
             'solid': [sc[i] if i < len(sc) else 1 for i in range(n)]}
 
 
-def _effect_file(path: str, kind: str) -> dict | None:
-    t = Trk(open(path, 'rb').read())
+def _effect_file(path: str, kind: str, blob: bytes | None = None) -> dict | None:
+    t = Trk(blob if blob is not None else open(path, 'rb').read())
     O = t.objects
     main = next(((oid, n, v) for oid, (n, v) in O.items() if n.endswith('Desc')), None)
     if not main:
@@ -736,3 +749,20 @@ def file_info(lib: Library, rel: str) -> dict | None:
     except Exception as e:
         d['error'] = str(e)
     return d
+
+
+def parse_upload(lib: Library, name: str, blob: bytes) -> dict:
+    """A firework (.frw), laser (.las) or water jet (.wjt) file from anywhere (opened in the MixMaster): {kind, def} with
+    def as the palette lists the game's own (load_firework / _effect_file). Made in the game's designer (64-byte
+    header) or for its Fireworks folder (none) both read."""
+    ext = os.path.splitext(name)[1].lower()
+    kind = {'.frw': 'firework', '.las': 'laser', '.wjt': 'jet'}.get(ext)
+    if not kind:
+        raise ValueError('open a .frw (firework), .las (laser) or .wjt (water jet) file')
+    if kind == 'firework':
+        d = load_firework(lib, name, blob)
+    else:
+        d = _effect_file(name, kind, blob)
+        if not d:
+            raise ValueError(f'no {kind} in {name}')
+    return {'kind': kind, 'def': d}

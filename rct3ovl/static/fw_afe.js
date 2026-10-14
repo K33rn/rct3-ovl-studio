@@ -282,7 +282,8 @@ export function openAFE(ctx, def, key) {
   });
 
   // ---- colour over life: a gradient with colour stops, like an image editor's gradient tool -------------------------
-  // (stops: R, G, B and A written with the same times; A = opacity, used by textures with transparency - smoke, spray,
+  // (stops: R, G, B and A written with the same times; A = opacity: brightness for LensFlares (drawn additively), how
+  // much what is behind is covered for ParticlePage01 textures with transparency - smoke, spray,
   // bubbles, rubble; flares and fire always glow). The stop's inputs are built once and updated in
   // place, so the colour picker stays open while you drag in it.
   let stopSel = 0, stopsBusy = false;
@@ -293,7 +294,7 @@ export function openAFE(ctx, def, key) {
     return T.map(t => ({ t, c: ['R', 'G', 'B'].map(k => chanAt(p, k, t)), a: alphaAt(p, t) }));
   }
   const alphaAt = (p, f) => (p.ColourA?.ColourAValues || []).length ? chanAt(p, 'A', f) : 1;
-  const solidTex = p => !!ctx.data.sprites[p?.TextureNameReduced]?.solid;
+  const solidTex = p => { const sp = ctx.data.sprites[p?.TextureNameReduced]; return !!sp && (sp.blend === 'add' || sp.solid); };
   function chanAt(p, k, f) {
     const c = p['Colour' + k] || {}, t = c[`Colour${k}Times`] || [], v = c[`Colour${k}Values`] || [];
     if (!v.length) return 1;
@@ -338,9 +339,10 @@ export function openAFE(ctx, def, key) {
     drawGradient(p);
     B.querySelector('.afe-col').classList.toggle('off', !p);
     if (!p) { marks.innerHTML = ''; look.textContent = ''; S$('n').textContent = 'Select an emitter to edit its particle\'s colour.'; return; }
-    const solid = solidTex(p);
-    look.textContent = solid ? `${p.TextureNameReduced} has transparency: with Opacity above 0 it is drawn solid in the stop colours (its shape from the texture), fading with Opacity; Opacity 0 everywhere makes it glow instead.`
-      : `${p.TextureNameReduced || 'This texture'} glows (drawn additively, like the game's flares and fire): Opacity does not apply.`;
+    const sp = ctx.data.sprites[p.TextureNameReduced], solid = solidTex(p);
+    look.textContent = sp?.blend === 'add' ? `${p.TextureNameReduced} is a lens flare: drawn additively (the game's ParticleAdditive sheet), Opacity scales its brightness.`
+      : solid ? `${p.TextureNameReduced} has transparency: its glow is added and Opacity sets how much it covers what is behind (smoke, spray, rubble); Opacity 0 makes it only glow.`
+      : `${p.TextureNameReduced || 'This texture'} glows (no transparency, like the game's flares and fire): Opacity does not apply.`;
     S$('a').disabled = !solid; S$('alab').style.opacity = solid ? 1 : 0.4;
     const st = stopsOf(p); stopSel = clamp(stopSel, 0, st.length - 1);
     if (marks.childElementCount !== st.length) marks.innerHTML = st.map((_, i) => `<div class="afe-mk" data-i="${i}"><i></i></div>`).join('');

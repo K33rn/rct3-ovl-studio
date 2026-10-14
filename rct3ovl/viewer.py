@@ -1,6 +1,7 @@
 """Local web viewer: python -m rct3ovl view <game folder>. Serves a small JSON API + a three.js page."""
 from __future__ import annotations
 
+import base64
 import io
 import json
 import os
@@ -313,6 +314,9 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 name = (body.get('name') or 'export') + fw.EXT[body['kind']]
                 return self.send(200, blob, 'application/octet-stream',
                                  {'Content-Disposition': f'attachment; filename="{name}"'})
+            if u.path == '/api/fw/parse':     # a firework / laser / water jet file opened from anywhere
+                with lock:
+                    return self.js(fw.parse_upload(lib, os.path.basename(body.get('name', '')), base64.b64decode(body['b64'])))
             if u.path == '/api/fw/mine':
                 with lock:
                     fw.save_mine(lib, body)

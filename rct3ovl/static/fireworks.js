@@ -185,10 +185,10 @@ async function build() {
     <button id="fw-tour" title="A guided walkthrough of the MixMaster" style="font-size:11px;padding:2px 8px">? Tour</button>
     <select id="fw-show" title="Open a show"></select>
     <button id="fw-new" title="Start an empty show">New</button>
-    <button id="fw-open" title="Open a show saved from this editor (.json)">Open…</button>
+    <button id="fw-open" title="Open a show saved from this editor (.json), or a firework (.frw), laser (.las) or water jet (.wjt) file from anywhere (or drop files here)">Open…</button>
     <button id="fw-save" title="Download this show (.json) to open again later">Save</button>
     <button id="fw-export" title="Save this show for RollerCoaster Tycoon 3 (.fwd)">Export to RCT3…</button>
-    <input type="file" id="fw-file" accept=".json,application/json" hidden>
+    <input type="file" id="fw-file" accept=".json,application/json,.frw,.las,.wjt" multiple hidden>
     <span class="sep"></span>
     <button class="big play" id="fw-play" title="Play / pause (Space)">▶ Play</button>
     <button id="fw-stop" title="Stop and rewind (Home)">■</button>
@@ -380,18 +380,28 @@ async function build() {
     }
     return pages[name];
   }
-  const page = pageTexture('ParticlePage01');
-  function makeLayer(additive) {
+  // one layer per sheet, drawn as the game draws that sheet (its texture style): 'add' (ParticleAdditive, LensFlares):
+  // sheet RGB x colour x alpha curve, added; 'pre' (ParticlePreMultipliedAlpha, ParticlePage01): sheet RGB x colour
+  // added, what is behind dimmed by sheet alpha x alpha curve - flares and fire have alpha 0 there and simply glow,
+  // smoke dims the sky, FWFlares01_07's off-centre alpha blob shows dark under a star glow
+  const layers = {};
+  function layerFor(pageName) {
+    if (!layers[pageName]) {
+      const sp = Object.values(data.sprites).find(s => s.page === pageName);
+      layers[pageName] = makeLayer(pageTexture(pageName), sp?.blend === 'add');
+    }
+    return layers[pageName];
+  }
+  function makeLayer(page, additive) {
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-.5, -.5, 0, .5, -.5, 0, .5, .5, 0, -.5, .5, 0]), 3));
     g.setIndex([0, 1, 2, 0, 2, 3]);
     const A = (name, n) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PARTICLES * n), n); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(name, a); return a; };
     const at = { pos: A('iPos', 3), vel: A('iVel', 3), size: A('iSize', 2), col: A('iCol', 4), uv: A('iUV', 4), rot: A('iRot', 1) };
     const mat = mirror => new THREE.ShaderMaterial({
-      // glowing particles: the game's flare sprites keep their glow in RGB with alpha 0, drawn additively (one + one)
       uniforms: { map: { value: page }, level: { value: 0 }, gain: { value: mirror ? 0.35 : 1 } }, transparent: true, depthWrite: false, depthTest: !mirror,
-      ...(additive ? { blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendEquation: THREE.AddEquation }
-                   : { blending: THREE.NormalBlending }),
+      blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: additive ? THREE.OneFactor : THREE.OneMinusSrcAlphaFactor,
+      blendEquation: THREE.AddEquation,
       ...(mirror ? { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp } : {}),
       defines: Object.assign(additive ? { ADDITIVE: 1 } : {}, mirror ? { MIRROR: 1 } : {}),
       vertexShader: `attribute vec3 iPos; attribute vec3 iVel; attribute vec2 iSize; attribute vec4 iCol; attribute vec4 iUV; attribute float iRot;
@@ -416,22 +426,16 @@ async function build() {
         void main() {
           vec4 t = texture2D(map, vUv);
         #ifdef ADDITIVE
-          // glow: the sheet's brightness - in RGB for flares and fire, in alpha for the alpha-only sprites
-          // (LensFlares, FWFlares01_07: RGB 0) - tinted by the particle's colour
-          gl_FragColor = vec4(max(t.rgb, vec3(t.a)) * vCol.rgb * vCol.a * gain, 1.0);
+          gl_FragColor = vec4(t.rgb * vCol.rgb * vCol.a * gain, 1.0);
         #else
-          // solid: the sheet's alpha is the shape, the particle's colour curve the colour, its alpha curve the opacity
-          // (several sheets are black where opaque - LensFlares, FWFlares01_07 - and smoke is mid grey: their RGB
-          // as colour made black blobs, e.g. the game's red Blood)
-          gl_FragColor = vec4(vCol.rgb, t.a * vCol.a * gain); if (gl_FragColor.a < 0.003) discard;
+          gl_FragColor = vec4(t.rgb * vCol.rgb * gain, t.a * vCol.a * gain);
         #endif
         }`,
     });
     const mesh = new THREE.Mesh(g, mat(false)); mesh.frustumCulled = false; mesh.renderOrder = 4; g.instanceCount = 0; scene.add(mesh);
     const mirror = new THREE.Mesh(g, mat(true)); mirror.frustumCulled = false; mirror.renderOrder = 2; mirror.visible = false; scene.add(mirror);
-    return { g, at, mesh, mirror };
+    return { g, at, mesh, mirror, n: 0 };
   }
-  const layers = { add: makeLayer(true), blend: makeLayer(false) };
 
   // ---- particle simulation (the game's ParticleDesc / ParticleEmitterDesc tree) ------------------------------
   // Per launch: strength scales how many particles emitters release (those marked "Use Strength Modifier"; for
@@ -460,10 +464,7 @@ async function build() {
       pspin: (n.SpinRateX || n.SpinRateY) ? [n.SpinRateX || 0, n.SpinRateY || 0] : null,       // the particle turns: its bursts spin
       burnN: Math.max(0, Math.min(50, n.BurnLength | 0)), burnS: n.BurnSize ?? 0.2,              // a burning trail of copies
       R: curve(n.ColourR), G: curve(n.ColourG), B: curve(n.ColourB),
-      // How particles are drawn: alpha 0 all life (or no alpha curve) -> glow, adding the sheet's brightness tinted by
-      // the colour; otherwise solid, the sheet's alpha as the shape with the colour curve's colour and the alpha curve
-      // as opacity. A sheet without transparency (Flare_00, FireAnim) always glows (nothing to draw solid with).
-      additive: !A.v.length || Math.max(...A.v) < 0.01 || (sp ? !sp.solid : false), A,
+      page: sp?.page || 'ParticlePage01', A,                                        // drawn by its sheet's layer
       useMod: !!n.ColourModifierEnable, anyC: fl.anyC,
       uv: sp ? toUV(sp.rect) : null,
       frames: sp?.frames ? sp.frames.map(toUV) : null, anim: n.AnimTimeScale ?? 1,   // animated sheets: a frame per moment of life
@@ -517,7 +518,10 @@ async function build() {
       const N = e.useS ? Math.max(0, Math.round(e.N * strength)) : e.N;
       if (!N) continue;
       const ff = f - p.delays[i] / p.life;
-      let target = e.b <= e.a ? (ff >= e.a ? N : 0) : N * clamp((ff - e.a) / (e.b - e.a), 0, 1);
+      // the first particle leaves at the window's start, the rest spread evenly over it (the game's Titan Missile
+      // stars release one glow at 1% that lives as long as they do; leaving at the window's end, a 1-particle shell
+      // over 0-63% of a 4 s base left 2.5 s late)
+      let target = ff < e.a ? 0 : e.b <= e.a ? N : Math.min(N, Math.floor(N * (ff - e.a) / (e.b - e.a)) + 1);
       if (f >= 1 && ff >= e.a) target = N;
       const n = Math.floor(target + 1e-6) - p.em[i];
       if (n <= 0) continue;
@@ -558,18 +562,18 @@ async function build() {
     }
     parts.length = j;
   }
-  const kk = d => d.additive ? 'add' : 'blend';
   function draw() {
-    const cnt = { add: 0, blend: 0 };
+    for (const l of Object.values(layers)) l.n = 0;
     for (const p of parts) {
       const d = p.d;
       if (!d.uv) continue;
-      const k = d.additive ? 'add' : 'blend', l = layers[k];
-      if (cnt[k] >= MAX_PARTICLES) continue;
-      const i = cnt[k]++;
+      const l = layerFor(d.page);
+      if (l.n >= MAX_PARTICLES) continue;
+      const i = l.n++;
       const f = Math.min(1, p.age / p.life);
       const size = (d.s0 + (d.s1 - d.s0) * f) * (1 + d.sR * (p.r0 - 0.5) * 2);
-      let r = curveAt(d.R, f), g = curveAt(d.G, f), b = curveAt(d.B, f);
+      const gain = d.gain ?? 1;
+      let r = curveAt(d.R, f) * gain, g = curveAt(d.G, f) * gain, b = curveAt(d.B, f) * gain;
       const m = p.mods;
       if (m) {
         const c = d.useMod ? m.cmod : (!d.anyC ? m.tint : null);
@@ -579,25 +583,25 @@ async function build() {
       l.at.pos.array.set([p.x, p.y, p.z], i * 3);
       l.at.vel.array.set([p.vx, p.vy, p.vz], i * 3);
       l.at.size.array.set([size, sp * d.stretch], i * 2);
-      const op = d.additive ? (d.gain ?? 1) : clamp(curveAt(d.A, f), 0, 1);
+      const op = d.A ? clamp(curveAt(d.A, f), 0, 1) : 0;   // water jet drops (no alpha curve) glow
       l.at.col.array.set([r, g, b, op], i * 4);
       const uv = d.frames ? d.frames[Math.min(d.frames.length - 1, Math.floor((f * d.anim % 1) * d.frames.length))] : d.uv;
       l.at.uv.array.set(uv, i * 4);
       l.at.rot.array[i] = d.spin ? p.r0 * 6.2832 + d.spin * p.age : 0;
       // Burn Length: that many fading copies of Burn Size along the path just behind it
-      for (let k = 1; k <= d.burnN && cnt[kk(d)] < MAX_PARTICLES; k++) {
-        const j = cnt[kk(d)]++, back = k * 0.025, fade = 1 - k / (d.burnN + 1);
+      for (let k = 1; k <= d.burnN && l.n < MAX_PARTICLES; k++) {
+        const j = l.n++, back = k * 0.025, fade = 1 - k / (d.burnN + 1);
         l.at.pos.array.set([p.x - p.vx * back, p.y - p.vy * back, p.z - p.vz * back], j * 3);
         l.at.vel.array.set([p.vx, p.vy, p.vz], j * 3);
         l.at.size.array.set([d.burnS * (1 + d.sR * (p.r0 - 0.5) * 2), 0], j * 2);
-        l.at.col.array.set([r * fade, g * fade, b * fade, d.additive ? op : op * fade], j * 4);
+        l.at.col.array.set([r * fade, g * fade, b * fade, op * fade], j * 4);
         l.at.uv.array.set(uv, j * 4);
         l.at.rot.array[j] = 0;
       }
     }
-    for (const k of ['add', 'blend']) {
-      const l = layers[k]; l.g.instanceCount = cnt[k];
-      for (const a of Object.values(l.at)) { a.needsUpdate = true; a.clearUpdateRanges?.(); a.addUpdateRange?.(0, cnt[k] * a.itemSize); }
+    for (const l of Object.values(layers)) {
+      l.g.instanceCount = l.n;
+      for (const a of Object.values(l.at)) { a.needsUpdate = true; a.clearUpdateRanges?.(); a.addUpdateRange?.(0, l.n * a.itemSize); }
     }
   }
 
@@ -885,7 +889,7 @@ async function build() {
     let d = jetDescs.get(key);
     if (!d) {
       d = { n: {}, fw: null, life: 2 * pressure / GRAVITY + 0.4, lifeR: 0.3, s0: 0.3 + 0.4 * radius, s1: 0.7 + 1.3 * radius, sR: 0.4, drag: 0.15, grav: 1,
-            stretch: 0.05, sound: '', R: { t: [], v: [col[0]] }, G: { t: [], v: [col[1]] }, B: { t: [], v: [col[2]] }, additive: true,
+            stretch: 0.05, sound: '', R: { t: [], v: [col[0]] }, G: { t: [], v: [col[1]] }, B: { t: [], v: [col[2]] }, page: 'ParticlePage01',
             gain: 0.75 * (col[3] ?? 1), useMod: false, anyC: false, uv: flareUV(), emitters: [], water: true };
       jetDescs.set(key, d);
     }
@@ -929,7 +933,7 @@ async function build() {
     }
     ribbons.end();
     const lvl = terrain.mirrorLevel(), on = lvl != null;
-    for (const m of [ribbons.mirror, layers.add.mirror, layers.blend.mirror]) { m.visible = on; if (on) m.material.uniforms.level.value = lvl; }
+    for (const m of [ribbons.mirror, ...Object.values(layers).map(l => l.mirror)]) { m.visible = on; if (on) m.material.uniforms.level.value = lvl; }
   }
 
   // ---- scene: time of day, backdrop, ground, grid lines (kept with the show) ------------------------------------------
@@ -1602,7 +1606,7 @@ async function build() {
   }
   // when a firework bursts (as the game's MixMaster marks it on the bar): an emitter that releases many particles
   // within a moment (its window in seconds, or the whole life of a short-lived particle) - following the chain of
-  // shells (emitters of 1-3 particles, which leave at the end of their window: the k-th of N at a + k/N of it)
+  // shells (emitters of 1-3 particles; the first leaves at the start of their window)
   const evCache = new WeakMap();
   function fxEvents(fw) {
     if (evCache.has(fw)) return evCache.get(fw);
@@ -1614,7 +1618,7 @@ async function build() {
         const e = fw.nodes[eid]; if (!e) continue;
         const a = e.StartTime ?? 0, b = Math.max(a, e.EndTime ?? 1), N = e.NumParticles || 0, tr = (e.TimeRandom || 0) / 2;
         if (N >= 8 && (b - a) * life <= 0.15 && t0 + a * life + tr > 0.05) out.push(t0 + a * life + tr);
-        else if (N >= 1 && N <= 3) walk(String(e.ParticleDesc), t0 + (a + (b - a) / N) * life + tr, depth + 1);
+        else if (N >= 1 && N <= 3) walk(String(e.ParticleDesc), t0 + a * life + tr, depth + 1);
       }
     };
     walk(String(fw.root), 0, 0);
@@ -2109,16 +2113,43 @@ async function build() {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000); toast('Saved ' + a.download);
   };
   $('#fw-open', root).onclick = () => $('#fw-file', root).click();
-  $('#fw-file', root).onchange = async ev => {
-    const f = ev.target.files[0]; if (!f) return;
+  // Open… / files dropped on the MixMaster: a show saved from this editor (.json), or a firework (.frw), laser (.las)
+  // or water jet (.wjt) file from anywhere (downloaded, made in the game) - added to your effects and previewed
+  async function openLocal(f) {
     try {
+      if (/\.(frw|las|wjt)$/i.test(f.name)) {
+        const buf = new Uint8Array(await f.arrayBuffer());
+        let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+        const r = await fetch('/api/fw/parse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: f.name, b64: btoa(bin) }) });
+        const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText);
+        const { kind, def } = j;
+        def.title = def.title || def.name || f.name.replace(/\.[^.]+$/, ''); def.file = f.name;
+        const same = Object.entries(mine[kind]).find(([, d]) => d.file === f.name)?.[0];   // opened again: replaced
+        const key = saveMine(kind, def, same);
+        S.tab = kind; $('#fw-search', root).value = ''; renderLib();
+        lib.querySelectorAll('.fwk.sel').forEach(x => x.classList.remove('sel'));
+        const row = [...lib.querySelectorAll('.fwk')].find(x => x.dataset.f === key);
+        if (row) { row.classList.add('sel'); row.scrollIntoView({ block: 'center' }); }
+        preview(kind, key);
+        toast(`Opened ${f.name}: added to your ${kind === 'jet' ? 'water jets' : kind + 's'}`);
+        return;
+      }
       const j = JSON.parse(await f.text());
       if (!Array.isArray(j.entries) || !Array.isArray(j.launchers)) throw new Error('not a fireworks show');
       const { format, version, ...sh } = j; sh.name = sh.name || f.name;
       setShow(sh); changed('Opened ' + f.name);
-    } catch (e) { toast('Could not open: ' + e.message); }
+    } catch (e) { toast('Could not open ' + f.name + ': ' + e.message); }
+  }
+  $('#fw-file', root).onchange = async ev => {
+    for (const f of ev.target.files) await openLocal(f);
     ev.target.value = '';
   };
+  root.addEventListener('dragover', e => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+  root.addEventListener('drop', e => {
+    if (!e.dataTransfer?.files?.length) return;
+    e.preventDefault();
+    (async () => { for (const f of e.dataTransfer.files) await openLocal(f); })();
+  });
   const musicSel = $('#fw-music', root);
   musicSel.innerHTML = `<option value="">No music</option>` + data.music.map(m => `<option value="${esc(m)}">♪ ${esc(m.replace(/\.wma$/i, ''))}</option>`).join('') + `<option value="__file">Choose a music file…</option>`;
   musicSel.onchange = () => {
@@ -2439,7 +2470,7 @@ async function build() {
 
   window.__fwdebug = {   // for tests
     count: () => parts.length, parts: () => parts, step, launch, FW, REG, descInfo, S, ribbons, terrain, openEditor, ctx, seek, applyAims, renderAll,
-    sceneryObjs: () => sceneryObjs, music: () => musicEl, launcherObjs: () => launcherObjs, tubeWorld };
+    sceneryObjs: () => sceneryObjs, music: () => musicEl, launcherObjs: () => launcherObjs, tubeWorld, camera, controls, kick };
   return { root, resize, start, stop, tour, openFile, onBack: null };
 }
 

@@ -133,6 +133,7 @@
         <button id="b-scenery" title="Every scenery item's 3D model: trees, walls, animatronics, path extras, stalls… with their animations">Scenery</button>
         <button id="b-fireworks" title="Fireworks show editor: the game's firework displays and fireworks, simulated in 3D (opens full window)">Fireworks</button>
         <button id="b-parks" title="Every campaign and sandbox park in full 3D, with everything about it: goals for each difficulty, rides, shops, guests, money (opens full window)">Parks</button>
+        <button id="b-texgui" title="Texture Editor for every texture in the game, and GUI Editor for the menus, icons, button states, icon animations and menu texts - saved back into the game (opens full window)">Textures &amp; GUI</button>
       </nav>
       <div class="sub" id="rootinfo">loading…</div>
       <div style="display:flex;gap:6px;margin-top:8px"><input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="flex:1;min-width:0"><button id="treerefresh" title="Look for new folders and files in the game folder (also checked when you come back to this window)">⟳ Refresh</button></div></div>
@@ -837,9 +838,9 @@ async function showTypes(tag) {
 $('b-types').onclick = () => showTypes();
 
 // tabs: highlight the one in use; opening an OVL from the tree clears it
-const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs', 'b-scenery', 'b-fireworks', 'b-parks'];
+const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs', 'b-scenery', 'b-fireworks', 'b-parks', 'b-texgui'];
 function setTab(id) { TABS.forEach(t => $(t).classList.toggle('active', t === id)); }
-TABS.forEach(id => id !== 'b-fireworks' && id !== 'b-parks' && $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
+TABS.forEach(id => id !== 'b-fireworks' && id !== 'b-parks' && id !== 'b-texgui' && $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
 
 // Parks: full-window park viewer (static/parks.js); Back returns to what was open
 $('b-parks').onclick = () => openParksTab();
@@ -857,6 +858,24 @@ async function openParksTab(open) {   // open: a park file (Campaigns\...\X.dat)
     } });
   } catch (e) { msg('Could not open the parks viewer: ' + e, true); document.getElementById('app').style.display = ''; renderer.setAnimationLoop(viewerLoop); }
   $('b-parks').textContent = 'Parks';
+}
+
+// Textures & GUI: full-window texture and interface editor (static/texgui.js); Back returns to what was open
+$('b-texgui').onclick = () => openTexGuiTab();
+async function openTexGuiTab(open) {   // open: { path, name } of a texture to edit
+  const before = TABS.find(t => $(t).classList.contains('active')) || null, hash = location.hash;
+  $('b-texgui').textContent = 'Loading…';
+  try {
+    const { openTexGui } = await import('/texgui.js');
+    renderer.setAnimationLoop(null);
+    document.getElementById('app').style.display = 'none';
+    await openTexGui({ open, onBack: () => {
+      document.getElementById('app').style.display = '';
+      renderer.setAnimationLoop(viewerLoop); clock.getDelta(); resize();
+      setTab(before); history.replaceState(null, '', hash.startsWith('#textures') ? '#' : hash || '#');
+    } });
+  } catch (e) { msg('Could not open the texture editor: ' + e, true); document.getElementById('app').style.display = ''; renderer.setAnimationLoop(viewerLoop); }
+  $('b-texgui').textContent = 'Textures & GUI';
 }
 
 // Fireworks: a full-window editor (static/fireworks.js) over the three columns; Back returns to what was open
@@ -905,6 +924,7 @@ async function fromHash() {
   if (h.get('person')) { $('b-people').click(); return showPerson(h.get('person'), h.get('anim')); }
   if (h.get('ride')) { setTab('b-rides'); await $('b-rides').onclick(); return showRide(h.get('ride'), h.get('anim')); }
   if (location.hash === '#fireworks') return $('b-fireworks').onclick();
+  if (location.hash.startsWith('#textures')) return openTexGuiTab();
   if (h.get('scenery')) { setTab('b-scenery'); await $('b-scenery').onclick(); return showScenery(h.get('scenery'), h.get('anim')); }
   if (h.get('design')) { setTab('b-designs'); await $('b-designs').onclick(); return showDesign(h.get('design')); }
   if (h.get('file')) return openGameFile(h.get('file'));
@@ -993,18 +1013,23 @@ const TOUR = [
       <p>It has its own walkthrough, which starts the first time you open it. <b>← Back</b> in its top left returns here.</p>`,
     action: { label: 'Open the MixMaster', run: () => document.getElementById('b-fireworks').click() } },
   { target: '#b-parks', title: 'Parks',
-    html: `<p>The last tab opens every <b>campaign</b> park (base game, Soaked! and Wild!) and the <b>sandbox</b> full-window in 3D: the landscape,
+    html: `<p>This tab opens every <b>campaign</b> park (base game, Soaked! and Wild!) and the <b>sandbox</b> full-window in 3D: the landscape,
       water, paths, every tree, building, ride, stall and coaster, and the guests where they stood.</p>
       <p>Beside it is everything about the park: the <b>goals for Apprentice, Entrepreneur and Tycoon</b>, challenges, rides, shops, people,
       money and research. It has its own walkthrough too.</p>`,
     action: { label: 'Open the parks', run: () => document.getElementById('b-parks').click() } },
+  { target: '#b-texgui', title: 'Textures & GUI',
+    html: `<p>The last tab has two editors. The <b>Texture Editor</b> paints any of the game's textures; the <b>GUI Editor</b> covers the interface:
+      icon sheets and each icon's place on them, button states, icon animations, window frames, menu screens, fonts and every menu text.</p>
+      <p>Changes are saved back into the game's own files, which are copied first so you can restore them.</p>`,
+    action: { label: 'Open Textures & GUI', run: () => document.getElementById('b-texgui').click() } },
   { title: 'That\'s everything',
     html: `<p>Pick an OVL on the left or a tab to start. Replay this tour with <b>? Tour</b> at the top left any time.</p>` },
 ];
 document.getElementById('b-tour').onclick = () => import('/tour.js').then(m => m.runTour('main', TOUR, { force: true }));
 
 loadTree().then(fromHash).then(() => {
-  if (location.hash !== '#fireworks' && !location.hash.startsWith('#park')) import('/tour.js').then(m => m.runTour('main', TOUR)).catch(() => {});
+  if (location.hash !== '#fireworks' && !location.hash.startsWith('#park') && !location.hash.startsWith('#textures')) import('/tour.js').then(m => m.runTour('main', TOUR)).catch(() => {});
 }).catch(e => msg('Could not load index: ' + e, true));
 </script>
 </body>

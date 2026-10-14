@@ -107,11 +107,30 @@ def load_sid(ovl: Ovl, ref: LoaderRef) -> dict:
 
 # ---- GUI skin items (icons) ---------------------------------------------------------------------------------
 def load_gsi(ovl: Ovl, ref: LoaderRef) -> dict:
-    """GUISkinItem: type, texture import, rect* {left, top, right, bottom} (pixels in the texture), unk."""
+    """GUISkinItem: type, texture import, coords*, unk. The coords are edges in the texture's pixels (the game
+    samples from one edge to the other, so right / bottom are exclusive):
+    type 0: an icon, left, top, right, bottom; 1: no picture (DrawSolidColour);
+    2 / 3: a panel / window frame drawn in 3 x 3 parts: x0 x1 x2 x3, y0 y1 y2 y3 (corners kept, the middle stretched);
+    4: a bar in 3 parts across: x0 x1 x2 x3, y0 y1; 5: a bar in 3 parts down: x0 x1, y0 y1 y2 y3.
+    'rect' is the whole piece [left, top, right, bottom]; 'xs' / 'ys' the cuts of types 2-5."""
     imp = {s: n for n, s in ovl.symbol_refs}
     typ, _tex, pos_p, _u = struct.unpack('<4I', ovl.read(ref.data, 16))
-    rect = list(struct.unpack('<4I', ovl.read(pos_p, 16))) if ovl.is_pointer(ref.data + 8) else None
-    return {'name': ref.name, 'type': typ, 'texture': imp.get(ref.data + 4, ''), 'rect': rect}
+    d = {'name': ref.name, 'type': typ, 'texture': imp.get(ref.data + 4, ''), 'rect': None}
+    if not ovl.is_pointer(ref.data + 8):
+        return d
+    n = {2: 8, 3: 8, 4: 6, 5: 6}.get(typ, 4)
+    v = list(struct.unpack(f'<{n}i', ovl.read(pos_p, 4 * n)))
+    if typ in (2, 3):
+        d['xs'], d['ys'] = v[:4], v[4:]
+    elif typ == 4:
+        d['xs'], d['ys'] = v[:4], v[4:]
+    elif typ == 5:
+        d['xs'], d['ys'] = v[:2], v[2:]
+    else:
+        d['rect'] = v
+        return d
+    d['rect'] = [d['xs'][0], d['ys'][0], d['xs'][-1], d['ys'][-1]]
+    return d
 
 
 def gsi_image(lib, ovl: Ovl, ref: LoaderRef):
@@ -124,7 +143,7 @@ def gsi_image(lib, ovl: Ovl, ref: LoaderRef):
     l, t, r, b = g['rect']
     if r <= l or b <= t:
         return None
-    return img.crop((l, t, min(r + 1, img.width), min(b + 1, img.height)))
+    return img.crop((l, t, min(r, img.width), min(b, img.height)))
 
 
 # ---- generic ------------------------------------------------------------------------------------------------

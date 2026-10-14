@@ -49,6 +49,7 @@ class LoaderRef:
     symbol: Symbol | None
     extra: list[bytes] = field(default_factory=list)
     part: str = 'common'            # which file the loader table entry lives in
+    extra_at: list[int] = field(default_factory=list)   # file offset of each extra blob (in that part's file)
 
     @property
     def name(self) -> str:
@@ -276,7 +277,8 @@ class Ovl:
                         if extra_pos + 4 > len(f.data):
                             break
                         n = struct.unpack_from('<I', f.data, extra_pos)[0]
-                        ref.extra.append(f.data[extra_pos + 4:extra_pos + 4 + n]); extra_pos += 4 + n
+                        ref.extra.append(f.data[extra_pos + 4:extra_pos + 4 + n]); ref.extra_at.append(extra_pos + 4)
+                        extra_pos += 4 + n
                     self.resources.append(ref)
             if len(ch2) > 2 and ch2[2].size:
                 b = ch2[2]; size = 12 if f.version == 1 else 16
@@ -289,6 +291,9 @@ class Ovl:
             return self.cstr(vaddr)
         except OvlError:
             return f'<bad string 0x{vaddr:X}>'
+
+    def file_of(self, part: str) -> OvlFile:
+        return next(f for f in self.files if f.part == part)
 
     def by_tag(self, tag: str) -> list[LoaderRef]:
         return [r for r in self.resources if r.loader.tag == tag]

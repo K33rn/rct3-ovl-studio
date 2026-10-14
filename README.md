@@ -133,7 +133,7 @@ The buttons at the top:
   - **Advanced laser designer** and **advanced water jet designer:** type, duration, power (5–20,000 m), beams, trail persistence (0–2 s), image spread (1–45) and centring, with the game's ranges. Timelines of control points for colour, rotation speed, elevation and beam width (lasers: on the game's scale, 1 is a normal thin beam and about 1.57 a broad searchlight cone, up to 2; wider beams spread their light, so they glow less), or pressure, elevation, jet radius and colour (water jets).
     - Persisting-image lasers draw frames you sketch on the game's 32 × 24 drawing pad, or the game's laser drawings.
     - Save to your lasers / water jets, to the game (`.las` / `.wjt`) or as a download.
-  - **Game files:** files written into the game folder are built from the game's own files of the same kind, so they load like the originals. The game's own files are never overwritten.
+  - **Game files:** files written into the game folder are built from the game's own files of the same kind, so they load like the originals. The MixMaster never overwrites the game's own files (the Textures & GUI tab does, after copying them).
   - The game's `.wma` music is converted once with ffmpeg; `rct3ovl-viewer.bat` includes it (`--with imageio-ffmpeg`).
 - **Parks** opens every park the game ships with full-window: the 18 campaign scenarios, the 9 Soaked! and 12 Wild!
   ones, Blank Landscape, Coaster Designer and the sandbox (`Campaigns\*.dat`). **← Back** (or Esc) returns to the viewer.
@@ -163,9 +163,34 @@ The buttons at the top:
     graphs), **Research**, **Scenery** (every item used, counted) and **Data** (all the park's settings and every
     kind of object in the save).
   - It has its own walkthrough, the first time it opens (**? Tour** replays it).
+- **Textures & GUI** opens two editors full-window, switched at the top: the **Texture Editor** and the **GUI Editor**.
+  What you change is saved back into the game's own files. Before the first change to a game file, the file is
+  copied (to `.rct3ovlackups` in your user folder); **Changed files** (top right) lists what you changed and
+  **Restore original** puts a file back. Close RollerCoaster Tycoon 3 before saving.
+  - **Texture Editor:** every texture in the game (2,366: ground, paths, buildings, rides, people, signs, the menus
+    and icon sheets), searchable and filtered by folder and kind (256-colour, recolourable, animated, interface, changed
+    by you). Tools: brush, pencil, eraser, fill, colour picker, line, rectangle, ellipse, text and select (drag inside a
+    selection to move it; copy, cut and paste, also pictures copied from other programs). Adjust brightness, contrast,
+    hue and saturation, invert, greyscale, tint, flip and turn, for the selection or the whole picture. Undo and redo,
+    a pixel grid when zoomed in, colour-only or transparency-only views, the frames of animated textures (with Play),
+    and a preview of recolourable textures in colours you pick. **Import…** takes a PNG or JPG (scaled to the
+    texture's size, or into the selection), **Export PNG** saves it. **Save into game** writes it in the same size and
+    format (DXT1/3/5 compressed, 32-bit, or 256 colours; the smaller mipmap copies are made for you; recolourable
+    textures keep their recolour palette).
+  - **GUI Editor:** the interface. **Game interface** (Main, the front screen scenario logos, the loading screen) and
+    **Object icons** (scenery, rides, shops, paths, pools, animals, carried items) open their icon sheets with every
+    icon outlined: drag an icon's box to move it, its handles to resize it (or type the numbers), double-click or
+    **Edit pixels** to paint it in the Texture Editor, **Replace with picture…** to put your own picture in its place.
+    **All icons** shows them as a gallery. **Button states** plays each button with its own pictures (normal, hover,
+    pressed, disabled). **Animations** plays numbered icon sets frame by frame at the speed you choose (and exports
+    them as a strip). **Window frames** shows the window, panel and scroll bar pieces cut where the game cuts them and
+    stretched to the size you pick. **Menu screens, sheets & fonts** open the front-end backgrounds, logos, icon
+    sheets and font letter sheets in the Texture Editor. **Menu text** edits every text of each language (a text can be
+    as long as the one it replaces).
+  - It has its own walkthrough, the first time it opens (**? Tour** replays it).
 - **Walkthrough:** a guided tour starts the first time you open the viewer. It highlights each part of the screen, explains it and opens examples on every tab. The MixMaster has its own tour the first time it opens, and it opens and walks through the Advanced Firework Editor, the laser designer and the water jet designer on the way. **? Tour** (top left in the viewer, next to MixMaster in the MixMaster) replays it; pressed while the firework editor or a designer is open, it explains that editor. ← → or Enter move, Esc stops.
 - **File types** opens the guide to every file type: the OVL resource types and the loose firework files (`.frw`, `.fwd`, `.las`, `.wjt`, `.lwr`, `.wma`). A firework file's summary has a **?** that jumps to its entry.
-- The seven tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks, Parks) sit under the title; the one in use is highlighted.
+- The eight tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks, Parks, Textures & GUI) sit under the title; the one in use is highlighted.
 - Drag the thin divider on the right edge of either list column to make it wider or narrower (double-click a divider to reset it). Widths are remembered.
 - **Download** saves what you're looking at: `.glb`, `.png`, `.wav` or `.json`.
 

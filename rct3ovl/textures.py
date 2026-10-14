@@ -69,42 +69,50 @@ class TextureSet:
     def __init__(self, ovl: Ovl):
         self.ovl = ovl
         self.flic_bitmaps: dict[int, Bitmap] = {}       # flic struct vaddr -> bitmap
+        self.flic_where: dict[int, tuple[str, list[int]]] = {}   # flic vaddr -> (file part, file offset of each mip)
         self._load_flics()
 
     def _load_flics(self):
         table: list[Bitmap] = []
+        where: list[tuple[str, list[int]]] = []
         for ref in self.ovl.resources:                  # loader order: a btbl precedes the flics that use it
             tag = ref.loader.tag
             if tag == 'btbl' and len(ref.extra) >= 2:
                 count = struct.unpack_from('<I', self.ovl.read(ref.data, 8), 4)[0]
                 heads, data = ref.extra[0], ref.extra[1]
-                table, p = [], 0
+                table, where, p = [], [], 0
+                at = ref.extra_at[1] if len(ref.extra_at) > 1 else None
                 for i in range(count):
                     fmt, w, h, mc = struct.unpack_from('<IIII', heads, 8 + 16 * i)
                     sizes = _mip_sizes(fmt, w, h, mc)
-                    mips = []
+                    mips, offs = [], []
                     for s in sizes:
-                        mips.append(data[p:p + s]); p += s
-                    table.append(Bitmap(fmt, w, h, mips))
+                        mips.append(data[p:p + s]); offs.append(None if at is None else at + p); p += s
+                    table.append(Bitmap(fmt, w, h, mips)); where.append((ref.part, offs))
             elif tag == 'flic' and ref.extra:
                 ex = ref.extra[0]
                 if len(ex) == 4 and table:
                     idx = struct.unpack('<I', ex)[0]
                     if idx < len(table):
-                        self.flic_bitmaps[ref.data] = table[idx]
+                        self.flic_bitmaps[ref.data] = table[idx]; self.flic_where[ref.data] = where[idx]
                 elif len(ex) >= 32:
-                    self.flic_bitmaps[ref.data] = _bitmap_from_flic_extra(ex)
+                    bm = self.flic_bitmaps[ref.data] = _bitmap_from_flic_extra(ex)
+                    at, offs, p = ref.extra_at[0] if ref.extra_at else None, [], 16
+                    for m in bm.mips:
+                        offs.append(None if at is None else at + p + 16); p += 16 + len(m)
+                    self.flic_where[ref.data] = (ref.part, offs)
 
-    def tex_bitmap(self, ref: LoaderRef) -> Bitmap | None:
+    def tex_flic(self, ref: LoaderRef) -> int | None:
         o = self.ovl
         try:
             flicpp = o.ptr(ref.data + 0x34)
-            if not flicpp:
-                return None
-            flic = o.ptr(flicpp)
+            return o.ptr(flicpp) if flicpp else None
         except OvlError:
             return None                              # half of the pair missing (e.g. only Water.unique.ovl copied)
-        return self.flic_bitmaps.get(flic)
+
+    def tex_bitmap(self, ref: LoaderRef) -> Bitmap | None:
+        flic = self.tex_flic(ref)
+        return None if flic is None else self.flic_bitmaps.get(flic)
 
     def ftx_image(self, ref: LoaderRef, frame: int = 0, colors=None) -> Image.Image | None:
         """FlexiTextureInfoStruct {scale, w, h, fps, recol, offsetCount, offset*, frameCount, frames*};

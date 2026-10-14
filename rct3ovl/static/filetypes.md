@@ -228,8 +228,13 @@ the models to match.
 - **What it is:** an **icon**: a rectangle cut out of a big icon sheet (a `tex`).
 - **In the game:** every build-menu thumbnail, ride icon, toolbar button and stat icon (the calendar, the save
   disk…).
-- **Inside:** a type, the icon sheet it comes from, and the rectangle (left, top, right, bottom in pixels).
-- **You get:** `icons/<name>.png`, the cut-out icon.
+- **Inside:** a type, the icon sheet it comes from, and where on the sheet it is, as pixel edges (the right and bottom
+  edges are just past the last pixel):
+  - type 0, an icon: left, top, right, bottom;
+  - types 2 and 3, a panel or window frame: 4 x and 4 y cut lines (3 × 3 parts: the corners stay, the parts between
+    stretch to the window's size);
+  - type 4, a horizontal bar: 4 x and 2 y; type 5, a vertical bar: 2 x and 4 y; type 1: no picture (a solid colour).
+- **You get:** `icons/<name>.png`, the cut-out icon. Edit them in the viewer's **Textures & GUI** tab.
 - **Found in:** `Main.common.ovl`, plus next to the objects they show.
 
 ### `fct`: Font (18)

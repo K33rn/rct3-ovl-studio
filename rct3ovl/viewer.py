@@ -18,6 +18,7 @@ from .rides import build_ride, list_rides, track_sets
 from .scenery import build_scenery, list_scenery
 from . import fireworks as fw
 from . import parks
+from . import texedit as tx
 from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
@@ -65,7 +66,7 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
             try:
                 if u.path in ('/', '/index.html'):
                     return self.send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html; charset=utf-8')
-                if u.path in ('/fireworks.js', '/tour.js', '/parks.js') or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
+                if u.path in ('/fireworks.js', '/tour.js', '/parks.js', '/texgui.js') or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
                                                  and os.path.exists(os.path.join(STATIC, u.path[1:]))):
                     return self.send(200, open(os.path.join(STATIC, u.path[1:]), 'rb').read(), 'text/javascript; charset=utf-8')
                 if u.path == '/api/fw/data':
@@ -114,6 +115,32 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     with lock:
                         changes = lib.refresh_index() if q.get('refresh') else None
                         return self.js({'root': lib.root, 'ovls': lib.index['ovls'], 'files': fw.list_files(lib), 'changes': changes})
+                # texture & GUI editor (static/texgui.js, texedit.py)
+                if u.path == '/api/tx/catalogue':
+                    with lock:
+                        return self.js({'textures': tx.catalogue(lib), 'edits': tx.edits(lib)})
+                if u.path == '/api/tx/info':
+                    with lock:
+                        return self.js(tx.info(lib, q['path'], q['name']))
+                if u.path == '/api/tx/image':
+                    with lock:
+                        o, ts, r = tx._ref(lib, q['path'], q['name'])
+                        cols = [tuple(int(c[i:i + 2], 16) for i in (0, 2, 4)) if c else None
+                                for c in q['colors'].split(',')] if q.get('colors') else None
+                        img = ts.image(r, colors=cols, frame=int(q.get('frame', 0)))
+                    if img is None:
+                        return self.js({'error': 'no pixel data'}, 404)
+                    b = io.BytesIO(); img.save(b, 'PNG')
+                    return self.send(200, b.getvalue(), 'image/png')
+                if u.path == '/api/tx/gui':
+                    with lock:
+                        return self.js(tx.gui_catalogue(lib))
+                if u.path == '/api/tx/icons':
+                    with lock:
+                        return self.js(tx.icons(lib, q['path']))
+                if u.path == '/api/tx/texts':
+                    with lock:
+                        return self.js(tx.texts(lib, q['path']))
                 if u.path == '/api/parks':
                     with lock:
                         return self.js(parks.list_parks(lib))
@@ -310,6 +337,16 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
         u = urlparse(self.path)
         try:
             body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
+            if u.path.startswith('/api/tx/'):
+                with lock:
+                    if u.path == '/api/tx/write':
+                        return self.js(tx.write_texture(lib, body['path'], body['name'], base64.b64decode(body['b64']), int(body.get('frame', 0))))
+                    if u.path == '/api/tx/restore':
+                        tx.restore(lib, body['path']); return self.js({'ok': True, 'edits': tx.edits(lib)})
+                    if u.path == '/api/tx/rect':
+                        return self.js(tx.set_icon_rect(lib, body['path'], body['name'], body['rect']))
+                    if u.path == '/api/tx/text':
+                        return self.js(tx.set_text(lib, body['path'], body['name'], body['text']))
             if u.path == '/api/fw/build':
                 with lock:
                     blob = fw.build(lib, body['kind'], body['data'])

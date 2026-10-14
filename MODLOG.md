@@ -679,3 +679,47 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   slow at the top under 4 g and the push loops them off: separate bursts instead of one column), Spheres of Fire
   7.4 / 18.6, Fountain 6.2 / 6.8, Fairy Fountain 3 / 6.8. Path depends on the step (game: its frame rate). All 29
   fireworks run 6 s without NaN. Not compared with the game on screen yet.
+
+## 2026-10-14: Textures & GUI tab (8th tab): Texture Editor + GUI Editor, saved into the game's OVLs
+- Request: an 8th tab, a complete texture editor for every texture in the game and a GUI editor for the menus, icons and
+  their animations, switchable inside the tab like the MixMaster's editors.
+- Route: in-place OVL patching (no OVL writer exists). Every edit keeps the resource's size and layout, so only bytes
+  inside the files change - no pointers, relocations or symbol tables touched. texedit.py; client static/texgui.js
+  (index.html tab b-texgui, openTexGuiTab, #textures[=path|name]).
+  - tex: container.LoaderRef.extra_at (file offset of each extra blob) -> TextureSet.flic_where[flic vaddr] = (part,
+    file offset of every mip): flic extra = FlicHeader(16) + per mip FlicMipHeader(16) + pixels; btbl: extra[1] at the
+    running offset of that table entry. Re-encoded with Pillow 12.3's BCn encoder (im.tobytes('bcn', 1|2|3) =
+    DXT1/3/5; mips under 4x4 padded to a block, edges repeated) or BGRA; each mip must come out the stored length.
+    Pictures are stored bottom row first (flipped on the way in and out).
+  - ftx: per frame palette (1024 B BGRA) / 8-bit pixels / alpha at their vaddrs. Recolourable (recol flags != 0): the
+    palette stays (its 1-85 / 86-170 / 171-255 recolour ranges) and pixels take the nearest entry; else a new
+    256-colour MEDIANCUT palette. Animated ftx: one frame at a time, the others untouched.
+  - gsi: types and coords decoded (structs.load_gsi): 0 icon l,t,r,b; 2/3 panel / window frame 4 x + 4 y cuts (3x3,
+    middle often 0 wide = the pixel at the cut is stretched); 4 bar x0..x3 + y0,y1; 5 bar x0,x1 + y0..y3; 1 no picture.
+    The old reader took 4 numbers for every type (wrong for 2-5; writing a "rect" over them would have corrupted
+    them). Edges: right / bottom exclusive (Main's icons sit on 40 px and 16 px grids as [40,320,80,360]; object
+    icons are [0,0,63,63], a pixel short - texture edge coordinates). gsi_image now crops (l, t, r, b), not r+1 (the
+    old crop took a column / row of the neighbouring icon). Moving a 2-5 piece shifts all its cuts; only type 0 resizes.
+  - txt: UTF-16 in place; room = up to the next text (its NULs and padding), so a text can't grow past its slot.
+- Backups: before the first change to a pair both files are copied to ~/.rct3ovl/backups/<md5(root)[:10]>/<rel>
+  (long-path '\?\' copies: the first try with the root as folder name passed 260 chars), edits.json lists changed
+  pairs and resources; restore copies back and drops the entry. Writes go to <file>.rct3ovl-tmp then os.replace (a
+  PermissionError says to close the game); the pair is re-parsed after writing; the Library forgets the open copy
+  and derived caches (texedit._reload keeps the texture catalogue: names / sizes don't change).
+- .CHK files next to Main.*.ovl and Style\Vanilla\Style.*.ovl (4 bytes, not a CRC32 of the file): neither exe
+  mentions .CHK (narrow or UTF-16) - not checked by the game, left alone.
+- Catalogue: 2,366 textures (1,601 ftx, 765 tex: 404 DXT3, 188 DXT1, 173 BGRA; 2,013 distinct names), built in ~39 s
+  the first time, cached in ~/.rct3ovl/texcat_<root>.json keyed on the OVLs' mtimes. GUI: 18 OVLs with gsi (Main 1,887;
+  Style\SceneryIcons 1,161; Style\Vanilla\Scenery 241; RideIcons 208; FrontScreen logos; CarriedItems; ...), texts in
+  Main (1,523) and gui\<Language> (~12,300 each).
+- GUI Editor groups an OVL's icons: sheets (by texture), button states (stems with Up/Over/Pressed/Disabled/NoFocus...;
+  Up/Down alone are directions, e.g. ArrowUp / ArrowDown), numbered sets as animations (State0..3 etc. first, the
+  16-colour uniform swatch sets after), window frames (types 2-5, previewed from their real cuts).
+- Tests (scratch copy of Main / gui\English / Style\Vanilla / ACAM\Truck / Saucer, never the real folder):
+  round trip DXT1 33.5 dB, DXT3 36.5 dB, BGRA and plain ftx exact, recolour ftx nearest-palette (recolour still
+  works), ftx frame 2 of 4 written with frames 1/3/4 identical; icon rect, text (too long refused); restore =
+  byte-identical originals. UI (playwright, fake server on 8767): paint, shapes, text, select-move, adjust, save,
+  rect drag + save, texts save, restore all -> md5 of the copies identical again, no page errors. Real game read-only:
+  all kinds open (anim / recolour preview / DXT3 with 8 mips), SceneryIcons sheets, English texts; md5 of Main and
+  English unchanged.
+- Not tried in the game yet (needs the user's PC): a saved texture / icon rect / text showing in RCT3.

@@ -148,7 +148,7 @@ function build() {
   const gltf = new GLTFLoader();
   const layers = {};
   for (const k of ['terrain', 'water', 'paths', 'scenery', 'rides', 'people', 'grid']) { layers[k] = new THREE.Group(); scene.add(layers[k]); }
-  let mixers = [], world = null, info = null, loadSeq = 0, terrainObj = null, rideSpots = {}, loaded = null;
+  let mixers = [], crowd = [], standOf = new Map(), world = null, info = null, loadSeq = 0, terrainObj = null, rideSpots = {}, loaded = null;
   const show = { scenery: true, rides: true, paths: true, water: true, people: true, own: true, grid: false, anim: true };
 
   function skyTexture() {
@@ -216,8 +216,12 @@ function build() {
     if (!running) return;
     requestAnimationFrame(loop);
     const dt = Math.min(clock.getDelta(), 0.1);
-    if (show.anim) for (const m of mixers) m.update(dt);
     controls.update();
+    crowdLod();
+    if (show.anim) {
+      for (const m of mixers) m.update(dt);
+      for (const c of crowd) if (c.near && c.mx) c.mx.update(dt);
+    }
     renderer.render(scene, camera);
   }
   function start() { resize(); if (!running) { running = true; clock.getDelta(); loop(); } }
@@ -646,11 +650,13 @@ vec4 groundTex(float l, vec3 w) {
     const stand = p => p[5] == null || p[5] < 0;
     const kinds = { guest: world.people.filter(p => p[0] === 'guest'), staff: world.people.filter(p => p[0] === 'staff'), duck: world.people.filter(p => p[0] === 'duck') };
     const m4 = new THREE.Matrix4(), col = new THREE.Color();
+    standOf = new Map();
     for (const [k, list] of Object.entries(kinds)) {
       if (!list.length) continue;
       const im = new THREE.InstancedMesh(k === 'duck' ? duck : body, new THREE.MeshLambertMaterial(), list.length);
       list.forEach((p, j) => {
         m4.makeRotationY(-p[4]).setPosition(p[1], p[2], Z(p[3])); im.setMatrixAt(j, m4);
+        standOf.set(p, { im, j, m: m4.clone() });
         im.setColorAt(j, col.setHex(k === 'staff' ? 0x1e4fb8 : k === 'duck' ? 0xf4f1e6 : pal[j % pal.length]));
       });
       im.computeBoundingSphere();
@@ -679,7 +685,9 @@ vec4 groundTex(float l, vec3 w) {
     });
   }
   // the guests and staff themselves: one model per combination of body, legs and head, walking or standing as they
-  // were; the stand-in figures go once they're all in
+  // were. Each is several skinned meshes (a draw call apiece: 2,800 for Chequered Flag's 386 guests), so people
+  // further away than where they'd stand ~14 px tall are drawn as their stand-in figure (all in one instanced mesh)
+  // and their animation pauses (crowdLod)
   async function buildPersonModels(seq, progress) {
     const by = new Map();
     world.people.forEach(p => { if (p[5] != null && p[5] >= 0) { if (!by.has(p[5])) by.set(p[5], []); by.get(p[5]).push(p); } });
@@ -704,17 +712,32 @@ vec4 groundTex(float l, vec3 w) {
           } else { o.position.set(p[1], p[2], Z(p[3])); o.rotation.y = -p[4]; }
           o.userData.pick = { title: p[11] ? 'Guest (riding)' : p[0] === 'guest' ? 'Guest' : 'Staff member', detail: world.person_combos[ci].map(s => s.split('_')[0].toUpperCase()).join(' / ') };
           group.add(o);
+          const c = { o, near: null, s: standOf.get(p), pos: o.matrixAutoUpdate ? o.position.clone() : new THREE.Vector3().setFromMatrixPosition(o.matrix) };
+          crowd.push(c);
           // riders: their ride's pose, else any seated ride pose the model has (never standing in a seat)
           const a = (p[10] ? (clip(p[10].toLowerCase()) || clip('ridesit') || clip('ride')) : p[6] ? clip('walk') : clip('idle')) || g.animations[0];
-          if (a) { const mx = new THREE.AnimationMixer(o), act = mx.clipAction(a); act.play(); act.time = Math.random() * a.duration; mixers.push(mx); }
+          if (a) { const mx = new THREE.AnimationMixer(o), act = mx.clipAction(a); act.play(); act.time = Math.random() * a.duration; c.mx = mx; }
         }
       } catch (e) {} finally { done++; progress(done, order.length); }
     };
     const queue = [...order];
     await Promise.all(Array.from({ length: 3 }, async () => { while (queue.length && seq === loadSeq) await work(queue.shift()); }));
     if (seq !== loadSeq) return;
-    layers.people.children.filter(o => o.userData.standIns).forEach(o => layers.people.remove(o));
-    group.visible = true;
+    group.visible = true; lodAt = null; crowdLod();
+  }
+  const ZERO = new THREE.Matrix4().makeScale(0, 0, 0), lodCam = new THREE.Vector3();
+  let lodAt = null;
+  function crowdLod() {
+    if (!crowd.length || (lodAt && lodAt.distanceToSquared(camera.position) < 1)) return;
+    lodAt = (lodAt || new THREE.Vector3()).copy(camera.position); lodCam.copy(camera.position);
+    const far = 1.8 * view.clientHeight / (2 * Math.tan(camera.fov * Math.PI / 360) * 14), far2 = far * far, dirty = new Set();
+    for (const c of crowd) {
+      const near = c.pos.distanceToSquared(lodCam) < far2;
+      if (near === c.near) continue;
+      c.near = near; c.o.visible = near;
+      if (c.s) { c.s.im.setMatrixAt(c.s.j, near ? ZERO : c.s.m); dirty.add(c.s.im); }
+    }
+    for (const im of dirty) { im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); }
   }
   // ride cars where the trains stood when the park was saved
   async function buildCars(seq) {
@@ -744,7 +767,11 @@ vec4 groundTex(float l, vec3 w) {
     for (const [sid, parts] of by) {
       const got = await sidModel({ name: sid, overlay: '', col });   // in the ride's colours
       if (!got || seq !== loadSeq) continue;
-      const mats = parts.map(([, x, y, z, yaw]) => new THREE.Matrix4().makeRotationY(-yaw).setPosition(x, y, Z(z)));
+      const mats = parts.map(([, x, y, z, yaw, sy]) => {          // sy: a piece squashed to fit the column's last bit
+        const m = new THREE.Matrix4().makeRotationY(-yaw);
+        if (sy) m.multiply(new THREE.Matrix4().makeScale(1, sy, 1));
+        return m.setPosition(x, y, Z(z));
+      });
       got.g.scene.traverse(o => {
         if (!o.isMesh) return;
         const im = new THREE.InstancedMesh(o.geometry, o.material, mats.length), tmp = new THREE.Matrix4();
@@ -855,6 +882,42 @@ vec4 groundTex(float l, vec3 w) {
     const queue = [...order];
     await Promise.all(Array.from({ length: 4 }, async () => { while (queue.length && seq === loadSeq) await work(queue.shift()); }));
   }
+  // supports under raised paths and queues: one column per piece at its tile's centre, up to where it meets the
+  // piece's underside (the middle of a slope is higher than its low end; some styles' undersides are 1 m under the
+  // deck) and down to the ground or the deck of a path below, both found on the pieces' own models; stacked from the
+  // style's pieces
+  function pathSupports() {
+    const pieces = [], out = [], ray = new THREE.Raycaster();
+    layers.scenery.updateMatrixWorld(true);
+    layers.scenery.traverse(o => { if (o.isMesh && o.userData.items?.[0]?.[6] === 1) pieces.push(o); });
+    // rays meet the pieces' faces from either side (a deck seen from above is a back face to a single-sided material)
+    const sides = new Map();
+    for (const o of pieces) for (const m of [o.material].flat()) if (!sides.has(m)) { sides.set(m, m.side); m.side = THREE.DoubleSide; }
+    const up = new THREE.Vector3(0, 1, 0), down = new THREE.Vector3(0, -1, 0);
+    for (const [style, x, z, ground, deck] of world.path_supports || []) {
+      const parts = world.support_parts?.[style];
+      if (!parts) continue;
+      ray.set(new THREE.Vector3(x, deck - 1.5, Z(z)), up); ray.far = 3.5;
+      const top = ray.intersectObjects(pieces, false)[0]?.point.y ?? deck - 0.5;
+      ray.set(new THREE.Vector3(x, top - 0.02, Z(z)), down); ray.far = Math.max(0.01, top - 0.02 - ground);
+      const bottom = ray.intersectObjects(pieces, false)[0]?.point.y ?? ground;
+      if (top - bottom >= 1) stackSupport(parts, x, z, bottom, top, 0, out);
+    }
+    for (const [m, side] of sides) m.side = side;
+    return out;
+  }
+  // one column from y0 up to y1: a bottom piece, middles (8 / 4 / 2 / 1 m), the last bit a 1 m piece squashed to fit,
+  // a top piece (as parks._stack)
+  function stackSupport(parts, x, z, y0, y1, yaw, out) {
+    const mids = parts.middle || {}, sizes = Object.keys(mids).map(Number).sort((a, b) => b - a);
+    if (!sizes.length) return;
+    let y = y0;
+    if (parts.bottom && y1 - y >= 2) { out.push([parts.bottom, x, y, z, yaw]); y += 1; }
+    const top = y1 - y >= 2 ? parts.top : null, end = y1 - (top ? 1 : 0);
+    for (const h of sizes) while (end - y >= h - 0.01) { out.push([mids[h], x, y, z, yaw]); y += h; }
+    if (end - y > 0.05 && mids[1]) { out.push([mids[1], x, y, z, yaw, end - y]); y = end; }
+    if (top) out.push([top, x, y, z, yaw]);
+  }
   // path supports don't go down through a ride's track: drop the columns whose way to the ground is blocked by one
   let trackScenes = [];
   function clearOfTracks(list) {
@@ -937,7 +1000,7 @@ vec4 groundTex(float l, vec3 w) {
     list.querySelector('.pk.sel')?.scrollIntoView({ block: 'nearest' });
     history.replaceState(null, '', '#park=' + encodeURIComponent(file));
     status('Reading the park…', 0.02);
-    for (const m of mixers) m.stopAllAction(); mixers = []; rideSpots = {};
+    for (const m of mixers) m.stopAllAction(); mixers = []; crowd = []; rideSpots = {};
     texUsed.clear(); modelUsed.clear(); dressTex.clear();
     let d;
     try { d = await (await fetch('/api/park?file=' + encodeURIComponent(file))).json(); } catch (e) { d = { error: String(e) }; }
@@ -955,7 +1018,7 @@ vec4 groundTex(float l, vec3 w) {
       buildItems(seq, (n, of) => status(`Loading models ${n} / ${of} (${world.items.length.toLocaleString()} items)…`, 0.1 + 0.6 * n / of)),
       buildTracks(seq), buildCars(seq), buildAnimals(seq)]);
     if (seq !== loadSeq) return;
-    await addSupports(clearOfTracks(world.path_supports || []), 'Path', seq);
+    await addSupports(clearOfTracks(pathSupports()), 'Path', seq);
     if (seq !== loadSeq) return;
     const np = world.people.filter(p => p[5] >= 0).length;
     await buildPersonModels(seq, (n, of) => status(`Loading people ${n} / ${of} (${np.toLocaleString()} guests and staff)…`, 0.7 + 0.3 * n / of));
@@ -1143,6 +1206,6 @@ vec4 groundTex(float l, vec3 w) {
   function tour(force) { if (root.style.display === 'none' || tourRunning()) return; runTour('parks', TOUR, { force }); }
   $('#pk-tour', root).onclick = () => tour(true);
 
-  window.__pkdebug = { scene, renderer, camera, controls, layers, get world() { return world; }, get info() { return info; }, rideSpots: () => rideSpots, load, heightAt, ROT, flyTo, get current() { return current; }, get loaded() { return loaded; } };
+  window.__pkdebug = { scene, renderer, camera, controls, layers, get world() { return world; }, get info() { return info; }, rideSpots: () => rideSpots, load, heightAt, pathSupports, ROT, flyTo, get current() { return current; }, get loaded() { return loaded; } };
   return { root, start, stop, load, ready, tour, parks: [], current: null, onBack: null };
 }

@@ -140,14 +140,16 @@ The buttons at the top:
   - **In 3D:** the landscape with the game's ground textures (land the park doesn't own shaded, land for sale yellow),
     water and the sea around island parks, footpaths and queues, and every placed item at its tile, height and
     direction: trees, buildings, walls, path extras, flat rides, shops, entrances and raised paths (bridges and
-    slopes join up, standing on their path style's supports). Queues have their queue type's floor and railings. Every coaster and tracked ride is built from
+    slopes join up, standing on their path style's supports, which reach up to the middle of slopes and stairs and
+    stand on any path below). Queues have their queue type's floor and railings. Every coaster and tracked ride is built from
     its track pieces, standing on the game's own supports for its style (steel columns, wooden or mine-train
     lattice; suspended coasters hang from columns with girders), with its trains where they stood: every car,
     including the hanging cars of swinging coasters. Guests and staff are full models (their own body, legs and head
     and their clothing colours, walking or standing); riders sit in their seats in the ride's pose (lap bar,
     harness with dangling feet, or lying), with the ducks and Wild! animals where they were when the park was
     saved. Animated scenery, rides, people and animals play. People load last (the first time a park is opened this
-    takes a minute or so).
+    takes a minute or so). Far from the camera people are drawn as simple figures (they'd be a few pixels tall) so
+    the whole park stays smooth when you zoom out; their full models come back as you get closer.
   - Drag to turn, right-drag to move, wheel to zoom, arrows or WASD to move. Click anything to see what it is, which
     tile it stands on and how high. **Whole park** frames the park's land; **Park camera** jumps to where the game's
     camera was. The buttons along the top turn scenery, rides, paths, water, people, land shading, the tile grid

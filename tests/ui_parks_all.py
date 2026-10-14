@@ -1,4 +1,5 @@
-"""Every park opens in the Parks tab: no page errors, no failed requests, every model and track built.
+"""Every park opens in the Parks tab: no page errors, no failed requests, every model and track built, every raised
+path support reaching up to the first path piece above it with no pieces overlapping.
 usage: python tests/ui_parks_all.py <base>"""
 import sys
 import time
@@ -10,6 +11,24 @@ DONE = 'window.__pkdebug.loaded === f'           # set when the park has finishe
 STATS = """() => { const D = window.__pkdebug, n = g => { let k = 0; g.traverse(o => { if (o.isInstancedMesh) k += o.count; else if (o.isMesh) k++; }); return k; };
   const tracks = D.world.tracks.length, built = Object.keys(D.rideSpots()).filter(k => D.world.tracks.some(t => String(t.id) === k)).length;
   return [D.world.items.length, n(D.layers.scenery) + n(D.layers.rides), tracks, built, (D.world.animals || []).length]; }"""
+# path supports: each column (pieces that touch) must end on the first path surface straight above its bottom
+SUPPORTS = """async () => { const THREE = await import('three'), D = window.__pkdebug, W = D.world;
+  const H = {}; for (const p of Object.values(W.support_parts || {})) { if (p.bottom) H[p.bottom] = 1; for (const [k, v] of Object.entries(p.middle || {})) H[v] = +k; }
+  const end = p => p[2] + (H[p[0]] ?? 1) * (p[5] || 1), cols = new Map();
+  for (const s of D.pathSupports()) { const k = s[1] + ',' + s[3]; if (!cols.has(k)) cols.set(k, []); cols.get(k).push(s); }
+  const own = o => { while (o) { if (o.userData.items) return o.userData.items; o = o.parent; } }, pm = [], sides = new Map();
+  D.layers.scenery.traverse(o => { if (o.isMesh && own(o)?.[0]?.[6] === 1) pm.push(o); });
+  for (const o of pm) for (const m of [o.material].flat()) if (!sides.has(m)) { sides.set(m, m.side); m.side = THREE.DoubleSide; }
+  const ray = new THREE.Raycaster(); let n = 0, overlap = 0; const bad = [];
+  for (const [k, ps] of cols) { const [x, z] = k.split(',').map(Number); ps.sort((a, b) => a[2] - b[2]);
+    const st = [[ps[0]]];
+    for (let i = 1; i < ps.length; i++) { const e = end(ps[i - 1]); if (ps[i][2] > e + 0.02) st.push([ps[i]]); else { if (ps[i][2] < e - 0.01) overlap++; st[st.length - 1].push(ps[i]); } }
+    for (const s of st) { n++; const top = end(s[s.length - 1]);
+      ray.set(new THREE.Vector3(x, s[0][2] + 0.05, -z), new THREE.Vector3(0, 1, 0)); ray.far = 60;
+      const y = ray.intersectObjects(pm, false)[0]?.point.y;
+      if (y == null || Math.abs(y - top) > 0.1) bad.push([x, z, +top.toFixed(2), y == null ? null : +y.toFixed(2)]); } }
+  for (const [m, side] of sides) m.side = side;
+  return [n, overlap, bad.slice(0, 4), bad.length]; }"""
 with sync_playwright() as p:
     b = p.chromium.launch(channel='chrome', headless=True, args=['--use-angle=swiftshader', '--enable-unsafe-swiftshader'])
     pg = b.new_page(viewport={'width': 1400, 'height': 860})
@@ -30,8 +49,9 @@ with sync_playwright() as p:
         except Exception:
             bad.append((f, 'timeout', pg.inner_text('#pk-load'))); continue
         items, meshes, tracks, built, animals = pg.evaluate(STATS)
-        print(f'{f[10:50]:40} {time.time() - t0:5.1f}s items {items:5} meshes {meshes:6} tracks {built}/{tracks} animals {animals}')
-        if built != tracks or len(errors) > before:
-            bad.append((f, errors[before:][:3], f'tracks {built}/{tracks}'))
+        cols, overlap, off, n_off = pg.evaluate(SUPPORTS)
+        print(f'{f[10:50]:40} {time.time() - t0:5.1f}s items {items:5} meshes {meshes:6} tracks {built}/{tracks} animals {animals} path supports {cols}')
+        if built != tracks or len(errors) > before or overlap or n_off:
+            bad.append((f, errors[before:][:3], f'tracks {built}/{tracks}', f'supports overlapping {overlap}, not meeting their path {n_off} {off}'))
     print('parks:', len(files), '| problems:', bad or 'none')
     b.close()

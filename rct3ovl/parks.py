@@ -565,7 +565,7 @@ def park_world(lib: Library, rel: str) -> dict:
                 y = float(hgrid[r, c].mean())          # on sloping ground: sit on the slope, not its low corner
         items.append([sid, c, r, round(y, 3), gd['DIRECTION'], gd['CORNER'], kind, ref if ref is not None else -1])
 
-    kinds = {'SceneryItem': 0, 'PathFlying': 1, 'TrackPlatformPiece': 2, 'SceneryItemPlacementSingle': 3, 'TrackPiece': 4,
+    kinds = {'SceneryItem': 0, 'PathFlying': 1, 'PathQueue': 1, 'TrackPlatformPiece': 2, 'SceneryItemPlacementSingle': 3, 'TrackPiece': 4,
              'TrackExtraPiece': 2}
     for oid, (n, v) in O.items():
         if n == 'SceneryItem':
@@ -586,9 +586,10 @@ def park_world(lib: Library, rel: str) -> dict:
                           v['SceneryItemDataField']['DIRECTION'], -1, 5, -1])
     world['sids'] = sids
     # supports under raised paths and queues: the path piece's sid names its support style (pathcrazy,
-    # pathasphalt, flatqueueset1...), stacked from the ground up to under the piece
-    psup = []
-    styles_of = {}
+    # pathasphalt, flatqueueset1...); one column per piece at the tile's centre. The viewer finds where the column
+    # meets the piece's underside and what it stands on (the ground, or a path below) from the pieces' own models
+    # and stacks it from the style's pieces (world support_parts)
+    pcols, styles_of = [], {}
     for oid, (n, v) in O.items():
         if n not in ('PathFlying', 'PathQueue'):
             continue
@@ -607,12 +608,11 @@ def park_world(lib: Library, rel: str) -> dict:
                 styles_of[key] = (load_sid(h[0], h[1]).get('supports') or '').lower() if h else ''
             except Exception:
                 styles_of[key] = ''
-        parts = support_parts(lib).get(styles_of[key])
-        ground = float(hgrid[r, c].min())
-        top = float(gd['HEIGHT']) - 0.5                   # under the path deck
-        if parts and top - ground >= 1:
-            _stack(parts, x0 + c * sx + sx / 2, z0 + r * sz + sz / 2, ground, top, 0.0, psup)
-    world['path_supports'] = [[s, round(float(x), 3), round(float(y), 3), round(float(z), 3), a] for s, x, y, z, a in psup]
+        ground, deck = float(hgrid[r, c].min()), float(gd['HEIGHT'])
+        if support_parts(lib).get(styles_of[key], {}).get('middle') and deck - ground >= 1.5:
+            pcols.append([styles_of[key], round(x0 + c * sx + sx / 2, 3), round(z0 + r * sz + sz / 2, 3), round(ground, 3), round(deck, 3)])
+    world['path_supports'] = pcols
+    world['support_parts'] = {st: support_parts(lib)[st] for st in {p[0] for p in pcols}}
     # queue railings: built along the edges a queue tile doesn't open on (StartDirection / EndDirection, numbered
     # 0 -col, 1 +col, 2 -row, 3 +row: fits every queue tile of every park), from the railing part of the queue
     # type's raised texture (the game draws them itself; no models)
@@ -925,8 +925,8 @@ def _stack(parts: dict, x, z, y0, y1, yaw, out: list):
     for size in sorted(mids, reverse=True):
         while end - y >= size - 0.01:
             out.append([mids[size], x, y, z, yaw]); y += size
-    if end - y > 0.2 and 1 in mids:                       # the last bit: a 1 m piece, overlapping the next one
-        out.append([mids[1], x, end - 1, z, yaw]); y = end
+    if end - y > 0.05 and 1 in mids:                      # the last bit: a 1 m piece squashed to fit
+        out.append([mids[1], x, y, z, yaw, round(end - y, 3)]); y = end
     if top:
         out.append([top, x, y, z, yaw])
 
@@ -1012,7 +1012,7 @@ def _path_supports(parts: dict, path: list, P, ground_at, inverted: bool, statio
             continue
         _stack(parts, float(c[0]), float(c[2]), g, bottom, along, out)
         placed.append((c[0], c[2]))
-    return [[s, round(float(x), 3), round(float(y), 3), round(float(z), 3), round(float(a), 4)] for s, x, y, z, a in out]
+    return [[s, round(float(x), 3), round(float(y), 3), round(float(z), 3), round(float(a), 4), *rest] for s, x, y, z, a, *rest in out]
 
 
 def _supports(lib: Library, merged, ter: bytes, style: str, inverted: bool, stations=frozenset(), clear: float = 1.0) -> list:
@@ -1087,7 +1087,7 @@ def _supports(lib: Library, merged, ter: bytes, style: str, inverted: bool, stat
             continue
         yaw = along if thin else round(along / (np.pi / 2)) * (np.pi / 2)
         column(x, z, g, top, yaw, out)
-    return [[s, round(float(x), 3), round(float(y), 3), round(float(z), 3), round(float(a), 4)] for s, x, y, z, a in out]
+    return [[s, round(float(x), 3), round(float(y), 3), round(float(z), 3), round(float(a), 4), *rest] for s, x, y, z, a, *rest in out]
 
 
 def animal_mdl(lib: Library, species: str, adult: bool, male: bool) -> str | None:

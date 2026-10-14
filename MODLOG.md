@@ -617,3 +617,38 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   FWFlares01_07 is no longer "solid", and on ParticlePage01 a non-solid sprite's alpha curve doesn't dim what is
   behind (`covers`). Only FWFlares01_07 changes (smoke, spray, rubble, bubbles, lightning keep their alpha).
 - The Comet file was copied into the Steam game's Fireworks folder for the test (left there: it plays in the game).
+
+## 2026-10-13: Path supports, zoom-out lag, UpScale (exe)
+- Raised path / queue supports (user: Chequered Flag's were buggy). Three faults: (1) slopes / stairs: the column
+  stopped at HEIGHT - 0.5 (the slope's low end) while the deck at the tile centre is ~1 m higher (Slope) / 0.5 m
+  (Slope_Straight) - a visible gap under 21 slope tiles; (2) a path above another path: the upper column ran through
+  the lower deck to the ground; (3) the last bit of a column was a 1 m piece overlapping the one below (flicker).
+  Now the server sends one column per piece (world.path_supports = [style, x, z, ground, deck HEIGHT]) and the
+  style's pieces (world.support_parts); the viewer casts rays against the path pieces' own models (kind 1 items;
+  PathQueue pieces are kind 1 too now): up from deck - 1.5 m = where the column meets the piece's underside (Leafy
+  pieces' underside is exactly 1 m under the deck: a ray starting there hit at 0 and dropped 4 Vanilla Hills
+  columns), then down from just under that = the deck of a path below, else the ground; then stacks it
+  (stackSupport, as parks._stack). Rays need the materials double-sided for the moment (a deck seen from above is a
+  back face) - without that the down ray missed lower decks (Monster Lake, Lost Atlantis: 25 m columns through
+  lower paths). parks._stack's last bit is now a 1 m piece
+  squashed to fit ([sid, x, y, z, yaw, sy]; addSupports scales it), also for coaster supports.
+- Check (gap3.js, run in the page on every park): per column (stacks split where pieces don't touch; piece heights
+  from support_parts, not names - QS12m is queue set 1's 2 m piece), the top must be the first path surface straight
+  above its bottom (0.1 m) and no pieces overlap. Two headless runs against one viewer at once time out loading.
+- Zoom-out lag: Chequered Flag whole-park view, 3,174 draw calls / 550 ms a frame (headless swiftshader); people alone
+  2,854 calls / 410 ms (386 guests, each cloneSkinned with several meshes and its own cloned materials from dress()),
+  terrain 7 calls, scenery 165, rides 147. Close up: 77 calls. Now people beyond the distance where they'd be ~14 px
+  tall (1.8 m x view height / (2 tan(fov/2) x 14), ~100 m at 820 px) are drawn as their stand-in figure (the
+  instanced capsules shown while loading, kept now: a near person's instance is scaled to 0) and their mixers stop
+  (crowdLod, rechecked when the camera moves > 1 m). Whole-park view after: 1,095 calls / 19 ms (people 4 calls); the
+  rest is mostly the go-kart tracks (~900 meshes in rides: track glbs aren't merged - next if it's still slow).
+- parks._supports' rounding unpacked 5 values per piece; the squashed piece's 6th crashed every coaster's supports
+  (/api/park_supports 500) until fixed - ui_parks_all (tracks n/n) is the check that catches it.
+- ui_parks_all now also checks path supports: 42 parks, 1,686 columns, none off, none overlapping.
+- UpScale (firework particle): RCT3plus.exe registers the particle description's fields at 0x9ca7c0 (push offset,
+  size, type, name; call 0x8088c0): TextureTileIndex 0x124, AnimTimeScale 0x128, CameraSpinRate 0x12c, StartSize
+  0x130, EndSize 0x134, SizeRandom 0x138, VelStretch 0x13c, BurnLength 0x140, BurnSize 0x144, ColourModifierEnable
+  0x198, Drag 0x19c, GravityScale 0x1a0, UpScale 0x1a4, SpinRateX 0x1a8, SpinRateY 0x1ac. Copy at 0x9cb88c. No float
+  reads of [reg + 0x19c/0x1a0/0x1a4] (non-stack) look like particle code (0x4850de: a scale matrix; 0xcd75c0: the
+  camera projection). The simulation probably works on a copy at another base; next: find the callers of the copy
+  function / where the description's fields are read as a block, or test in the game (UpScale 0 vs 20 on one star).

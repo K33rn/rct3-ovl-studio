@@ -462,6 +462,7 @@ async function build() {
       drag: n.Drag || 0, grav: n.GravityScale || 0, stretch: n.VelStretch || 0, sound: n.SoundName || '',
       sndMin: n.SoundMinDist || 70, sndMax: n.SoundMaxDist || 300, spin: n.CameraSpinRate || 0,
       pspin: (n.SpinRateX || n.SpinRateY) ? [n.SpinRateX || 0, n.SpinRateY || 0] : null,       // the particle turns: its bursts spin
+      up: n.UpScale || 0, spinY: n.SpinRateY || 0,     // a push of UpScale g along its own up, turning about its path (corkscrews)
       burnN: Math.max(0, Math.min(50, n.BurnLength | 0)), burnS: n.BurnSize ?? 0.2,              // a burning trail of copies
       R: curve(n.ColourR), G: curve(n.ColourG), B: curve(n.ColourB),
       page: sp?.page || 'ParticlePage01', A,                                        // drawn by its sheet's layer
@@ -504,9 +505,9 @@ async function build() {
     return [x, y, z];
   }
   let parts = [], silent = false;
-  function spawn(d, x, y, z, vx, vy, vz, h, parent, mods) {
+  function spawn(d, x, y, z, vx, vy, vz, h, parent, mods, u) {
     if (parts.length >= MAX_PARTICLES) return null;
-    const p = { d, x, y, z, vx, vy, vz, h, age: 0, life: Math.max(1e-3, d.life + Math.random() * d.lifeR), em: new Float32Array(d.emitters.length),
+    const p = { d, x, y, z, vx, vy, vz, h, u: u || [0, 0, 1], age: 0, life: Math.max(1e-3, d.life + Math.random() * d.lifeR), em: new Float32Array(d.emitters.length),
                 r0: Math.random(), parent, mods, delays: d.emitters.map(e => e.tr ? Math.random() * e.tr : 0) };
     parts.push(p);
     if (d.sound && !silent) playSound(d.sound, x, y, z, d.sndMin, d.sndMax);
@@ -530,9 +531,12 @@ async function build() {
       const cd = descInfo(p.d.fw, e.desc);
       const sp = Math.hypot(p.vx, p.vy, p.vz);
       let h = sp > 0.05 ? [p.vx / sp, p.vy / sp, p.vz / sp] : p.h;
-      if (p.d.pspin) h = rotXYZ(h, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0);
-      if (e.spin[0] || e.spin[1] || e.spin[2] || e.spin0[0] || e.spin0[1] || e.spin0[2])
-        h = rotXYZ(h, e.spin0[0] + e.spin[0] * p.age, e.spin0[1] + e.spin[1] * p.age, e.spin0[2] + e.spin[2] * p.age);
+      let u = e.rel ? p.u : [0, 0, 1];      // the new particle's up: its parent's when it moves with it, else the world's (game)
+      if (p.d.pspin) { h = rotXYZ(h, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); u = rotXYZ(u, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); }
+      if (e.spin[0] || e.spin[1] || e.spin[2] || e.spin0[0] || e.spin0[1] || e.spin0[2]) {
+        const a = [e.spin0[0] + e.spin[0] * p.age, e.spin0[1] + e.spin[1] * p.age, e.spin0[2] + e.spin[2] * p.age];
+        h = rotXYZ(h, ...a); u = rotXYZ(u, ...a);
+      }
       for (let k = 0; k < n; k++) {
         const s = randUnit(), c = randPerp(h), ps = randUnit(), pc = e.prc ? randPerp(h) : null;
         const sr = e.sr * (0.85 + 0.15 * Math.random()), pr = e.pr * Math.random();
@@ -541,9 +545,32 @@ async function build() {
         const vz = h[2] * e.speed + s[2] * sr + c[2] * e.src + p.vz * e.psf;
         let x = p.x + ps[0] * pr, y = p.y + ps[1] * pr, z = p.z + ps[2] * pr;
         if (pc) { x += pc[0] * e.prc; y += pc[1] * e.prc; z += pc[2] * e.prc; }
-        if (!spawn(cd, x, y, z, vx, vy, vz, h, e.rel ? p : null, p.mods)) return;
+        if (!spawn(cd, x, y, z, vx, vy, vz, h, e.rel ? p : null, p.mods, u)) return;
       }
     }
+  }
+  // UpScale (RCT3plus.exe 0x9c8390, the particle update): each particle carries a frame whose second axis is its direction
+  // of travel (realigned to the velocity every step) and whose third, its 'up', stays across it; the up turns about the
+  // path by SpinRateY x dt and the particle is pushed along it by UpScale x 9.81 m/s2 - a sideways pull that bends the
+  // path, and with SpinRateY a corkscrew
+  function upPush(p, d, dt) {
+    let u = p.u;
+    const sp = Math.hypot(p.vx, p.vy, p.vz);
+    if (sp > 1e-4) {
+      const n = [p.vx / sp, p.vy / sp, p.vz / sp], k = u[0] * n[0] + u[1] * n[1] + u[2] * n[2];
+      u = [u[0] - k * n[0], u[1] - k * n[1], u[2] - k * n[2]];
+      let l = Math.hypot(...u);
+      if (l < 1e-4) { u = randPerp(n); l = 1; }
+      u = u.map(x => x / l);
+      if (d.spinY) {
+        const a = d.spinY * dt, c = Math.cos(a), s = Math.sin(a);
+        const w = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+        u = [u[0] * c + w[0] * s, u[1] * c + w[1] * s, u[2] * c + w[2] * s];
+      }
+      p.u = u;
+    }
+    const a = GRAVITY * d.up * dt;
+    p.vx += u[0] * a; p.vy += u[1] * a; p.vz += u[2] * a;
   }
   function step(dt) {
     const g = GRAVITY * dt;
@@ -551,6 +578,7 @@ async function build() {
       const p = parts[i], d = p.d;
       p.age += dt;
       if (d.grav) p.vy -= g * d.grav;
+      if (d.up) upPush(p, d, dt);
       if (d.drag) { const k = Math.max(0, 1 - d.drag * dt); p.vx *= k; p.vy *= k; p.vz *= k; }
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.parent && p.parent.age < p.parent.life) { p.x += p.parent.vx * dt; p.y += p.parent.vy * dt; p.z += p.parent.vz * dt; }

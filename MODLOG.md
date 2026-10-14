@@ -657,3 +657,25 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   reads of [reg + 0x19c/0x1a0/0x1a4] (non-stack) look like particle code (0x4850de: a scale matrix; 0xcd75c0: the
   camera projection). The simulation probably works on a copy at another base; next: find the callers of the copy
   function / where the description's fields are read as a block, or test in the game (UpScale 0 vs 20 on one star).
+- UpScale found. The C++ particle description is the registered layout shifted by -0x40 (the registration's offsets
+  count from 0x40 before the object): Drag 0x15c, GravityScale 0x160, UpScale 0x164, SpinRateX/Y 0x168/0x16c,
+  Particles 0x54 (stride 0x90) / NumParticles 0x5c. The update is 0x9c8390 (vtable 0xf84dec; finds -9.81 at
+  0xf37b30, 9.81 at 0xf84910). A particle (copied to esp+0x40): Time 0, Lifetime 4, Position 0x10, Velocity 0x20,
+  Orientation 0x30 = three rows of 16 bytes (0x30, 0x40, 0x50) + a renormalise counter. Each step: rotate the
+  orientation by SpinRateX x dt about row 0 (0xbedd30, mixes rows 1/2) and SpinRateY x dt about row 1 (0xbeddc0:
+  r0' = c r0 - s r2, r2' = s r0 + c r2); accel = (0, -9.81 GravityScale, 0) + 9.81 UpScale x row 2 - Drag x v;
+  v += a dt; x += v dt; then 0xbed6e0(velocity, row 2) rebuilds the frame: row 1 = normalised velocity, row 0 =
+  row1 x old row2 (normalised), row 2 = row0 x row1. So row 1 is always the direction of travel and UpScale is a
+  sideways push along the particle's own up (row 2), which SpinRateY turns about the path: corkscrews.
+  Emission (0x9cbdf0, the emitter, ret 0xc): the new particle's frame M = parent's (interpolated) frame if
+  ParticleRelative else identity, turned by SpinOffset + SpinRate x t (relative: 0xbedd30/0xbeddc0/0xbede50; else
+  0xbedee0/0xbedf70/0xbee000); velocity = ParticleSpeed x M row 1 + ParentSpeedFactor x parent velocity + SpeedRandom
+  sphere + SpeedRandomCircle in the M row0/row2 plane; PositionRandomCircle also in that plane; added by 0x9c7340.
+  So a non-relative emitter fires along world +Y (turned by its spin), not along the parent's travel - the viewer
+  still uses the parent's travel (unchanged, most of those emitters have ParticleSpeed 0).
+- Viewer: particles carry an up vector u (spawn: parent's when relative, else world +Z, turned like the heading);
+  upPush() keeps it across the velocity, turns it by SpinRateY dt about the path and adds 9.81 UpScale u dt. 27 of
+  143 game particle types have UpScale; big ones with fast SpinRateY: Thunder Blitz 20 / 31.4 rad/s (its stars
+  slow at the top under 4 g and the push loops them off: separate bursts instead of one column), Spheres of Fire
+  7.4 / 18.6, Fountain 6.2 / 6.8, Fairy Fountain 3 / 6.8. Path depends on the step (game: its frame rate). All 29
+  fireworks run 6 s without NaN. Not compared with the game on screen yet.

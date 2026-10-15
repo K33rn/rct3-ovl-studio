@@ -191,10 +191,15 @@ The buttons at the top:
     as long as the one it replaces).
   - It has its own walkthrough, the first time it opens (**? Tour** replays it).
   - **Front screen designer** (GUI Editor › **Main menus**): the game's main menus - the front screen with Play,
-    Tools and Options and the Play, Tools and Sandbox menus behind them. A preview built from the game's own pictures
-    shows each menu; drag the first button to move the arc all the buttons sit on (distance and angle from the big
-    circle's centre), drag another to change the spacing, or type the numbers; set the badge size and the bars'
-    colour. **More numbers** moves the Back / Quit buttons, the scenario lists and the tutorial pages. **Menu words**
+    Tools and Options and the Play, Tools, Sandbox and Custom scenario menus behind them. A preview built from the
+    game's own pictures shows each menu. Drag any button (or an empty place) anywhere on the screen: the game has 5
+    places, shared by every menu, and each one can now sit anywhere (its bar and words follow). **Buttons** edits each
+    menu: remove a button (✕), move it up or down, or **Add button** - pick any of the game's 15 menu buttons (Play,
+    Tools, Options, Tutorial, Career, Sandbox, Custom scenario, the four designers and editor, New / Load...) and it
+    works there as it does in the game. Each game button can be in one menu at a time (adding it takes it out of the
+    other one), and a menu holds up to 5. **Put the places on an arc** puts them back on the game's kind of arc. Set
+    the badge size and the bars' colour. **More numbers** moves the Back / Quit buttons, the scenario lists and the
+    tutorial pages. **Menu words**
     renames the buttons and titles, **Pictures** opens each front-screen picture in the Texture Editor, and **Themes**
     applies a whole new front screen in one go (**Neon Nights**: night sky, neon ring, hexagon badges on cyan bars
     along the top of the circle, a giant neon ferris wheel). The layout and colour are numbers in the game's program,

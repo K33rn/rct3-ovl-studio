@@ -332,7 +332,7 @@ function build() {
     { target: '#tg-centre', title: 'The canvas', html: `<p>Tools on the left: <kbd>B</kbd> brush, <kbd>P</kbd> pencil, <kbd>E</kbd> eraser, <kbd>G</kbd> fill, <kbd>I</kbd> colour picker, <kbd>L</kbd> line, <kbd>R</kbd> rectangle, <kbd>O</kbd> ellipse, <kbd>M</kbd> select (drag inside to move), <kbd>T</kbd> text.</p><p>Wheel zooms, right-drag or <kbd>Space</kbd>-drag pans, <kbd>0</kbd> fits. <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> undo and redo, <kbd>Ctrl+C</kbd> / <kbd>Ctrl+V</kbd> copy and paste (also pictures from other programs).</p>` },
     { target: '#tg-right', title: 'Colours, adjustments, saving', html: `<p>Colours and brush, then adjustments (brightness, contrast, hue, saturation, invert, flips…) for the selection or the whole picture, frames of animated textures, and the recolour preview of recolourable ones.</p><p><b>Save into game</b> writes the picture into its game file in the same size and format; the original file is copied first and <b>Changed files</b> (top right) restores it.</p>` },
     { target: '#tg-modes', title: 'GUI Editor', html: `<p>The interface: open <b>Game interface</b> for the main icon sheets. Drag an icon's rectangle to move it, its handles to resize it, or edit its pixels. <b>Button states</b> plays them as a real button, <b>Animations</b> plays numbered icon sets, <b>Menu text</b> edits what the menus say.</p>`, before: () => setMode('gui') },
-    { target: '#tg-modes', title: 'Front screen designer', html: `<p><b>Main menus › Front screen designer</b> lays out the game's front screen (the Play / Tools / Options menus): drag a button in the preview to move the arc every menu's buttons sit on, set the spacing, badge size and bar colour, change the menu words and the pictures, or apply a whole theme like <b>Neon Nights</b>. The layout is saved into the game's program (RCT3plus.exe), copied first and restorable like every other file.</p>`, before: () => setMode('gui') },
+    { target: '#tg-modes', title: 'Front screen designer', html: `<p><b>Main menus › Front screen designer</b> lays out the game's front screen (the Play / Tools / Options menus): drag any button anywhere, remove buttons or add any of the game's menu buttons to any menu, set the badge size and bar colour, change the menu words and the pictures, or apply a whole theme like <b>Neon Nights</b>. The layout is saved into the game's program (RCT3plus.exe), copied first and restorable like every other file.</p>`, before: () => setMode('gui') },
   ];
   function tour(force) { if (root.style.display === 'none' || tourRunning()) return; runTour('texgui', TOUR, { force }); }
   $('#tg-tour', root).onclick = () => tour(true);
@@ -1471,27 +1471,33 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   }
 
   // ---- front screen designer: the game's main menus ------------------------------------------------------------------
-  // The front screen is drawn by code (RCT3plus.exe): every menu's buttons sit on an arc round the big circle, the
-  // centre of button n at (734 + r cos a, 239.5 - r sin a) of a 1024 x 768 layout, a = first + step x n (see
-  // frontscreen.py). The preview puts the game's own pictures where the game does and the buttons where those numbers say.
+  // The front screen is drawn by code (RCT3plus.exe). Every menu shows its buttons on the game's 5 places (slot n:
+  // the badge, the bar with its words behind it and the slide-in all follow the place), shared by every menu. With the
+  // designer's code cave each place can be anywhere and each menu can hold any of the game's 15 menu buttons (see
+  // frontscreen.py). Coordinates are the game's 1024 x 768 layout.
   const MAIN = 'Main.common.ovl';
-  const MENUS = {
-    main: { title: 'FrontScreen_MainMenu', items: [['Play', 'FrontScreen_Play_TT'], ['Designers', 'FrontScreen_Tools_TT'], ['Options', 'FrontScreen_Options_TT']] },
-    play: { title: 'FrontScreen_PlayMenu', items: [['Tutorial', 'FrontScreen_Tutorial_TT'], ['Career', 'FrontScreen_Career_TT'], ['Sandbox', 'FrontScreen_Sandbox_TT'], ['StartSandbox', 'FrontScreen_LoadScenario_TT']] },
-    tools: { title: 'FrontScreen_ToolMenu', items: [['PersonDesigner', 'FrontScreen_PeopleDesigner_TT'], ['ScenarioEditor', 'FrontScreen_ScenarioEditor_TT'], ['CoasterEditor', 'FrontScreen_CoasterDesigner_TT'], ['BuildingDesigner', 'FrontScreen_BuildingDesigner_TT']] },
-    sandbox: { title: 'FrontScreen_SandboxMenu', items: [['NewScenario', 'FrontScreen_New_TT'], ['Load', 'FrontScreen_Load_TT']] },
-  };
-  const MENU_NAMES = { main: 'Main menu', play: 'Play', tools: 'Tools', sandbox: 'Sandbox' };
+  const TITLES = { main: 'FrontScreen_MainMenu', play: 'FrontScreen_PlayMenu', tools: 'FrontScreen_ToolMenu', sandbox: 'FrontScreen_SandboxMenu', custom: 'FrontScreen_SandboxMenu' };
+  const MENU_NAMES = { main: 'Main menu', play: 'Play', tools: 'Tools', sandbox: 'Sandbox', custom: 'Custom scenario' };
   const PICTURES = [['FrontEndBG1', 'Background (left, main menu)'], ['FrontEndBG1b', 'Background (left, other menus)'], ['FrontEndBG2', 'Bottom bar'],
     ['FrontEndBG3', 'Circle quarters'], ['FrontEndBG4', 'Pieces over the circle'], ['FrontEndLogo', 'The big picture'], ['FrontEndParts', 'Logo, badges, bar ends, crowd'],
     ['FrontEndIcons', 'Button icons'], ['GUI2Main2', 'Expansion badges']];
-  const W = 1280, H = 800, SX = W / 1024, SY = H / 768;
-  const F = { menu: 'main', L: null, vals: {}, colour: 0, tex: {}, icons: null, texts: null, lang: null, words: new Map(), drag: null };
+  const W = 1280, H = 800, SX = W / 1024, SY = H / 768, NPL = 5, CX = 734, CY = 239.5;
+  const F = { menu: 'main', L: null, vals: {}, colour: 0, places: [], lists: {}, tex: {}, icons: null, texts: null, lang: null, words: new Map(), drag: null };
+  // not '#tg .stage canvas' (absolute at the top left, over the menu tabs): sized to fit its box, kept 1280:800
   const fcv = document.createElement('canvas'); fcv.width = W; fcv.height = H;
-  fcv.style.cssText = 'max-width:100%;max-height:100%;margin:auto;display:block;cursor:default;border-radius:6px;box-shadow:0 2px 16px #0008';
+  fcv.style.cssText = 'position:static;inset:auto;margin:auto;display:block;flex:none;cursor:default;border-radius:6px;box-shadow:0 2px 16px #0008';
+  const fitFront = new ResizeObserver(es => { for (const e of es) { const { width: w, height: h } = e.contentRect, k = Math.max(0.05, Math.min(w / W, h / H)); fcv.style.width = W * k + 'px'; fcv.style.height = H * k + 'px'; } });
   const deg = r => r * 180 / Math.PI, rad = d => d * Math.PI / 180;
   const argbCss = c => '#' + ((c >>> 0) & 0xffffff).toString(16).padStart(6, '0');
-  const fdirty = () => F.L && (F.L.params.some(p => Math.abs(F.vals[p.key] - p.value) > 1e-6) || F.colour !== F.L.colour);
+  const M = () => F.L.menus;
+  const sameLists = (a, b) => Object.keys(MENU_NAMES).every(m => (a[m] || []).join() === (b[m] || []).join());
+  const placesDirty = () => F.places.some((p, n) => Math.hypot(p[0] - M().places[n][0], p[1] - M().places[n][1]) > 0.05);
+  const menusDirty = () => placesDirty() || !sameLists(F.lists, M().menus);
+  const fdirty = () => F.L && (F.L.params.some(p => Math.abs(F.vals[p.key] - p.value) > 1e-6) || F.colour !== F.L.colour || menusDirty());
+  function takeLayout() {
+    F.vals = Object.fromEntries(F.L.params.map(p => [p.key, p.value])); F.colour = F.L.colour >>> 0;
+    F.places = M().places.map(p => [...p]); F.lists = Object.fromEntries(Object.keys(MENU_NAMES).map(m => [m, [...(M().menus[m] || [])]]));
+  }
 
   async function openFront() {
     G.front = true; G.ovl = null; G.lang = null; renderLeft(); renderTabs();
@@ -1502,15 +1508,15 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       F.L = await fetch('/api/tx/menu').then(r => r.json());
       if (F.L.error) throw new Error(F.L.error);
     } catch (e) { panel.innerHTML = `<div class="empty">The front screen designer needs the game's program (RCT3plus.exe) in the game folder: ${esc(e.message)}</div>`; renderRight(); return; }
-    F.vals = Object.fromEntries(F.L.params.map(p => [p.key, p.value])); F.colour = F.L.colour >>> 0;
+    takeLayout();
     if (!F.icons) F.icons = await fetch('/api/tx/icons?path=' + encodeURIComponent(MAIN)).then(r => r.json());
     F.lang = S.gui?.texts.find(o => /english\.common\.ovl$/i.test(o.path))?.path || S.gui?.texts[0]?.path;
     if (F.lang && !F.texts) F.texts = await fetch('/api/tx/texts?path=' + encodeURIComponent(F.lang)).then(r => r.json());
     await loadFrontTextures();
     panel.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column">
-      <div class="ctool"><span class="title">Front screen</span>${Object.entries(MENU_NAMES).map(([k, v]) => `<button data-m="${k}">${v}</button>`).join('')}<span style="flex:1"></span><small style="color:var(--dim)">drag a button to move the arc · the second one sets the spacing</small></div>
-      <div style="flex:1;min-height:0;padding:12px;display:flex" id="fs-stage"></div></div>`;
-    $('#fs-stage', panel).appendChild(fcv);
+      <div class="ctool"><span class="title">Front screen</span>${Object.entries(MENU_NAMES).map(([k, v]) => `<button data-m="${k}">${v}</button>`).join('')}<span style="flex:1"></span><small style="color:var(--dim)">drag a button (or an empty place) anywhere · places are shared by every menu</small></div>
+      <div style="flex:1;min-height:0;padding:12px;display:flex;overflow:hidden" id="fs-stage"></div></div>`;
+    $('#fs-stage', panel).appendChild(fcv); fitFront.disconnect(); fitFront.observe($('#fs-stage', panel));
     panel.querySelectorAll('button[data-m]').forEach(b => b.onclick = () => { F.menu = b.dataset.m; drawFront(); markMenu(); renderRight(); });
     markMenu(); drawFront(); renderRight();
   }
@@ -1521,9 +1527,10 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   }
   const iconRect = n => F.icons?.find(g => g.name === n)?.rect;
   const word = k => F.words.get(k) ?? F.texts?.find(t => t.name === k)?.text ?? '';
-  function arc(group, n) {
-    const r = F.vals[group + '_r'], a = F.vals[group + '_start'] + F.vals[group + '_step'] * n;
-    return [734 + r * Math.cos(a), 239.5 - r * Math.sin(a)];
+  const btn = k => M().buttons[k];
+  function cornerAt(s) {
+    const r = F.vals.corner_r, a = F.vals.corner_start + F.vals.corner_step * s;
+    return [CX + r * Math.cos(a), CY - r * Math.sin(a)];
   }
   function drawFront() {
     const g = fcv.getContext('2d'), T = F.tex;
@@ -1542,52 +1549,52 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     img('GUI2Main2', 320, 0, 100, 100, 762, 624, 72, 86); img('GUI2Main2', 320, 100, 100, 100, 892, 597, 72, 86);
     // the menu's title in the bottom bar
     g.fillStyle = '#000'; g.font = '700 22px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(word(MENUS[F.menu].title), 512, 724);
+    g.fillText(word(TITLES[F.menu]), 512, 724);
     // Back / Quit (type 4, slots 4 and 5) on the main menu's corner arc
-    for (const s of [4, 5]) { const [x, y] = arc('corner', s); g.fillStyle = '#4aa0e0'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 15, 0, 7); g.fill(); g.stroke(); }
+    for (const s of [4, 5]) { const [x, y] = cornerAt(s); g.fillStyle = '#4aa0e0'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 15, 0, 7); g.fill(); g.stroke(); }
+    // the 5 places: an empty one is a numbered marker (still draggable - other menus use it)
+    const size = F.vals.menu_size, items = F.lists[F.menu];
+    F.places.forEach(([x, y], n) => {
+      if (items[n]) return;
+      g.strokeStyle = '#fffa'; g.setLineDash([5, 5]); g.lineWidth = 2; g.beginPath(); g.arc(x, y, size / 2, 0, 7); g.stroke(); g.setLineDash([]);
+      g.fillStyle = '#fffc'; g.font = '700 20px Arial'; g.fillText(n + 1, x, y);
+    });
     // the menu's buttons: bar (the code's colour), its rounded end and slant (FrontEndParts), the badge and the icon
-    const size = F.vals.menu_size, items = MENUS[F.menu].items;
-    items.forEach(([icon, text], n) => {
-      const [x, y] = arc('menu', n), h = 94, bw = 226;
+    items.forEach((key, n) => {
+      const [x, y] = F.places[n], h = 94, bw = 226, b = btn(key), text = b.text;
       g.fillStyle = argbCss(F.colour);
       g.beginPath(); g.moveTo(x, y - h / 2); g.lineTo(x + bw, y - h / 2); g.lineTo(x + bw + 22, y + h / 2); g.lineTo(x, y + h / 2); g.fill();
       img('FrontEndParts', 90, 2, 95, 97, x - size * 0.6, y - h / 2, 95 * h / 97, h);
       img('FrontEndParts', 186, 2, 78, 80, x - size / 2, y - size / 2, size, size);
-      const r = iconRect('FrontScreen_Icon_' + icon), k = size * 0.684;
+      const r = iconRect('FrontScreen_Icon_' + b.icon), k = size * 0.684;
       if (r) img('FrontEndIcons', r[0], r[1], r[2] - r[0], r[3] - r[1], x - k / 2, y - k / 2, k, k);
       g.fillStyle = '#000'; g.font = '700 22px Arial';
       const lines = word(text).split(/\s+/), two = lines.length > 1 && word(text).length > 9;
       if (two) { const m = Math.ceil(lines.length / 2); g.fillText(lines.slice(0, m).join(' '), x + 130, y - 13); g.fillText(lines.slice(m).join(' '), x + 130, y + 13); }
       else g.fillText(word(text), x + 130, y);
+      g.fillStyle = '#000a'; g.beginPath(); g.arc(x - size / 2 + 8, y - size / 2 + 8, 10, 0, 7); g.fill();
+      g.fillStyle = '#fff'; g.font = '700 13px Arial'; g.fillText(n + 1, x - size / 2 + 8, y - size / 2 + 8);
       if (F.drag?.n === n) { g.strokeStyle = '#fff'; g.setLineDash([6, 4]); g.lineWidth = 2; g.strokeRect(x - size / 2 - 4, y - size / 2 - 4, size + 8, size + 8); g.setLineDash([]); }
     });
-    // the arc the buttons follow
-    g.strokeStyle = '#fff8'; g.setLineDash([4, 6]); g.lineWidth = 1.5; g.beginPath(); g.arc(734, 239.5, Math.abs(F.vals.menu_r), 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
-    g.fillStyle = '#fff'; g.beginPath(); g.arc(734, 239.5, 4, 0, 7); g.fill();
     g.setTransform(1, 0, 0, 1, 0, 0);
   }
   function fpos(e) { const b = fcv.getBoundingClientRect(); return [(e.clientX - b.left) * W / b.width / SX, (e.clientY - b.top) * H / b.height / SY]; }
   function fhit(x, y) {
-    const items = MENUS[F.menu].items;
-    for (let n = items.length - 1; n >= 0; n--) { const [bx, by] = arc('menu', n); if (x > bx - F.vals.menu_size / 2 && x < bx + 250 && Math.abs(y - by) < 47) return n; }
+    const items = F.lists[F.menu], half = F.vals.menu_size / 2;
+    for (let n = NPL - 1; n >= 0; n--) {
+      const [bx, by] = F.places[n];
+      if (items[n] ? x > bx - half && x < bx + 250 && Math.abs(y - by) < 47 : Math.hypot(x - bx, y - by) < half) return n;
+    }
     return -1;
   }
   fcv.addEventListener('pointerdown', e => {
     const [x, y] = fpos(e), n = fhit(x, y); if (n < 0) return;
-    const [bx, by] = arc('menu', n); F.drag = { n, dx: x - bx, dy: y - by }; fcv.setPointerCapture(e.pointerId); drawFront();
+    const [bx, by] = F.places[n]; F.drag = { n, dx: x - bx, dy: y - by }; fcv.setPointerCapture(e.pointerId); drawFront();
   });
   fcv.addEventListener('pointermove', e => {
     const [x, y] = fpos(e);
     if (!F.drag) { fcv.style.cursor = fhit(x, y) >= 0 ? 'grab' : 'default'; return; }
-    const cx = x - F.drag.dx - 734, cy = 239.5 - (y - F.drag.dy), a = Math.atan2(cy, cx);
-    if (F.drag.n === 0) {                     // the first button: distance and first angle (the others follow)
-      F.vals.menu_r = Math.round(Math.hypot(cx, cy));
-      let s = a; while (s - F.vals.menu_start > Math.PI) s -= 2 * Math.PI; while (F.vals.menu_start - s > Math.PI) s += 2 * Math.PI;
-      F.vals.menu_start = +s.toFixed(4);
-    } else {                                  // another button: the spacing
-      let d = a - F.vals.menu_start; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
-      F.vals.menu_step = +(d / F.drag.n).toFixed(4);
-    }
+    F.places[F.drag.n] = [Math.round(Math.min(1124, Math.max(-100, x - F.drag.dx))), Math.round(Math.min(868, Math.max(-100, y - F.drag.dy)))];
     drawFront(); syncFrontInputs();
   });
   fcv.addEventListener('pointerup', () => { if (F.drag) { F.drag = null; drawFront(); renderRight(); } });
@@ -1595,29 +1602,60 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   function syncFrontInputs() {
     const el = $('#gu-right', P.right);
     el.querySelectorAll('input[data-k]').forEach(i => { const p = F.L.params.find(q => q.key === i.dataset.k); const v = p.angle ? deg(F.vals[p.key]) : F.vals[p.key]; if (document.activeElement !== i) i.value = +v.toFixed(p.angle ? 2 : 1); });
+    el.querySelectorAll('input[data-pl]').forEach(i => { const [n, c] = i.dataset.pl.split(',').map(Number); if (document.activeElement !== i) i.value = Math.round(F.places[n][c]); });
     const s = $('#fs-state', el); if (s) s.textContent = fdirty() ? 'Changed - not saved into the game yet.' : (F.L.changed ? 'Saved in the game.' : "The game's own layout.");
     const b = $('#fs-save', el); if (b) b.disabled = !fdirty();
   }
   function frontRight(el) {
     if (!F.L) { el.innerHTML = '<h3>Front screen</h3>'; return; }
-    const grp = gk => F.L.params.filter(p => p.group === gk).map(p => `<label class="fs-row" title="the game's own: ${p.angle ? deg(p.orig).toFixed(2) + '°' : p.orig}">
-      <span>${esc(p.label)}</span><input type="number" data-k="${p.key}" step="${p.angle ? 0.5 : 1}" value="${+(p.angle ? deg(F.vals[p.key]) : F.vals[p.key]).toFixed(p.angle ? 2 : 1)}">${p.angle ? '°' : ''}</label>`).join('');
-    const items = MENUS[F.menu].items;
-    el.innerHTML = `<style>#gu-right .fs-row{display:grid;grid-template-columns:1fr 84px 12px;gap:6px;align-items:center;margin:3px 0;font-size:12px}#gu-right .fs-row input{width:100%}</style>
+    const row = p => `<label class="fs-row" title="the game's own: ${p.angle ? deg(p.orig).toFixed(2) + '°' : p.orig}">
+      <span>${esc(p.label)}</span><input type="number" data-k="${p.key}" step="${p.angle ? 0.5 : 1}" value="${+(p.angle ? deg(F.vals[p.key]) : F.vals[p.key]).toFixed(p.angle ? 2 : 1)}">${p.angle ? '°' : ''}</label>`;
+    const grp = gk => F.L.params.filter(p => p.group === gk).map(row).join('');
+    const par = k => row(F.L.params.find(p => p.key === k));
+    const items = F.lists[F.menu], where = k => Object.keys(MENU_NAMES).find(m => F.lists[m].includes(k));
+    const addable = Object.keys(M().buttons).filter(k => !items.includes(k));
+    el.innerHTML = `<style>#gu-right .fs-row{display:grid;grid-template-columns:1fr 84px 12px;gap:6px;align-items:center;margin:3px 0;font-size:12px}#gu-right .fs-row input{width:100%}
+      #gu-right .fs-item{display:grid;grid-template-columns:18px 1fr auto;gap:6px;align-items:center;margin:3px 0;font-size:12px}#gu-right .fs-item .n{color:var(--dim);text-align:right}
+      #gu-right .fs-item button{padding:1px 6px;min-width:0}#gu-right .fs-pl{display:grid;grid-template-columns:1fr 70px 70px;gap:6px;align-items:center;margin:3px 0;font-size:12px}#gu-right .fs-pl input{width:100%}</style>
       <h3>Layout</h3><div class="sec"><div class="note" id="fs-state"></div>
         <div class="btns"><button class="primary" id="fs-save">Save into game</button><button id="fs-undo">Undo changes</button></div>
-        <div class="btns"><button id="fs-reset" title="Every number and the bar colour back to the game's own (saved into the game)">Game's own layout</button></div>
+        <div class="btns"><button id="fs-reset" title="Every place, menu, number and the bar colour back to the game's own (saved into the game)">Game's own layout</button></div>
         <div class="note">Saved into the game's program (RCT3plus.exe); it is copied first and <b>Changed files</b> puts it back. Close the game before saving.</div></div>
-      <h3>${esc(F.L.groups.menu)}</h3><div class="sec">${grp('menu')}
+      <h3>Buttons · ${esc(MENU_NAMES[F.menu])}</h3><div class="sec">
+        ${items.map((k, n) => `<div class="fs-item"><span class="n">${n + 1}</span><span>${esc(btn(k).label)}</span><span><button data-up="${n}" ${n ? '' : 'disabled'} title="Earlier (place ${n})">↑</button><button data-down="${n}" ${n < items.length - 1 ? '' : 'disabled'} title="Later (place ${n + 2})">↓</button><button data-del="${n}" title="Remove from this menu">✕</button></span></div>`).join('') || '<div class="note">No buttons in this menu.</div>'}
+        <div class="fs-item" style="grid-template-columns:1fr auto;margin-top:8px"><select id="fs-addk" ${items.length >= NPL ? 'disabled' : ''}>${addable.map(k => { const m = where(k); return `<option value="${k}">${esc(btn(k).label)}${m ? ` (moves from ${MENU_NAMES[m]})` : ' (removed)'}</option>`; }).join('')}</select><button id="fs-add" ${items.length >= NPL || !addable.length ? 'disabled' : ''}>Add button</button></div>
+        <div class="note">A button works as it does in the game wherever it sits: <b>Play</b> opens the Play menu, <b>Coaster designer</b> starts the coaster designer, and so on. Each game button can be in one menu at a time (adding it here takes it out of the other menu), and a menu holds up to ${NPL} (the game's ${NPL} places). A removed button is not shown anywhere.</div></div>
+      <h3>Places</h3><div class="sec">
+        ${F.places.map(([x, y], n) => `<div class="fs-pl"><span>Place ${n + 1}</span><input type="number" data-pl="${n},0" value="${Math.round(x)}" title="x (0-1024)"><input type="number" data-pl="${n},1" value="${Math.round(y)}" title="y (0-768)"></div>`).join('')}
+        <div class="note">Where each place's badge sits (x 0-1024, y 0-768: the game stretches this to the window). Every menu puts its first button on place 1, its second on place 2 and so on; the bar with the button's words follows its badge.</div>
+        ${par('menu_size')}
         <label class="fs-row"><span>Bar colour</span><input type="color" id="fs-colour" value="${argbCss(F.colour)}"><span></span></label>
-        <div class="note">One arc for every menu: the main menu, Play, Tools and Sandbox use its first 2-4 places. Angles count anticlockwise from the right (180° = straight left of the circle's centre).</div></div>
-      <h3>Menu words · ${esc(MENU_NAMES[F.menu])}</h3><div class="sec">${[MENUS[F.menu].title, ...items.map(i => i[1])].map(k => { const t = F.texts?.find(x => x.name === k); return t ? `<label class="fs-row" style="grid-template-columns:1fr 130px 32px"><span style="color:var(--dim);font-size:11px">${esc(k.replace(/^FrontScreen_/, '').replace(/_TT$/, ''))}</span><input type="text" data-w="${k}" maxlength="${t.max}" value="${esc(word(k))}"><small>${t.max}</small></label>` : ''; }).join('')}
+        <details style="margin-top:6px"><summary style="cursor:pointer;color:var(--dim)">Put the places on an arc</summary>${par('menu_r')}${par('menu_start')}${par('menu_step')}
+          <div class="btns"><button id="fs-arc">Put the 5 places on this arc</button></div><div class="note">The game's own way: an arc round the big circle. Angles count anticlockwise from the right (180° = straight left of the circle's centre). The arc numbers also place profile and tutorial lists past place ${NPL}.</div></details></div>
+      <h3>Menu words · ${esc(MENU_NAMES[F.menu])}</h3><div class="sec">${[...new Set([TITLES[F.menu], ...items.map(k => btn(k).text)])].map(k => { const t = F.texts?.find(x => x.name === k); return t ? `<label class="fs-row" style="grid-template-columns:1fr 130px 32px"><span style="color:var(--dim);font-size:11px">${esc(k.replace(/^FrontScreen_/, '').replace(/_TT$/, ''))}</span><input type="text" data-w="${k}" maxlength="${t.max}" value="${esc(word(k))}"><small>${t.max}</small></label>` : ''; }).join('')}
         <div class="btns"><button id="fs-words" ${F.words.size ? '' : 'disabled'}>Save words</button></div><div class="note">A word can be as long as the game's own (the number). Help lines and other texts: <b>Menu text</b> on the left.</div></div>
       <h3>Pictures</h3><div class="sec">${PICTURES.map(([n, label]) => `<div class="li" data-pic="${n}" style="padding-left:6px">🖼 ${esc(label)}<small>${n}</small></div>`).join('')}
         <div class="note">Opens it in the Texture Editor (paint, import a picture, save). The pieces keep their size and place.</div></div>
       <h3>Themes</h3><div class="sec">${(F.L.themes || []).map(t => `<div style="margin:4px 0"><b>${esc(t.title)}</b><div class="note">${esc(t.about)}</div><div class="btns"><button data-theme="${t.name}">Apply ${esc(t.title)}</button></div></div>`).join('')}</div>
       <h3>${esc(F.L.groups.corner)}, lists, tutorial</h3><div class="sec"><details><summary style="cursor:pointer;color:var(--dim)">More numbers</summary>${grp('corner')}<div class="grp" style="margin-top:6px">${esc(F.L.groups.list)}</div>${grp('list')}<div class="grp" style="margin-top:6px">${esc(F.L.groups.tutorial)}</div>${grp('tutorial')}</details></div>`;
     el.querySelectorAll('input[data-k]').forEach(i => i.oninput = () => { const p = F.L.params.find(q => q.key === i.dataset.k); const v = +i.value; if (!isFinite(v)) return; F.vals[p.key] = p.angle ? rad(v) : v; drawFront(); syncFrontInputs(); });
+    el.querySelectorAll('input[data-pl]').forEach(i => i.oninput = () => { const [n, c] = i.dataset.pl.split(',').map(Number), v = +i.value; if (!isFinite(v) || i.value === '') return; F.places[n][c] = v; drawFront(); syncFrontInputs(); });
+    const relist = fn => { fn(F.lists[F.menu]); drawFront(); renderRight(); };
+    el.querySelectorAll('[data-up]').forEach(b => b.onclick = () => relist(l => { const n = +b.dataset.up; [l[n - 1], l[n]] = [l[n], l[n - 1]]; }));
+    el.querySelectorAll('[data-down]').forEach(b => b.onclick = () => relist(l => { const n = +b.dataset.down; [l[n + 1], l[n]] = [l[n], l[n + 1]]; }));
+    el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+      if (F.menu === 'main' && F.lists.main.length === 1) return toast('The main menu needs at least one button', true);
+      relist(l => l.splice(+b.dataset.del, 1));
+    });
+    $('#fs-add', el).onclick = () => {
+      const k = $('#fs-addk', el).value; if (!k) return;
+      const from = where(k);
+      if (from === 'main' && F.lists.main.length === 1) return toast('The main menu needs at least one button', true);
+      if (from) F.lists[from] = F.lists[from].filter(x => x !== k);
+      relist(l => l.push(k));
+      if (from) toast(`${btn(k).label} moved here from ${MENU_NAMES[from]}`);
+    };
+    $('#fs-arc', el).onclick = () => { for (let n = 0; n < NPL; n++) { const a = F.vals.menu_start + F.vals.menu_step * n; F.places[n] = [+(CX + F.vals.menu_r * Math.cos(a)).toFixed(2), +(CY - F.vals.menu_r * Math.sin(a)).toFixed(2)]; } drawFront(); renderRight(); };
     $('#fs-colour', el).oninput = e => { F.colour = (0xff000000 | parseInt(e.target.value.slice(1), 16)) >>> 0; drawFront(); syncFrontInputs(); };
     el.querySelectorAll('input[data-w]').forEach(i => i.oninput = () => { const t = F.texts.find(x => x.name === i.dataset.w); if (i.value === t.text) F.words.delete(t.name); else F.words.set(t.name, i.value); $('#fs-words', el).disabled = !F.words.size; drawFront(); });
     $('#fs-words', el).onclick = async () => {
@@ -1626,15 +1664,17 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       catch (e) { toast('Could not save: ' + e.message, true); }
     };
     $('#fs-save', el).onclick = async () => {
-      if (!S.edits['RCT3plus.exe'] && !await confirmBox('Save into the game', "This writes the menus' layout and bar colour into the game's program, <b>RCT3plus.exe</b>. The original is copied first; <b>Changed files</b> puts it back. Close the game before saving.", 'Save into game')) return;
+      if (!S.edits['RCT3plus.exe'] && !await confirmBox('Save into the game', "This writes the menus' layout, their buttons and the bar colour into the game's program, <b>RCT3plus.exe</b>. The original is copied first; <b>Changed files</b> puts it back. Close the game before saving.", 'Save into game')) return;
       const values = Object.fromEntries(F.L.params.filter(p => Math.abs(F.vals[p.key] - p.value) > 1e-6).map(p => [p.key, F.vals[p.key]]));
-      try { const r = await post('/api/tx/menu', { values, colour: F.colour !== F.L.colour ? F.colour : null }); F.L = { ...F.L, ...r }; setEdits((await fetch('/api/tx/gui').then(r => r.json())).edits); toast('Saved the layout into RCT3plus.exe'); renderRight(); }
+      const body = { values, colour: F.colour !== F.L.colour ? F.colour : null };
+      if (menusDirty()) Object.assign(body, { places: F.places, menus: F.lists });
+      try { const r = await post('/api/tx/menu', body); F.L = { ...F.L, ...r }; takeLayout(); setEdits((await fetch('/api/tx/gui').then(r => r.json())).edits); toast('Saved the layout into RCT3plus.exe'); drawFront(); renderRight(); }
       catch (e) { toast('Could not save: ' + e.message, true); }
     };
-    $('#fs-undo', el).onclick = () => { F.vals = Object.fromEntries(F.L.params.map(p => [p.key, p.value])); F.colour = F.L.colour >>> 0; drawFront(); renderRight(); };
+    $('#fs-undo', el).onclick = () => { takeLayout(); drawFront(); renderRight(); };
     $('#fs-reset', el).onclick = async () => {
-      if (!await confirmBox("Game's own layout", "Put every menu number and the bar colour back to the game's own, in RCT3plus.exe?", 'Reset')) return;
-      try { const r = await post('/api/tx/menu/reset', {}); F.L = { ...F.L, ...r }; F.vals = Object.fromEntries(F.L.params.map(p => [p.key, p.value])); F.colour = F.L.colour >>> 0; setEdits((await fetch('/api/tx/gui').then(r => r.json())).edits); toast("The game's own layout is back"); drawFront(); renderRight(); }
+      if (!await confirmBox("Game's own layout", "Put every place, every menu's buttons, every number and the bar colour back to the game's own, in RCT3plus.exe?", 'Reset')) return;
+      try { const r = await post('/api/tx/menu/reset', {}); F.L = { ...F.L, ...r }; takeLayout(); setEdits((await fetch('/api/tx/gui').then(r => r.json())).edits); toast("The game's own layout is back"); drawFront(); renderRight(); }
       catch (e) { toast(e.message, true); }
     };
     el.querySelectorAll('[data-pic]').forEach(d => d.onclick = () => openTexture(MAIN, d.dataset.pic + ':tex'));

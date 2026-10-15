@@ -311,13 +311,20 @@ def _exe_offset(exe: bytes, va: int) -> int:
 
 def patch_exe(lib, name: str, patches: list[dict], what: str) -> dict:
     """Values written into the game's program (front-screen layout and colours: see examples/neon_nights).
-    patches: [{va, f32 | u32, old (optional, checked)}]. The original is copied first; restore() puts it back."""
+    patches: [{va | off (a file offset: the PE header), f32 | u32 | hex (bytes), old (optional, checked)}]. The
+    original is copied first; restore() puts it back."""
     if os.path.basename(name) != name or not name.lower().endswith('.exe'):
         raise ValueError('not the game program')
     p = os.path.join(lib.root, name)
     d = bytearray(open(p, 'rb').read())
     for x in patches:
-        o = _exe_offset(d, int(x['va']))
+        o = int(x['off']) if 'off' in x else _exe_offset(d, int(x['va']))
+        if 'hex' in x:
+            v = bytes.fromhex(x['hex'])
+            if o + len(v) > len(d):
+                raise ValueError(f'{o:#x} is past the end of {name}')
+            d[o:o + len(v)] = v
+            continue
         fmt, v = ('<f', float(x['f32'])) if 'f32' in x else ('<I', int(x['u32']))
         if 'old' in x and abs(struct.unpack_from(fmt, d, o)[0] - x['old']) > 1e-4:
             raise ValueError(f"{int(x['va']):#x} does not hold {x['old']} - a different version of {name}?")

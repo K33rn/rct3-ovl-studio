@@ -845,3 +845,34 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   scratch copy (fstest.py backend, tfront.py UI): set / bad value refused / reset byte-identical / theme twice
   (second needs restore_main) / restore all byte-identical; UI drag -> save -> menus -> reset -> restore, no page
   errors. Race fixed: openOvl's icons arriving after another item was opened.
+
+## 2026-10-15: GUI Editor fixes - preview over the menu tabs; free places, remove / add menu buttons
+- Preview overlap (user screenshots): '#tg .stage canvas {position:absolute; inset:0}' also caught the designer's
+  canvas, pinning it to the panel's top-left over the menu tabs at its full 1280 x 800. Now position:static, sized
+  by a ResizeObserver to fit #fs-stage (checked at 1920 x 950 and 1280 x 680).
+- (Launch "detects nothing" report: not reproducible here - both installs and a fresh zip extract index 7,484 pairs;
+  no cache file newer than the zip, so it ran on another PC/account. Resolved itself.)
+- Front-screen buttons (RCT3plus.exe, ctor 0xa4c810): widgets in the front object. Panels: main +0x340, Play +0x314,
+  Tools +0x32c, Sandbox +0x250, Custom scenario +0x2b4, Profile +0x230. Buttons: Play 344, Tools 348, Options 350,
+  Tutorial 324, Career 318, Sandbox 320, Custom 328, People 334, Scenario editor 330, Coaster 338, Building 33c,
+  New 254, Load 2ac, custom New 2b8 / Load 310 (Back 358, Exit 354 are type 4). Nav buttons (ctor 0xa476b0, vtable
+  0xf8df70) keep their target panel at +0x13c; click (0xa48c20) closes the parent panel (+0x3c) and opens the target,
+  so they work from any menu. 0xa4a750 (vtable slot) = label text per widget; 0xa49ab0 = hover help line.
+- Placement: 0xa47190 (type, slot, button, icon, menu, flag) parents the button to `menu` and, for type 0, starts it
+  at -1000 with an animator (0xa45370: angle, r, size, ButtonBox [front+0x100+4 slot]) that 0xa50330 runs every frame
+  (open: angle first, then radius; close: radius x2; idle: 1.885 rad / 480). The bar with the words is the per-slot
+  ButtonBox (0xa4bb00 sets its label on open), placed by slot in the ctor loop (0xa4f199) and on resize (0xa47d62).
+  Resize (0xa47d30) puts type-0 buttons at -1000 (0xa457a0 type 0, flag 0) - the animator owns them.
+- Code cave in .text's zero tail (0xf25d00; VirtualSize 0xb24ce5 -> 0xb25000): angle(type 0, slot < 5) via
+  jump-table entry 0xa452c0 -> ANG[slot]; the 4 calls of r() (0xa457ab, 0xa47285, 0xa47d79, 0xa4f18b) -> stubs that
+  know where their slot is -> RAD[slot]. Each button's 0xa47190 call: slot byte, menu disp32 in its mov, and target
+  (SKIP stub 'ret 0x18' = removed, never parented, not shown). Angles are kept within pi of 1.885 so the slide-in
+  takes the short way.
+- In the game (Steam, Neon v2): places (160,140) (470,520) (880,640); main = RIDE, Coaster Designer (moved from Tools),
+  BUILD; Options removed - all three showed with bars where set, Options gone; Coaster Designer opened the coaster
+  designer; RIDE opened the Play menu on the same places. Place 3 at (880,640) sits under the Wild expansion badge
+  (clicks hit the badge). Steam exe put back after (menus uninstalled, Neon layout kept).
+- Tests on copies: set / read back / 5 refusals / second set / reset_layout and reset_menus byte-identical / restore;
+  UI (drag, remove, add with "moves from", save, read back, Game's own layout -> md5 of the original), no page errors.
+- Limit: a game button is one widget, so it can be in one menu at a time (copies would need new widgets built in the
+  ctor - possible for nav buttons, not done).

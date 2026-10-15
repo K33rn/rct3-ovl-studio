@@ -352,7 +352,10 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     if u.path == '/api/tx/text':
                         return self.js(tx.set_text(lib, body['path'], body['name'], body['text']))
                     if u.path == '/api/tx/menu':
-                        return self.js(frontscreen.set_layout(lib, body.get('values', {}), body.get('colour')))
+                        r = frontscreen.set_layout(lib, body.get('values', {}), body.get('colour'))
+                        if body.get('places') is not None:      # free places and each menu's buttons
+                            r = frontscreen.set_menus(lib, body['places'], body['menus'])
+                        return self.js(r)
                     if u.path == '/api/tx/menu/reset':
                         return self.js(frontscreen.reset_layout(lib))
                     if u.path == '/api/tx/menu/theme':

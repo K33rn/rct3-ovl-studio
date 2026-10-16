@@ -89,6 +89,74 @@ export function createRibbons(scene, max = 8000) {
   };
 }
 
+// ---- burn trails: a particle's last positions as one camera-facing strip (RCT3plus.exe 0x9d0170) -----------------
+// Each point keeps the colour the particle had when it passed; the strip is Burn Size wide, turned to face the camera
+// about the path through its neighbours (the game averages the two segments' sides at a point), and textured with
+// BurnTrail (a soft round glow) from its middle row at the newest point (v 0.5) to its edge at the oldest (v 1):
+// bright at the particle, fading out behind it and towards its sides. Added (ParticleBurnTrail).
+export function createTrails(scene, map, max = 30000) {
+  const g = new THREE.BufferGeometry();
+  const A = (name, n) => { const a = new THREE.BufferAttribute(new Float32Array(max * 4 * n), n); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(name, a); return a; };
+  const at = { p: A('position', 3), t: A('aT', 3), s: A('aS', 2), col: A('aCol', 3) };
+  const idx = new Uint32Array(max * 6);
+  for (let i = 0; i < max; i++) idx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3], i * 6);
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  const vs = `attribute vec3 aT; attribute vec2 aS; attribute vec3 aCol; uniform float level; varying vec2 vUv; varying vec3 vCol;
+    void main() {
+      vec3 p = position, t = aT;
+    #ifdef MIRROR
+      p.y = 2.0 * level - p.y; t.y = -t.y;
+    #endif
+      vec3 P = (modelViewMatrix * vec4(p, 1.0)).xyz, T = (modelViewMatrix * vec4(t, 0.0)).xyz;
+      vec3 n = cross(T, normalize(-P)); n = length(n) > 1e-6 ? normalize(n) : vec3(1.0, 0.0, 0.0);
+      float side = aS.x > 0.0 ? 1.0 : -1.0;
+      P += n * aS.x * 0.5;                                   // aS.x = +-width
+      gl_Position = projectionMatrix * vec4(P, 1.0);
+      vUv = vec2(side * 0.5 + 0.5, aS.y); vCol = aCol;
+    }`;
+  const fs = `uniform sampler2D map; uniform float gain; varying vec2 vUv; varying vec3 vCol;
+    void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb * vCol * gain, 1.0); }`;
+  const mat = mirror => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fs,
+    uniforms: { map: { value: map }, level: { value: 0 }, gain: { value: mirror ? 0.35 : 1 } },
+    defines: mirror ? { MIRROR: 1 } : {}, transparent: true, depthWrite: false, depthTest: !mirror, side: THREE.DoubleSide,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendEquation: THREE.AddEquation,
+    ...(mirror ? { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilZPass: THREE.KeepStencilOp, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp } : {}) });
+  const mesh = new THREE.Mesh(g, mat(false)); mesh.frustumCulled = false; mesh.renderOrder = 4; scene.add(mesh);
+  const mirror = new THREE.Mesh(g, mat(true)); mirror.frustumCulled = false; mirror.renderOrder = 2; mirror.visible = false; scene.add(mirror);
+  let n = 0;
+  const T = [0, 0, 0];
+  const tangent = (pts, k, m) => {               // the path's direction through point k (its neighbours)
+    const a = Math.max(0, k - 1), b = Math.min(m - 1, k + 1);
+    T[0] = pts[b * 6] - pts[a * 6]; T[1] = pts[b * 6 + 1] - pts[a * 6 + 1]; T[2] = pts[b * 6 + 2] - pts[a * 6 + 2];
+    return T;
+  };
+  return {
+    mesh, mirror,
+    begin() { n = 0; },
+    // pts: m points newest first, 6 floats each (x, y, z, r, g, b)
+    add(pts, m, width) {
+      const dv = 0.5 / Math.max(1, m - 1);
+      for (let k = 0; k + 1 < m && n < max; k++, n++) {
+        for (let e = 0; e < 2; e++) {
+          const q = k + e, t = tangent(pts, q, m), v = 0.5 + q * dv, o = q * 6;
+          for (const s of e ? [1, -1] : [-1, 1]) {     // A-, A+ then B+, B-: one quad
+            const i = n * 4 + e * 2 + (e ? (s > 0 ? 0 : 1) : (s < 0 ? 0 : 1));
+            at.p.array.set([pts[o], pts[o + 1], pts[o + 2]], i * 3);
+            at.t.array.set(t, i * 3);
+            at.s.array.set([s * width, v], i * 2);
+            at.col.array.set([pts[o + 3], pts[o + 4], pts[o + 5]], i * 3);
+          }
+        }
+      }
+    },
+    end() {
+      g.setDrawRange(0, n * 6);
+      for (const a of Object.values(at)) { a.needsUpdate = true; a.clearUpdateRanges?.(); a.addUpdateRange?.(0, n * 4 * a.itemSize); }
+    },
+    count: () => n,
+  };
+}
+
 // ---- lasers -----------------------------------------------------------------------------------------------------
 const _v = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 function dirLocal(elev, phi) { return new THREE.Vector3(Math.cos(elev) * Math.cos(phi), Math.sin(elev), Math.cos(elev) * Math.sin(phi)); }

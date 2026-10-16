@@ -13,7 +13,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { createTerrain } from './fw_terrain.js';
-import { createRibbons, drawLaser, jetState, jetDir, defaultLaser, defaultJet } from './fw_effects.js';
+import { createRibbons, createTrails, drawLaser, jetState, jetDir, defaultLaser, defaultJet } from './fw_effects.js';
 import { runTour, markSeen, tourRunning } from './tour.js';
 
 const TILE = 4, GRAVITY = 9.81, MAX_PARTICLES = 40000, MAX_VOICES = 40, D2R = Math.PI / 180;
@@ -372,6 +372,9 @@ async function build() {
   const ribbons = createRibbons(scene);
 
   // ---- particle rendering: instanced camera-facing quads, stretched along velocity (+ a mirrored copy on water) ----
+  // VelStretch as the game does it (RCT3plus.exe 0x9cf24f): the quad stays facing the camera (turned by its spin) and
+  // each corner moves by half of VelStretch x velocity, forward if it lies ahead of the centre along the velocity,
+  // back if behind - in 3D, so a particle flying at the camera hardly stretches on screen
   const pages = {};
   function pageTexture(name) {
     if (!pages[name]) {
@@ -412,12 +415,10 @@ async function build() {
           P.y = 2.0 * level - P.y; V.y = -V.y;
         #endif
           vec4 c = modelViewMatrix * vec4(P, 1.0);
-          vec3 v = (modelViewMatrix * vec4(V, 0.0)).xyz;
-          float L = length(v.xy);
-          vec2 ax = L > 1e-4 ? v.xy / L : vec2(1.0, 0.0);
-          if (iRot != 0.0 && iSize.y < 1e-3) ax = vec2(cos(iRot), sin(iRot));   // a spinning sprite (not stretched)
-          vec2 ay = vec2(-ax.y, ax.x);
-          c.xy += ax * position.x * (iSize.x + iSize.y) + ay * position.y * iSize.x;
+          vec3 v = (modelViewMatrix * vec4(V, 0.0)).xyz;               // velocity x VelStretch
+          float cr = cos(iRot), sr = sin(iRot);
+          vec3 o = vec3(cr * position.x - sr * position.y, sr * position.x + cr * position.y, 0.0) * iSize.x;
+          c.xyz += o + (dot(o, v) < 0.0 ? -0.5 : 0.5) * v;
           gl_Position = projectionMatrix * c;
           vUv = mix(iUV.xy, iUV.zw, position.xy + 0.5);
           vCol = iCol;
@@ -463,7 +464,7 @@ async function build() {
       sndMin: n.SoundMinDist || 70, sndMax: n.SoundMaxDist || 300, spin: n.CameraSpinRate || 0,
       pspin: (n.SpinRateX || n.SpinRateY) ? [n.SpinRateX || 0, n.SpinRateY || 0] : null,       // the particle turns: its bursts spin
       up: n.UpScale || 0, spinY: n.SpinRateY || 0,     // a push of UpScale g along its own up, turning about its path (corkscrews)
-      burnN: Math.max(0, Math.min(50, n.BurnLength | 0)), burnS: n.BurnSize ?? 0.2,              // a burning trail of copies
+      burnN: (n.BurnLength | 0) > 1 ? Math.min(256, n.BurnLength | 0) : 0, burnS: n.BurnSize ?? 0.2,   // a burn trail
       R: curve(n.ColourR), G: curve(n.ColourG), B: curve(n.ColourB),
       page: sp?.page || 'ParticlePage01', A,                                        // drawn by its sheet's layer
       covers: !sp || sp.blend === 'add' || sp.solid,   // on ParticlePage01 only sprites whose alpha is their own picture dim what is behind
@@ -504,7 +505,27 @@ async function build() {
     if (rz) { c = Math.cos(rz); s = Math.sin(rz); [x, y] = [x * c - y * s, x * s + y * c]; }
     return [x, y, z];
   }
-  let parts = [], silent = false;
+  let parts = [], ghosts = [], silent = false;   // ghosts: dead particles whose burn trail is still fading
+  // Burn Length (RCT3plus.exe 0x9c8930): a particle with more than 1 gets a trail of its last Burn Length positions,
+  // one a frame (0x9cdba0, with the colour it had there); when it dies the trail loses a point a frame until under 2.
+  // The game records at its frame rate; the viewer at a steady 40 a second.
+  const BURN_DT = 1 / 40;
+  const trails = createTrails(scene, pageTexture('BurnTrail')), trailPts = new Float32Array(256 * 6);
+  function colourOf(p, f) {
+    const d = p.d, gain = d.gain ?? 1;
+    let r = curveAt(d.R, f) * gain, g = curveAt(d.G, f) * gain, b = curveAt(d.B, f) * gain;
+    const m = p.mods;
+    if (m) {
+      const c = d.useMod ? m.cmod : (!d.anyC ? m.tint : null);
+      if (c) { r *= c[0]; g *= c[1]; b *= c[2]; }
+    }
+    return [r, g, b];
+  }
+  function burnRecord(p, k) {   // the point it passed BURN_DT ago, k of the way through this step
+    const N = p.d.burnN, o = p.th * 6, f = Math.min(1, p.tnext / p.life);
+    p.tr.set([p.ox + (p.x - p.ox) * k, p.oy + (p.y - p.oy) * k, p.oz + (p.z - p.oz) * k, ...colourOf(p, f)], o);
+    p.th = (p.th + 1) % N; p.tn = Math.min(N, p.tn + 1);
+  }
   // emitters that are not ParticleRelative fire in the world's frame (up +Y, its up +Z), whatever their parent is doing
   // and however the tube leans: from the game's Mortar wall x 8 (tubes 20 deg off vertical) Gemini Rockets' shells
   // (a non-relative emitter) climb almost straight up
@@ -512,7 +533,8 @@ async function build() {
   function spawn(d, x, y, z, vx, vy, vz, h, parent, mods, u) {
     if (parts.length >= MAX_PARTICLES) return null;
     const p = { d, x, y, z, vx, vy, vz, h, u: u || [0, 0, 1], age: 0, life: Math.max(1e-3, d.life + Math.random() * d.lifeR), em: new Float32Array(d.emitters.length),
-                r0: Math.random(), parent, mods, delays: d.emitters.map(e => e.tr ? Math.random() * e.tr : 0) };
+                r0: Math.random(), mods, delays: d.emitters.map(e => e.tr ? Math.random() * e.tr : 0) };
+    if (d.burnN) Object.assign(p, { tr: new Float32Array(d.burnN * 6), th: 0, tn: 0, tnext: 0, ox: x, oy: y, oz: z });
     parts.push(p);
     if (d.sound && !silent) playSound(d.sound, x, y, z, d.sndMin, d.sndMax);
     return p;
@@ -587,6 +609,7 @@ async function build() {
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i], d = p.d;
       p.age += dt;
+      if (p.tr) { p.ox = p.x; p.oy = p.y; p.oz = p.z; }
       // a pushed particle whose up turns fast (Thunder Blitz: 31 rad/s) is moved in steps of at most 0.1 rad of
       // turn: at 1/60 s the push no longer averages out round the path and the stars drift and climb far too much
       const n = d.up && d.spinY ? Math.min(16, Math.ceil(Math.abs(d.spinY) * dt / 0.1)) : 1, h = dt / n;
@@ -596,15 +619,20 @@ async function build() {
         if (d.drag) { const k = Math.max(0, 1 - d.drag * h); p.vx *= k; p.vy *= k; p.vz *= k; }
         p.x += p.vx * h; p.y += p.vy * h; p.z += p.vz * h;
       }
-      if (p.parent && p.parent.age < p.parent.life) { p.x += p.parent.vx * dt; p.y += p.parent.vy * dt; p.z += p.parent.vz * dt; }
+      // no carrying along with the parent: the game's update (0x9c8390) only moves a particle by its own velocity - a
+      // child follows its parent through Parent Speed Factor at birth (moved as well, the Comet's trail ran ahead of
+      // its head at twice its speed and its 4 s tail stayed balled up round it)
+      if (p.tr) for (; p.tnext <= p.age; p.tnext += BURN_DT) burnRecord(p, clamp(1 - (p.age - p.tnext) / dt, 0, 1));
       if (d.emitters.length) emit(p, Math.min(1, p.age / p.life));
     }
     let j = 0;
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i];
       if (p.age < p.life && p.y > -40 && !(p.d.water && p.vy < 0 && p.y < terrain.heightAt(p.x, p.z))) parts[j++] = p;
+      else if (p.tr && p.tn >= 2) { p.gacc = 0; ghosts.push(p); }
     }
     parts.length = j;
+    ghosts = ghosts.filter(p => { for (p.gacc += dt; p.gacc >= BURN_DT; p.gacc -= BURN_DT) p.tn--; return p.tn >= 2; });
   }
   function draw() {
     for (const l of Object.values(layers)) l.n = 0;
@@ -616,33 +644,28 @@ async function build() {
       const i = l.n++;
       const f = Math.min(1, p.age / p.life);
       const size = (d.s0 + (d.s1 - d.s0) * f) * (1 + d.sR * (p.r0 - 0.5) * 2);
-      const gain = d.gain ?? 1;
-      let r = curveAt(d.R, f) * gain, g = curveAt(d.G, f) * gain, b = curveAt(d.B, f) * gain;
-      const m = p.mods;
-      if (m) {
-        const c = d.useMod ? m.cmod : (!d.anyC ? m.tint : null);
-        if (c) { r *= c[0]; g *= c[1]; b *= c[2]; }
-      }
-      const sp = Math.hypot(p.vx, p.vy, p.vz);
+      const [r, g, b] = colourOf(p, f);
+      const k = d.stretch;
       l.at.pos.array.set([p.x, p.y, p.z], i * 3);
-      l.at.vel.array.set([p.vx, p.vy, p.vz], i * 3);
-      l.at.size.array.set([size, sp * d.stretch], i * 2);
+      l.at.vel.array.set([p.vx * k, p.vy * k, p.vz * k], i * 3);
+      l.at.size.array.set([size, 0], i * 2);
       const op = d.A && d.covers ? clamp(curveAt(d.A, f), 0, 1) : 0;   // water jet drops (no alpha curve) glow
       l.at.col.array.set([r, g, b, op], i * 4);
       const uv = d.frames ? d.frames[Math.min(d.frames.length - 1, Math.floor((f * d.anim % 1) * d.frames.length))] : d.uv;
       l.at.uv.array.set(uv, i * 4);
       l.at.rot.array[i] = d.spin ? p.r0 * 6.2832 + d.spin * p.age : 0;
-      // Burn Length: that many fading copies of Burn Size along the path just behind it
-      for (let k = 1; k <= d.burnN && l.n < MAX_PARTICLES; k++) {
-        const j = l.n++, back = k * 0.025, fade = 1 - k / (d.burnN + 1);
-        l.at.pos.array.set([p.x - p.vx * back, p.y - p.vy * back, p.z - p.vz * back], j * 3);
-        l.at.vel.array.set([p.vx, p.vy, p.vz], j * 3);
-        l.at.size.array.set([d.burnS * (1 + d.sR * (p.r0 - 0.5) * 2), 0], j * 2);
-        l.at.col.array.set([r * fade, g * fade, b * fade, op * fade], j * 4);
-        l.at.uv.array.set(uv, j * 4);
-        l.at.rot.array[j] = 0;
-      }
     }
+    // burn trails: the live particle at the front, then the points it left (a dead particle's trail shrinks away)
+    trails.begin();
+    for (const list of [parts, ghosts]) for (const p of list) {
+      if (!p.tr || !p.d.uv) continue;
+      const N = p.d.burnN, live = list === parts;
+      let m = 0;
+      if (live) { trailPts.set([p.x, p.y, p.z, ...colourOf(p, Math.min(1, p.age / p.life))], 0); m = 1; }
+      for (let q = 0; q < p.tn && m < N; q++, m++) trailPts.set(p.tr.subarray(((p.th - 1 - q + N) % N) * 6, ((p.th - 1 - q + N) % N) * 6 + 6), m * 6);
+      if (m >= 2) trails.add(trailPts, m, p.d.burnS);
+    }
+    trails.end();
     for (const l of Object.values(layers)) {
       l.g.instanceCount = l.n;
       for (const a of Object.values(l.at)) { a.needsUpdate = true; a.clearUpdateRanges?.(); a.addUpdateRange?.(0, l.n * a.itemSize); }
@@ -977,7 +1000,7 @@ async function build() {
     }
     ribbons.end();
     const lvl = terrain.mirrorLevel(), on = lvl != null;
-    for (const m of [ribbons.mirror, ...Object.values(layers).map(l => l.mirror)]) { m.visible = on; if (on) m.material.uniforms.level.value = lvl; }
+    for (const m of [ribbons.mirror, trails.mirror, ...Object.values(layers).map(l => l.mirror)]) { m.visible = on; if (on) m.material.uniforms.level.value = lvl; }
   }
 
   // ---- scene: time of day, backdrop, ground, grid lines (kept with the show) ------------------------------------------
@@ -1079,7 +1102,7 @@ async function build() {
   // ---- playback -----------------------------------------------------------------------------------------------
   function seek(t) { kick();
     t = clamp(t, 0, timelineEnd());
-    parts = []; S.fired.clear();
+    parts = []; ghosts = []; S.fired.clear();
     // replay what is still in the air at t: only the launches still running then (each from its own start), silently
     const dt = 1 / 20;   // coarse steps: only where things are at t matters, not every frame on the way
     const es = S.show ? S.show.entries.filter(e => e.time <= t && e.time > t - 10 && (e.kind || 'firework') === 'firework' && e.time + fxDur(e) + 0.5 > t)
@@ -1258,7 +1281,7 @@ async function build() {
     if (def && !(key || '').startsWith('my:')) { def.title = def.title + ' (copy)'; if (def.nodes?.[def.root]) def.nodes[def.root].Name = def.title; }
     const mod = await import(kind === 'firework' ? './fw_afe.js' : './fw_designers.js');
     // the editor's preview plays alone: stop the show and any palette previews (they drew on top of it)
-    play(false); previews = []; parts = [];
+    play(false); previews = []; parts = []; ghosts = [];
     const ownKey = key && key.startsWith('my:') ? key : null;
     if (kind === 'firework') mod.openAFE(ctx, def, ownKey);
     else if (kind === 'laser') mod.openLaserDesigner(ctx, def || defaultLaser(), ownKey);
@@ -1323,7 +1346,7 @@ async function build() {
     reload: () => $('#fw-reload', root).onclick(),
     newLaser: defaultLaser, newJet: defaultJet,
     particleCount: () => parts.length,
-    clearParticles: test => { parts = parts.filter(p => !test(p.d.fw)); },   // e.g. the editor's earlier versions
+    clearParticles: test => { parts = parts.filter(p => !test(p.d.fw)); ghosts = ghosts.filter(p => !test(p.d.fw)); },   // e.g. the editor's earlier versions
   };
 
   // ---- UI: inspector ---------------------------------------------------------------------------------------------
@@ -2314,7 +2337,7 @@ async function build() {
     // draw the 3D view only when something in it can have changed: an idle scene at full rate (with glow) competed
     // with the timeline for the computer, making drags and selections there laggy on slower machines
     const now = performance.now();
-    const busy = S.playing || parts.length || ribbons.count() || previews.length || camMode === 'orbit' || camMode === 'auto' || painting
+    const busy = S.playing || parts.length || ghosts.length || ribbons.count() || previews.length || camMode === 'orbit' || camMode === 'auto' || painting
       || dragState || moveDrag || aimDrag || now < renderUntil || now - lastRender > 1000
       || launcherObjs.some(o => o.mixer) || sceneryObjs.some(o => o.mixer);
     if (!busy) return;

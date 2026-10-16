@@ -876,3 +876,29 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   UI (drag, remove, add with "moves from", save, read back, Game's own layout -> md5 of the original), no page errors.
 - Limit: a game button is one widget, so it can be in one menu at a time (copies would need new widgets built in the
   ctor - possible for nav buttons, not done).
+
+## 2026-10-15: Fireworks - tester's feedback "motions a bit strange like stretching, some tails too much sphere"
+- Screenshot (Discord, the Comet in the viewer): the head low, a column of round blobs above it.
+- Parent carry (viewer since 0df5a92, never checked): a child of a living parent was also moved by the parent's
+  velocity each step. RCT3plus.exe's update (0x9c8390) only does v += a dt, x += v dt per particle; a child follows its
+  parent only through ParentSpeedFactor at birth (0x9cbdf0). With both, the Comet's 100 trail sprites (speed 0, psf 1)
+  ran ahead of the head at twice its speed (the column above it) and its 4 s Flare_00 tail (psf 0) stayed balled up
+  round the head. Removed. In the game (Steam, MixMaster picker preview) the Comet is a head with a short sparkly tail
+  hanging below it, as the viewer now draws it. Shipped fireworks change little (6 s tops: Thunder Blitz 24.1 -> 23.4 m,
+  Green Peony ~57 both, Spheres of Fire 13.7 both, Fairy Fountain ~33 -> ~29.5 m).
+- VelStretch (sprite builder 0x9cf24f, desc in its registered layout: AnimTimeScale 0x128, CameraSpinRate 0x12c,
+  StartSize 0x130, EndSize 0x134, SizeRandom 0x138, VelStretch 0x13c): the quad stays camera-facing, turned by its spin;
+  each corner offset o gets +0.5 VelStretch v if dot(o, v) >= 0, else -0.5 VelStretch v - in 3D. The viewer stretched by
+  the full 3D length along the on-screen direction of travel, so particles flying at / away from the camera became long
+  smears in a random direction. Shader now does the game's corner shift (spin kept on stretched sprites too).
+- Burn trails (BurnLength 0x100 / BurnSize 0x104 in the update's layout): BurnLength > 1 makes a trail object (0x9d3a60
+  -> 0x9d0c60: ring of BurnLength 32-byte points, +0x30 points, +0x34 head, +0x38 count); each rendered frame 0x9cdba0
+  stores the particle's position (camera-relative) and colour; when the particle dies the count drops by one a frame
+  until < 2. Drawn by 0x9d0170 as one camera-facing strip, BurnSize wide (+-0.5), side averaged over the two segments
+  at a point, texture BurnTrail (64 x 64 soft round glow, style ParticleBurnTrail, added) with u across and v from 0.5
+  (newest) to 1.0 (oldest): bright at the particle, fading behind and to the sides. The viewer drew BurnLength fading
+  copies of the particle's own sprite (a string of balls). Now createTrails (fw_effects.js) draws that strip; points at
+  a steady 40 a second (the game: its frame rate), dead particles' trails shrink away (ghosts). No shipped firework and
+  not the Comet uses BurnLength (all 0); checked by giving Gemini Rockets' particles BurnLength 30 in the page.
+- Not done: the strip's per-point weight min(1, 0.01 x ...) (a screen-space term, unclear) - points kept at full colour.
+- Checks: all 29 fireworks (+ the Comet) 6 s without NaN, no page errors; ui_fireworks unchanged (favicon 404 only).

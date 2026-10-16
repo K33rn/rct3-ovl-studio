@@ -187,7 +187,13 @@ The buttons at the top:
     guests, park rating, temperature and weather, date, firework / dart cam / avatar buttons) and the buttons down the
     left (map, view, file, quit, park management, rides, shops, scenery, paths, landscape, delete), drawn from your
     icons where the game puts them (measured at 1280 × 800); options show their other states (speed, weather,
-    difficulty hat, day / night, career, greyed buttons). Click any piece to edit its picture.
+    difficulty hat, day / night, career, greyed buttons). Click any piece to edit its picture. **▶ Simulate** makes the
+    screen work as in the game: each left button opens its menu (the same buttons in the same order and place as the
+    game: view toggles, file, park management, rides, shops and scenery categories, terrain tools, delete modes), and
+    those open what they open in the game - a list of things to build at the top left, a window drawn with the game's
+    own window frame, a tool panel at the bottom left or the map. The speed buttons, day / night list, objectives hat
+    and family button work, tooltips are the game's own texts, and whatever you click is shown on the right to edit.
+    The insides of the windows (lists, settings) are the game's code and are left as notes.
     **All icons** shows them as a gallery. **Button states** plays each button with its own pictures (normal, hover,
     pressed, disabled). **Animations** plays numbered icon sets and edits them: change the frame order (◀ ▶ or drag),
     make a frame show another frame's picture, paint or replace a single frame, or import the whole animation from a

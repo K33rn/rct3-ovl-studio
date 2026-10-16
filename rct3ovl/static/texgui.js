@@ -1100,7 +1100,44 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     ...LEFT_BTNS.map(([icon, label, alt], i) => ({ id: 'l' + i, label: label + ' button', widget: icon, icons: [icon, ...(alt ? [alt] : []), 'MenuButtonSmall'], box: [12, LEFT_Y[i], 32, 33], disc: true })),
   ];
   const HUD_VIEWS = { all: [0, 0, HUD_W, HUD_H], top: [290, 0, 700, 40], left: [0, 145, 120, 480] };
-  const HS = { view: 'all', speed: 1, weather: 'IconSun', hat: 'Difficulty_Hat_Apprentice', dn: 'GUI2_DayNightCycle_DayNight', career: false, fireworks: false, animals: false, sel: null, hover: null, cv: null, icons: new Map(), xf: null };
+  const HS = { view: 'all', speed: 1, weather: 'IconSun', hat: 'Difficulty_Hat_Apprentice', dn: 'GUI2_DayNightCycle_DayNight', career: false, fireworks: false, animals: false, sel: null, hover: null, cv: null, icons: new Map(), xf: null,
+    sim: false, fly: null, item: null, win: null, dnOpen: false, toggles: new Set(), hits: [], texts: null };
+  // ---- simulating the in-park screen: what each button opens, as seen in the game (Steam, sandbox, 1280 x 800) ------
+  // A left button opens a column of discs (x 68, 40 apart) ending just above it, pushed down to start at y 24 when it
+  // would go off the top; the button being used and the one under the pointer are drawn larger. Its tooltip is the
+  // game's own text (<icon>Help in the language file). What a flyout button opens: a list docked at the top left (rides,
+  // shops, scenery), a window (management, file), a round tool panel at the bottom left (paths, terrain) or a mode.
+  const TIPS = { Map: 'MapHelp', View: 'ViewHelp', File: 'FileHelp', File_Quit: 'File_QuitHelp', File_CareerMap: 'File_CareerMapHelp', Man: 'ManHelp', Obj_Rides: 'Obj_RidesHelp',
+    Obj_Shops: 'Obj_ShopsHelp', Obj_Scenery: 'Obj_SceneryHelp', Obj_Paths: 'Obj_PathsHelp', Land: 'Landhelp', Obj_Delete: 'Obj_DeleteHelp', CustomStructions_Icon: 'SavedSelection_SubMenuHelp',
+    AnimalWalkingGridOff: 'ToggleEnclosureWalkInfo_TT', ThreeXFireworks: 'Obj_Scenery_FireworkSourcesHelp', Land_Brush_Height: 'Land_Brush_HeightHelp',
+    pause: 'Playing_PauseHelp', play: 'Playing_PlayHelp', ff: 'Playing_FastForwardHelp', sff: 'Playing_SuperFastForwardHelp', obj: 'PID_TT_ObjectiveTabPopUp', dn: 'Toolbar_TT_DayNight',
+    guests: 'Toolbar_TT_GuestsInPark', rating: 'Toolbar_TT_ParkRating', down: 'Toolbar_TT_ParkRating', up: 'Toolbar_TT_ParkRating', temp: 'Stats_TemperatureHelp', avatar: 'Toolbar_TT_AvatarHighlight', barM: 'MessageConsoleClickDrag',
+    IconSun: 'WeatherType_Sunny_TT', IconCloudWithSun: 'WeatherType_SunnyCloudy_TT', IconCloud: 'WeatherType_Cloudy_TT', IconLightRain: 'WeatherType_LightRain_TT', IconHeavyRain: 'WeatherType_HeavyRain_TT',
+    IconThunderstorm: 'WeatherType_Thunderstorm_TT', IconSnow: 'WeatherType_Snowstorm_TT' };
+  const TIP_EN = { MapHelp: 'Maps', ViewHelp: 'View Controls', FileHelp: 'Files and Options', ManHelp: 'Park Management', Landhelp: 'Terrain tools', Obj_DeleteHelp: 'Delete Objects' };
+  const tipOf = n => { const k = TIPS[n] || n + 'Help'; return HS.texts?.get(k) ?? TIP_EN[k] ?? spaced(n.replace(/^(Obj|Man|File|Land)_/, '').replace(/_/g, ' ')); };
+  // [icon, what it opens, its other icon when toggled]; order top to bottom as in the game
+  const FLY = {
+    l1: [['Land_Grid', 'toggle', 'Land_GridOn'], ['Land_Contours', 'toggle', 'Land_ContoursOn'], ['Land_RideHeights', 'toggle', 'Land_RideHeightsOn'], ['Land_PathHeights', 'toggle', 'Land_PathHeightsOn'],
+      ['Land_People', 'toggle', 'Land_PeopleOff'], ['Land_Supports', 'toggle', 'Land_SupportsOff'], ['Land_SceneryVisible', 'toggle', 'Land_SceneryVisibleOff'], ['Land_TerrainVisible', 'toggle', 'Land_TerrainVisibleOff'],
+      ['AnimalWalkingGridOff', 'toggle', 'AnimalWalkingGridOn']],
+    l2: [['File_AboutRCT', 'dialog'], ['File_GameOptions', 'dialog'], ['File_SaveGame', 'dialog'], ['File_LoadGame', 'dialog']],
+    l4: [['Man_Park', 'dialog'], ['Man_Finances', 'dialog'], ['Man_Staff', 'dialog'], ['Man_Objectives', 'objectives'], ['Man_Research', 'dialog'], ['Man_Rides', 'dialog'], ['Man_Guests', 'dialog'], ['Man_Challenges', 'dialog']],
+    l5: [['Obj_Rides_RollerCoasters', 'picker'], ['Obj_Rides_JuniorCoasters', 'picker'], ['Obj_Rides_ThrillRides', 'picker'], ['Obj_Rides_WaterRides', 'picker'], ['Obj_Rides_GentleRides', 'picker'],
+      ['Obj_Rides_TransportRides', 'picker'], ['Obj_Rides_PoolRides', 'picker'], ['Obj_Rides_OtherRides', 'picker'], ['Obj_Rides_TrackImport', 'dialog'], ['Obj_Pools', 'tool'], ['Obj_Rides_Animals', 'picker'], ['Obj_Enclosures', 'tool']],
+    l6: [['Obj_Shops_FoodShops', 'picker'], ['Obj_Shops_DrinkShops', 'picker'], ['Obj_Shops_Stalls', 'picker'], ['Obj_Shops_Utilities', 'picker']],
+    l7: [['Obj_Scenery_TreesNPlants', 'picker'], ['Obj_Scenery_Fences', 'picker'], ['Obj_Scenery_WallsRoofsAndBuildings', 'picker'], ['Obj_Scenery_PathExtras', 'picker'], ['Obj_Scenery_ThemeProps', 'picker'],
+      ['Obj_Scenery_RideEvents', 'picker'], ['Obj_Scenery_TerrainSurfaces', 'picker'], ['Obj_Scenery_Adverts', 'picker'], ['CustomStructions_Icon', 'picker'], ['ThreeXFireworks', 'dialog']],
+    l9: [['Land_Brush_Height', 'tool'], ['Land_Brush_Paint', 'tool'], ['Land_Water', 'tool'], ['Land_Waterfall', 'tool']],
+    l10: [['GUI2_DeleteSelection', 'mode'], ['GUI2_DeleteSingleItem', 'mode']],
+  };
+  const WIN_ICONS = ['WindowBackground', 'GUI2Dialog_Frame', 'GUI2Dialog_IconBackgroundNormal', 'GUI2Dialog_CloseIcon', 'GUI2Dialog_MinimiseIcon', 'GUI2MiniDialog_Frame', 'GUI2MiniDialog_Background', 'GUI2MiniDialog_Confirm', 'GUI2MiniDialog_Cancel',
+    'Map_People', 'Map_Attractions', 'Map_Scenery', 'Difficulty_Hat_Apprentice', 'Difficulty_Hat_Entrepreneur', 'Difficulty_Hat_Tycoon'];
+  const flyBoxes = id => {            // the discs of a left button's flyout, top to bottom
+    const items = FLY[id] || [], by = LEFT_Y[+id.slice(1)] + 16;
+    let y0 = by - 19 - 40 * (items.length - 1); if (y0 < 24) y0 = 24;
+    return items.map((it, k) => [52, y0 + 40 * k - 16, 32, 33]);
+  };
   const hudIcon = el => {             // which of its icons an element shows now
     if (el.speed != null) return el.icons[el.speed === HS.speed ? 1 : 0];
     if (el.id === 'weather') return HS.weather;
@@ -1112,7 +1149,12 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   const iconByName = n => G.icons.find(g => g.name === n);
   const hudScaled = h => { const g = h.icons && iconByName(hudIcon(h)), r = g && rectOf(g); return h.disc || !!(r && (r[2] - r[0] !== h.box[2] || r[3] - r[1] !== h.box[3])); };
   async function hudPrepare() {
-    const names = new Set(HUD.flatMap(el => el.icons || []));
+    const names = new Set([...HUD.flatMap(el => el.icons || []), ...Object.values(FLY).flat().flatMap(([a, , b]) => b ? [a, b] : [a]), ...WIN_ICONS]);
+    if (!HS.texts) {
+      const lang = S.gui?.texts.find(o => /english\.common\.ovl$/i.test(o.path))?.path || S.gui?.texts.find(o => /^gui\\/i.test(o.path))?.path;
+      HS.texts = new Map();
+      if (lang) try { for (const t of await fetch('/api/tx/texts?path=' + encodeURIComponent(lang)).then(r => r.json())) HS.texts.set(t.name, t.text); } catch (e) {}
+    }
     await Promise.all([...names].map(async n => { const g = iconByName(n); HS.icons.set(n, g ? await iconCanvas(g, 1) : null); }));
   }
   // a stretchable piece drawn at a size: the parts between its cuts stretch, the outer ones keep their size
@@ -1140,6 +1182,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
         <label title="A career game shows the Career map button where sandbox shows Quit"><input type="checkbox" id="hud-career"> Career</label>
         <label title="The firework button is greyed unless a display is running"><input type="checkbox" id="hud-fw"> Firework display on</label>
         <label title="The dart cam button is greyed unless animals have escaped"><input type="checkbox" id="hud-animals"> Animals escaped</label>
+        <span style="flex:1"></span><button id="hud-sim" title="Click the buttons as in the game: the left buttons open their menus, the top bar works">▶ Simulate</button>
       </div>
       <div style="position:relative;flex:1;min-height:0"><canvas id="hud-cv" style="position:absolute;inset:0;width:100%;height:100%;cursor:default"></canvas></div>
       <div class="note" style="color:var(--dim);padding:6px 10px;font-size:11px">The game's top bar and left buttons, drawn from the icons in this file as the game draws them (laid out as in the game at 1280 × 800). Click a piece to edit its picture on the right; double-click to paint it. Texts are drawn by the game in its own font (their words come from the game, not from these icons).</div>
@@ -1151,9 +1194,23 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     const at = e => { const b = HS.cv.getBoundingClientRect(), t = HS.xf; if (!t) return null; const x = (e.clientX - b.left - t.ox) / t.s, y = (e.clientY - b.top - t.oy) / t.s;
       return [...HUD].reverse().find(h => !h.sliced && x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) ||
         HUD.find(h => h.sliced && x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) || null; };
-    HS.cv.onpointermove = e => { const h = at(e); if (h !== HS.hover) { HS.hover = h; HS.cv.style.cursor = h ? 'pointer' : 'default'; HS.cv.title = h ? h.label : ''; drawHud(); } };
+    const simAt = e => { const b = HS.cv.getBoundingClientRect(), t = HS.xf; if (!t) return null; const x = (e.clientX - b.left - t.ox) / t.s, y = (e.clientY - b.top - t.oy) / t.s;
+      return [...HS.hits].reverse().find(h => x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) || null; };
+    HS.cv.onpointermove = e => {
+      const h = HS.sim ? simAt(e) : at(e);
+      const same = HS.sim ? !!h === !!HS.hover && h?.key === HS.hover?.key : h === HS.hover;
+      if (!same) { HS.hover = h; HS.cv.style.cursor = h && (!HS.sim || h.act) ? 'pointer' : 'default'; HS.cv.title = h && !HS.sim ? h.label : ''; drawHud(); }
+    };
     HS.cv.onpointerleave = () => { HS.hover = null; drawHud(); };
-    HS.cv.onclick = e => { selectHud(at(e)); };
+    HS.cv.onclick = e => {
+      if (!HS.sim) { selectHud(at(e)); return; }
+      const h = simAt(e);
+      if (!h) { HS.dnOpen = false; drawHud(); return; }
+      if (h.act) h.act();
+      if (h.icons) selectHud(h); else drawHud();          // what was clicked is also the piece shown on the right
+    };
+    $('#hud-sim', el).onclick = () => hudSimulate(!HS.sim);
+    hudSimMark();
     HS.cv.ondblclick = e => { const h = at(e); if (h && G.sel && h.icons) openTexture(G.sel.sheet, G.sel.texture, { rect: rectOf(G.sel) }); };
     new ResizeObserver(() => drawHud()).observe(HS.cv);
     hudPrepare().then(drawHud);
@@ -1188,8 +1245,160 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       const ic = HS.icons.get(hudIcon(h)); if (!ic) continue;
       x.globalAlpha = h.dim && !HS[h.dim] ? 0.3 : 1; x.drawImage(ic, bx, by, bw, bh); x.globalAlpha = 1;
     }
-    for (const [h, col] of [[HS.hover, '#ffffffb0'], [HS.sel, '#f2a93b']]) if (h) { x.strokeStyle = col; x.lineWidth = 1.5 / s; x.strokeRect(h.box[0] - 1, h.box[1] - 1, h.box[2] + 2, h.box[3] + 2); }
+    if (HS.sim) drawHudSim(x, s);
+    else for (const [h, col] of [[HS.hover, '#ffffffb0'], [HS.sel, '#f2a93b']]) if (h) { x.strokeStyle = col; x.lineWidth = 1.5 / s; x.strokeRect(h.box[0] - 1, h.box[1] - 1, h.box[2] + 2, h.box[3] + 2); }
     x.restore();
+  }
+  function hudSimMark() {
+    const b = $('#hud-sim'); if (!b) return;
+    b.textContent = HS.sim ? '■ Stop simulating' : '▶ Simulate'; b.style.cssText = HS.sim ? 'border-color:var(--accent);color:var(--accent)' : '';
+  }
+  function hudSimulate(on) {
+    Object.assign(HS, { sim: on, fly: null, item: null, win: null, dnOpen: false, hover: null, hits: [] });
+    if (on && HS.view !== 'all') { HS.view = 'all'; const v = $('#hud-view'); if (v) v.value = 'all'; }
+    hudSimMark(); drawHud(); renderRight();
+  }
+  function hudEscape() {          // Esc: the window, then the day / night list, then the flyout
+    if (!HS.sim) return false;
+    if (HS.win) HS.win = null; else if (HS.dnOpen) HS.dnOpen = false; else if (HS.fly) { HS.fly = null; HS.item = null; } else { hudSimulate(false); return true; }
+    drawHud(); return true;
+  }
+  // a window drawn as the game draws it: its inside filled with WindowBackground (white), then the game's frame
+  // (GUI2Dialog_Frame, stretched: the blue title strip, the round header disc at the top left, the shadow), the
+  // window's icon on that disc and the close button
+  function hudWindow(x, [wx, wy, ww, wh], icon, title, sub, hits) {
+    const fr = iconByName('GUI2Dialog_Frame'), src = HS.icons.get('GUI2Dialog_Frame'), bg = HS.icons.get('WindowBackground');
+    if (bg) x.drawImage(bg, 1, 1, Math.max(1, bg.width - 2), Math.max(1, bg.height - 2), wx + 2, wy + 8, ww - 6, wh - 12); else { x.fillStyle = '#fff'; x.fillRect(wx + 2, wy + 8, ww - 6, wh - 12); }
+    if (fr && src) drawStretched(x, src, fr, wx, wy, ww, wh); else { x.fillStyle = '#2b86c5'; x.fillRect(wx, wy, ww, 16); }
+    const close = HS.icons.get('GUI2Dialog_CloseIcon'), cb = [wx + ww - 20, wy + 2, 14, 14];
+    if (close) x.drawImage(close, ...cb);
+    hits.push({ box: cb, label: 'Close', widget: 'GUI2Dialog_CloseIcon', icons: ['GUI2Dialog_CloseIcon'], act: () => { HS.win = null; } });
+    if (title) {
+      const ic = icon && HS.icons.get(icon);
+      if (ic) x.drawImage(ic, wx + 11, wy + 21, 36, 36);
+      if (icon) hits.push({ box: [wx + 6, wy + 16, 46, 46], label: title + ' (window icon)', widget: icon, icons: [icon] });
+      x.fillStyle = '#000'; x.font = 'bold 18px Verdana, Tahoma, sans-serif'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillText(title, wx + 67, wy + 29);
+      x.fillRect(wx + 60, wy + 41, ww - 70, 2);
+      if (sub) { x.fillStyle = '#2b86c5'; x.font = '12px Verdana, Tahoma, sans-serif'; x.fillText(sub, wx + 66, wy + 54); }
+    }
+  }
+  const hudNote = (x, text, cx, cy, w) => {
+    x.fillStyle = '#7a8a99'; x.font = 'italic 12px Verdana, Tahoma, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    const words = text.split(' '); let line = '', y = cy;
+    for (const wd of words) { if (x.measureText(line + wd).width > w && line) { x.fillText(line.trim(), cx, y); line = ''; y += 16; } line += wd + ' '; }
+    x.fillText(line.trim(), cx, y);
+  };
+  function drawHudSim(x, s) {
+    const hits = [];
+    const disc = (box, icon, big) => {
+      const [bx, by, bw, bh] = box, k = big ? 1.35 : 1, cx = bx + bw / 2, cy = by + bh / 2, d = HS.icons.get('MenuButtonSmall'), ic = HS.icons.get(icon);
+      if (d) x.drawImage(d, cx - bw * k / 2, cy - bh * k / 2, bw * k, bh * k);
+      if (ic) x.drawImage(ic, cx - 13.5 * k, cy - 13.5 * k - 0.5, 27 * k, 27 * k);
+    };
+    // the top bar's pieces and the left buttons are the screen's own (drawn already); here they get their actions
+    for (const h of HUD) {
+      const act = h.speed != null ? () => { HS.speed = h.speed; const v = $('#hud-speed'); if (v) v.value = String(h.speed); }
+        : h.id === 'dn' ? () => { HS.dnOpen = !HS.dnOpen; }
+        : h.id === 'obj' ? () => { HS.win = { kind: 'objectives' }; }
+        : h.id === 'avatar' ? () => { HS.toggles.has('avatar') ? HS.toggles.delete('avatar') : HS.toggles.add('avatar'); }
+        : h.disc ? () => {
+          const id = h.id;
+          if (id === 'l0') { HS.fly = null; HS.win = HS.win?.kind === 'map' ? null : { kind: 'map' }; return; }
+          if (id === 'l3') { HS.fly = null; HS.win = { kind: 'quit' }; return; }
+          if (id === 'l8') { HS.fly = HS.fly === id ? null : id; HS.item = null; HS.win = HS.fly ? { kind: 'tool', icon: 'Obj_Paths', title: tipOf('Obj_Paths') } : null; return; }
+          HS.fly = HS.fly === id ? null : id; HS.item = null;
+        } : null;
+      hits.push(Object.assign(Object.create(h), { act }));
+    }
+    // the left button in use, larger
+    const open = HUD.find(h => h.id === HS.fly);
+    if (open) disc(open.box, hudIcon(open), true);
+    // its flyout
+    if (HS.fly && FLY[HS.fly]) flyBoxes(HS.fly).forEach((box, k) => {
+      const [icon, kind, alt] = FLY[HS.fly][k], shown = kind === 'toggle' && HS.toggles.has(icon) ? alt : icon;
+      disc(box, shown, HS.item === k || HS.hover?.key === 'f' + k);
+      hits.push({ box, label: tipOf(icon), widget: shown, icons: alt ? [shown, shown === icon ? alt : icon, 'MenuButtonSmall'] : [icon, 'MenuButtonSmall'], flyK: k, act: () => {
+        if (kind === 'toggle') { HS.toggles.has(icon) ? HS.toggles.delete(icon) : HS.toggles.add(icon); return; }
+        HS.item = HS.item === k && kind === 'mode' ? null : k;
+        HS.win = kind === 'mode' ? null : HS.item == null ? null : { kind, icon, title: tipOf(icon) };
+      } });
+    });
+    // the day / night list under its button
+    if (HS.dnOpen) HUD.find(h => h.id === 'dn').icons.forEach((n, k) => {
+      const box = [327 - 8 * k, 24 + 16 * k, 16, 16], ic = HS.icons.get(n);
+      if (ic) x.drawImage(ic, ...box);
+      hits.push({ box, label: spaced(n.split('_').pop()), widget: n, icons: [n], act: () => { HS.dn = n; HS.dnOpen = false; const v = $('#hud-dn'); if (v) v.value = n; } });
+    });
+    // the window it opened
+    const w = HS.win;
+    if (w?.kind === 'picker') {
+      x.fillStyle = '#0004'; x.beginPath(); x.roundRect(88, 4, 288, 318, 10); x.fill();
+      x.fillStyle = '#4aa8e0'; x.beginPath(); x.roundRect(84, 0, 288, 318, 10); x.fill();
+      const close = HS.icons.get('GUI2Dialog_CloseIcon'), cb = [350, 6, 14, 14]; if (close) x.drawImage(close, ...cb);
+      hits.push({ box: cb, label: 'Close', widget: 'GUI2Dialog_CloseIcon', icons: ['GUI2Dialog_CloseIcon'], act: () => { HS.win = null; HS.item = null; } });
+      x.fillStyle = '#fff'; x.fillRect(90, 46, 258, 224); x.fillStyle = '#efe9f2'; for (let r = 0; r < 4; r += 2) x.fillRect(90, 46 + 68 * r, 258, 68);
+      x.fillStyle = '#4aa8e0'; x.fillRect(352, 46, 13, 224);
+      const ic = HS.icons.get(w.icon); if (ic) x.drawImage(ic, 92, 6, 32, 32);
+      x.fillStyle = '#000'; x.font = 'bold 13px Verdana, Tahoma, sans-serif'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillText(w.title, 130, 22);
+      hudNote(x, `The game lists the ${w.title.toLowerCase()} you can build here: a picture, name, designs and price for each.`, 219, 140, 230);
+    } else if (w?.kind === 'dialog') {
+      hudWindow(x, [400, 170, 477, 335], w.icon, w.title, null, hits);
+      hudNote(x, `The game's ${w.title} window: its tabs, lists and settings are drawn by the game's code here.`, 638, 340, 400);
+    } else if (w?.kind === 'objectives') {
+      hudWindow(x, [400, 170, 477, 460], 'Man_Objectives', tipOf('obj'), null, hits);
+      x.fillStyle = '#000'; x.font = 'bold 22px Verdana, Tahoma, sans-serif'; x.textAlign = 'left'; x.fillText(HS.career ? 'Career scenario' : 'Sandbox', 409, 256);
+      HUD.find(h => h.id === 'obj').icons.forEach((n, k) => {
+        const y = 320 + 33 * k; x.fillStyle = '#e4e4e4'; x.fillRect(409, y, 456, 31);
+        const ic = HS.icons.get(n); if (ic) x.drawImage(ic, 420, y + 1, 30, 30);
+        x.fillStyle = '#000'; x.font = 'bold 17px Verdana, Tahoma, sans-serif'; x.fillText(n.split('_').pop(), 456, y + 16);
+        hits.push({ box: [420, y + 1, 30, 30], label: n.split('_').pop() + ' hat', widget: n, icons: [n], act: () => { HS.hat = n; const v = $('#hud-hat'); if (v) v.value = n; } });
+      });
+    } else if (w?.kind === 'map') {
+      hudWindow(x, [64, 0, 370, 368], 'Map', HS.texts?.get('MapDialog_Title') ?? 'Maps', HS.texts?.get('MapDialog_PeopleTabTitle') ?? 'Peeps', hits);
+      x.fillStyle = '#8fae44'; x.fillRect(135, 70, 288, 288);
+      x.fillStyle = '#aaa'; x.fillRect(274, 280, 6, 70);
+      ['Map_Scenery', 'Map_Attractions', 'Map_People'].forEach((n, k) => {
+        const box = [81, 245 + 40 * k, 32, 32], ic = HS.icons.get(n); if (ic) x.drawImage(ic, ...box);
+        hits.push({ box, label: 'Map tab: ' + n.split('_').pop(), widget: n, icons: [n] });
+      });
+    } else if (w?.kind === 'tool') {
+      x.fillStyle = '#2b86c5'; x.beginPath(); x.arc(78, 718, 66, 0, 7); x.fill();
+      x.fillStyle = '#4aa8e0'; x.beginPath(); x.roundRect(70, 655, 292, 128, 12); x.fill();
+      x.fillStyle = '#f4f2f7'; x.beginPath(); x.roundRect(172, 672, 172, 106, 10); x.fill();
+      x.fillStyle = '#8a8a8a'; x.beginPath(); x.arc(78, 718, 54, 0, 7); x.fill();
+      const ic = HS.icons.get(w.icon); if (ic) x.drawImage(ic, 62, 702, 32, 32);
+      x.fillStyle = '#000'; x.font = 'bold 12px Verdana, Tahoma, sans-serif'; x.textAlign = 'left'; x.fillText(w.title, 180, 686);
+      hudNote(x, 'The game puts this tool\'s buttons here.', 258, 728, 150);
+      hits.push({ box: [12, 652, 132, 132], label: w.title + ' panel', widget: w.icon, icons: [w.icon] });
+    } else if (w?.kind === 'quit') {
+      const fr = iconByName('GUI2MiniDialog_Frame'), src = HS.icons.get('GUI2MiniDialog_Frame'), b = [490, 340, 300, 110];
+      x.fillStyle = '#0005'; x.fillRect(b[0] + 4, b[1] + 4, b[2], b[3]);
+      const mb = iconByName('GUI2MiniDialog_Background'), msrc = HS.icons.get('GUI2MiniDialog_Background');
+      if (mb && msrc && mb.xs) drawStretched(x, msrc, mb, b[0] + 2, b[1] + 2, b[2] - 4, b[3] - 4); else { x.fillStyle = '#fff'; x.fillRect(b[0] + 2, b[1] + 2, b[2] - 4, b[3] - 4); }
+      if (fr && src && fr.xs) drawStretched(x, src, fr, ...b);
+      x.fillStyle = '#000'; x.font = 'bold 14px Verdana, Tahoma, sans-serif'; x.textAlign = 'center'; x.fillText(tipOf(HS.career ? 'File_CareerMap' : 'File_Quit') + '?', 640, 375);
+      for (const [n, bx, act] of [['GUI2MiniDialog_Confirm', 600, () => { HS.win = { kind: 'left', title: tipOf(HS.career ? 'File_CareerMap' : 'File_Quit') }; }], ['GUI2MiniDialog_Cancel', 665, () => { HS.win = null; }]]) {
+        const ic = HS.icons.get(n); if (ic) x.drawImage(ic, bx, 405, 15 * 1.6, 12 * 1.6);
+        hits.push({ box: [bx - 4, 400, 32, 28], label: n.split('_').pop(), widget: n, icons: [n], act });
+      }
+    } else if (w?.kind === 'left') {
+      x.fillStyle = '#000b'; x.fillRect(0, 0, HUD_W, HUD_H);
+      x.fillStyle = '#fff'; x.font = 'bold 24px Verdana, Tahoma, sans-serif'; x.textAlign = 'center'; x.fillText(w.title, 640, 380);
+      x.fillStyle = '#ccc'; x.font = '14px Verdana, Tahoma, sans-serif'; x.fillText('(the game leaves the park here) · click or press Esc to go back', 640, 412);
+      hits.push({ box: [0, 0, HUD_W, HUD_H], label: '', act: () => { HS.win = null; } });
+    }
+    HS.hits = hits;
+    // the tooltip of what is under the pointer, below and to the right of it as the game draws it
+    for (const t of hits) t.key = t.key || (t.flyK != null ? 'f' + t.flyK : t.id || t.label + t.box.join());
+    const h = HS.hover && hits.find(t => t.key === HS.hover.key);
+    const tip = !h ? '' : h.flyK != null ? tipOf(FLY[HS.fly][h.flyK][0]) : h.disc ? tipOf(hudIcon(h)) : h.id === 'weather' ? tipOf(HS.weather) : h.id && TIPS[h.id] ? tipOf(h.id) : '';
+    if (tip) {
+      x.font = '11px Verdana, Tahoma, sans-serif'; const tw = x.measureText(tip).width + 14, tx = Math.min(HUD_W - tw - 4, h.box[0] + h.box[2] / 2 + 2), ty = h.box[1] + h.box[3] + 4;
+      x.fillStyle = '#1e6aa8'; x.beginPath(); x.roundRect(tx - 1, ty - 1, tw + 4, 22, 9); x.fill();
+      x.fillStyle = '#fff'; x.beginPath(); x.roundRect(tx, ty, tw, 18, 8); x.fill();
+      x.fillStyle = '#000'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillText(tip, tx + 7, ty + 9.5);
+    }
+    if (HS.toggles.has('avatar')) { const a = HUD.find(e => e.id === 'avatar'); x.strokeStyle = '#ffe14a'; x.lineWidth = 2; x.strokeRect(a.box[0] - 1, a.box[1] - 1, a.box[2] + 2, a.box[3] + 2); }
   }
 
   const FRAME_TYPES = { 2: 'Panel (3 × 3 parts)', 3: 'Window frame (3 × 3 parts)', 4: 'Bar (3 parts across)', 5: 'Bar (3 parts down)', 1: 'Solid colour' };
@@ -1608,7 +1817,8 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     const g = G.sel, moved = G.moved.size;
     let h = '';
     const hs = G.view === 'hud' ? HS.sel : null;
-    if (G.view === 'hud' && !hs) h += `<h3>In-park screen</h3><div class="sec"><div class="note">The bar along the top of the screen and the buttons down the left, as the game shows them in a park. Click any piece to change its picture: edit its pixels, replace it with a picture of your own, or move its rectangle on the icon sheet. The options above the picture show the other states (speed buttons, weather, career mode, greyed buttons).</div></div>`;
+    if (G.view === 'hud' && HS.sim) h += `<h3>Simulating</h3><div class="sec"><div class="note">Click the buttons as in the game: a left button opens its menu (click it again to close it), a menu button opens what it opens in the game - a list of things to build, a window or a tool panel - and the top bar's speed, day / night, objectives and family buttons work. Point at a button for its tooltip (the game's own text). What you click is shown below to edit. Esc closes the window, then the menu, then stops simulating.<br><br>Inside the windows, the game's code draws lists and settings; they are left as notes here.</div><div class="btns"><button id="hud-simstop">Stop simulating</button></div></div>`;
+    if (G.view === 'hud' && !hs && !HS.sim) h += `<h3>In-park screen</h3><div class="sec"><div class="note">The bar along the top of the screen and the buttons down the left, as the game shows them in a park. Click any piece to change its picture: edit its pixels, replace it with a picture of your own, or move its rectangle on the icon sheet. The options above the picture show the other states (speed buttons, weather, career mode, greyed buttons).</div></div>`;
     if (hs) {
       h += `<h3>${esc(hs.label)}</h3><div class="sec"><div class="kv"><span>In the game</span><b>${esc(hs.widget)}</b><span>Where</span><b>${hs.box[0]}, ${hs.box[1]} · ${hs.box[2]} × ${hs.box[3]}${hs.sliced ? ' (stretched)' : hudScaled(hs) ? ' (scaled)' : ''}</b></div>
         ${hs.icons ? `<div class="note">${hs.icons.length > 1 ? 'Its pictures (click one to edit it):' : 'Its picture:'}</div><div id="hud-vars" style="display:flex;flex-wrap:wrap;gap:6px"></div>` : ''}
@@ -1637,6 +1847,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
         <div class="btns"><button id="gu-sheetedit">✎ Edit the whole sheet</button></div></div>`;
     }
     el.innerHTML = h;
+    $('#hud-simstop', el)?.addEventListener('click', () => hudSimulate(false));
     if (hs?.icons) {
       const box = $('#hud-vars', el);
       for (const n of hs.icons) {
@@ -2095,6 +2306,6 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     view.redraw();
   }
   // Esc in the simulation goes back a menu instead of leaving the editor
-  const escape = () => { if (!G.front || !F.sim) return false; simBack(); return true; };
+  const escape = () => { if (G.view === 'hud' && !G.front && G.ovl) return hudEscape(); if (!G.front || !F.sim) return false; simBack(); return true; };
   return { shown, key, escape, afterRestore };
 }

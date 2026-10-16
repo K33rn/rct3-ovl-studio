@@ -956,3 +956,30 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - tests/fw_fan.py: 11 stars over 0.02 s, SpinRateX 100: before 2 distinct directions, now 11 over 1.92 rad. All
   shipped fireworks 6 s without NaN; tops change within the random spread. Not seen in the game (the tester's fan
   file is not here).
+
+## 2026-10-16: GUI Editor - simulate the in-park screen (left button menus, top bar)
+- Measured in the game (Steam, Neon Nights front screen, sandbox, 1280 x 800; game closed after): a left button opens a
+  column of MenuButtonSmall discs at x 52-84, 40 apart, the last one centred 19 px above the button's centre, pushed
+  down to start at y 24 if it would go off the top (Rides 12 and View 9 do). The button in use / under the pointer is
+  drawn ~1.35x. Tooltips below-right, the game's text <icon>Help (MapHelp, Obj_Rides_RollerCoastersHelp...).
+- Flyouts, top to bottom (icons identified against Main.common.ovl + tooltips hovered in the game):
+  View: Land_Grid, Land_Contours, Land_RideHeights, Land_PathHeights, Land_People, Land_Supports, Land_SceneryVisible,
+  Land_TerrainVisible, AnimalWalkingGridOff (toggles; the other icon when on). File: File_AboutRCT, File_GameOptions,
+  File_SaveGame, File_LoadGame. Man: Park, Finances, Staff, Objectives, Research, Rides, Guests, Challenges. Rides:
+  RollerCoasters, JuniorCoasters, ThrillRides, WaterRides, GentleRides, TransportRides, PoolRides, OtherRides,
+  TrackImport, Obj_Pools, Obj_Rides_Animals, Obj_Enclosures. Shops: Food, Drink, Stalls, Utilities. Scenery:
+  TreesNPlants, Fences, WallsRoofsAndBuildings, PathExtras, ThemeProps, RideEvents, TerrainSurfaces, Adverts,
+  CustomStructions_Icon ("Custom structures"), ThreeXFireworks (MixMaster). Land: Land_Brush_Height, Land_Brush_Paint,
+  Land_Water, Land_Waterfall. Delete: GUI2_DeleteSelection, GUI2_DeleteSingleItem. Map opens the Maps window (64,0
+  370 x 368, tabs Map_Scenery / Attractions / People); Paths and terrain tools a round panel at the bottom left; ride /
+  shop / scenery categories a list at 84,0 288 x 318; management items a window (Park Operations 400,296). Top bar:
+  hat -> Scenario objectives window (400,170 477 x 460); day / night -> its 3 icons in a list under it; others tooltips.
+- Windows = WindowBackground (white) + GUI2Dialog_Frame stretched (the frame picture holds the blue title strip, the
+  round header disc at the top left and the shadow; its middle is transparent). Quit = GUI2MiniDialog_Background +
+  _Frame with _Confirm / _Cancel.
+- Viewer: In-park screen > ▶ Simulate (texgui.js FLY, drawHudSim, hudWindow); what is clicked is selected for editing;
+  Esc closes window -> day/night list -> flyout -> stops simulating. Not checked in the game: what Pools, Enclosures,
+  Animals, Track import and the MixMaster item open (assumed tool / tool / list / window / window).
+- tests/ui_hud_sim.py (viewer on fg/): Rides flyout, RollerCoasters list, Park Operations window, grid toggle, fast
+  forward, objectives, day/night pick, Map, Quit, Esc x2 stops simulating and stays in the editor; no page errors.
+  ui_hud_anims still passes, fg Main md5 unchanged.

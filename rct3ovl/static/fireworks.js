@@ -539,7 +539,7 @@ async function build() {
     if (d.sound && !silent) playSound(d.sound, x, y, z, d.sndMin, d.sndMax);
     return p;
   }
-  function emit(p, f) {
+  function emit(p, f, dt) {
     const es = p.d.emitters, strength = p.mods?.strength ?? 1;
     for (let i = 0; i < es.length; i++) {
       const e = es[i];
@@ -551,29 +551,36 @@ async function build() {
       // over 0-63% of a 4 s base left 2.5 s late)
       let target = ff < e.a ? 0 : e.b <= e.a ? N : Math.min(N, Math.floor(N * (ff - e.a) / (e.b - e.a)) + 1);
       if (f >= 1 && ff >= e.a) target = N;
-      const n = Math.floor(target + 1e-6) - p.em[i];
+      const n = Math.floor(target + 1e-6) - p.em[i], j0 = p.em[i];
       if (n <= 0) continue;
       p.em[i] += n;
       const cd = descInfo(p.d.fw, e.desc);
-      // the new particle's frame (RCT3plus.exe 0x9cbdf0): its parent's when ParticleRelative - along the parent's travel,
-      // with its up - else the world's (straight up); then turned by the emitter's spin
       const sp = Math.hypot(p.vx, p.vy, p.vz);
-      let h = e.rel ? (sp > 0.05 ? [p.vx / sp, p.vy / sp, p.vz / sp] : p.h) : WORLD_DIR;
-      let u = e.rel ? p.u : WORLD_UP;
-      if (e.rel && p.d.pspin) { h = rotXYZ(h, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); u = rotXYZ(u, p.d.pspin[0] * p.age, p.d.pspin[1] * p.age, 0); }
-      if (e.spin[0] || e.spin[1] || e.spin[2] || e.spin0[0] || e.spin0[1] || e.spin0[2]) {
-        const a = [e.spin0[0] + e.spin[0] * p.age, e.spin0[1] + e.spin[1] * p.age, e.spin0[2] + e.spin[2] * p.age];
-        h = rotXYZ(h, ...a); u = rotXYZ(u, ...a);
-      }
+      const h0 = e.rel ? (sp > 0.05 ? [p.vx / sp, p.vy / sp, p.vz / sp] : p.h) : WORLD_DIR, u0 = e.rel ? p.u : WORLD_UP;
+      const spun = e.spin[0] || e.spin[1] || e.spin[2] || e.spin0[0] || e.spin0[1] || e.spin0[2];
       for (let k = 0; k < n; k++) {
+        // each particle leaves at its own time in the window (RCT3plus.exe 0x9cbdf0: t = start + k x (window / N), the
+        // parent's state interpolated to t within the step), and the emitter's spin turns it by SpinRate x t - so a fast
+        // spin fans the particles of one step out instead of stacking them into one ball
+        const tj = (e.b <= e.a ? e.a : e.a + (e.b - e.a) * (j0 + k) / N) * p.life + p.delays[i];
+        const back = clamp(p.age - tj, 0, dt);
+        const ta = p.age - back;
+        // the new particle's frame: its parent's when ParticleRelative - along the parent's travel, with its up - else
+        // the world's (straight up); then turned by the emitter's spin
+        let h = h0, u = u0;
+        if (e.rel && p.d.pspin) { h = rotXYZ(h, p.d.pspin[0] * ta, p.d.pspin[1] * ta, 0); u = rotXYZ(u, p.d.pspin[0] * ta, p.d.pspin[1] * ta, 0); }
+        if (spun) { const a = [e.spin0[0] + e.spin[0] * ta, e.spin0[1] + e.spin[1] * ta, e.spin0[2] + e.spin[2] * ta]; h = rotXYZ(h, ...a); u = rotXYZ(u, ...a); }
         const s = randUnit(), c = randPerp(h), ps = randUnit(), pc = e.prc ? randPerp(h) : null;
         const sr = e.sr * (0.85 + 0.15 * Math.random()), pr = e.pr * Math.random();
         const vx = h[0] * e.speed + s[0] * sr + c[0] * e.src + p.vx * e.psf;
         const vy = h[1] * e.speed + s[1] * sr + c[1] * e.src + p.vy * e.psf;
         const vz = h[2] * e.speed + s[2] * sr + c[2] * e.src + p.vz * e.psf;
-        let x = p.x + ps[0] * pr, y = p.y + ps[1] * pr, z = p.z + ps[2] * pr;
+        // where the parent was at its time, then moved on by its own velocity for the rest of the step
+        let x = p.x - p.vx * back + ps[0] * pr + vx * back, y = p.y - p.vy * back + ps[1] * pr + vy * back, z = p.z - p.vz * back + ps[2] * pr + vz * back;
         if (pc) { x += pc[0] * e.prc; y += pc[1] * e.prc; z += pc[2] * e.prc; }
-        if (!spawn(cd, x, y, z, vx, vy, vz, h, e.rel ? p : null, p.mods, u)) return;
+        const q = spawn(cd, x, y, z, vx, vy, vz, h, e.rel ? p : null, p.mods, u);
+        if (!q) return;
+        q.age = back; q.fresh = true;
       }
     }
   }
@@ -608,6 +615,7 @@ async function build() {
     const g = GRAVITY * dt;
     for (let i = 0; i < parts.length; i++) {
       const p = parts[i], d = p.d;
+      if (p.fresh) { p.fresh = false; continue; }   // born during this step: already moved to now
       p.age += dt;
       if (p.tr) { p.ox = p.x; p.oy = p.y; p.oz = p.z; }
       // a pushed particle whose up turns fast (Thunder Blitz: 31 rad/s) is moved in steps of at most 0.1 rad of
@@ -623,7 +631,7 @@ async function build() {
       // child follows its parent through Parent Speed Factor at birth (moved as well, the Comet's trail ran ahead of
       // its head at twice its speed and its 4 s tail stayed balled up round it)
       if (p.tr) for (; p.tnext <= p.age; p.tnext += BURN_DT) burnRecord(p, clamp(1 - (p.age - p.tnext) / dt, 0, 1));
-      if (d.emitters.length) emit(p, Math.min(1, p.age / p.life));
+      if (d.emitters.length) emit(p, Math.min(1, p.age / p.life), dt);
     }
     let j = 0;
     for (let i = 0; i < parts.length; i++) {

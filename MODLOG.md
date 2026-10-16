@@ -943,3 +943,16 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - tests/ui_front_sim.py (viewer on fg/): Main > Play > Sandbox, New sandbox note, Esc Esc back to Play, Back to
   Main, Esc stays in the editor; Shift-pick places 1 + 3 of Play, drag moves both by 32 and not place 2; Delete
   leaves 2 of 4; box picks all 3 of Main, removing all refused, removing 2 leaves 1. Nothing saved. No page errors.
+
+## 2026-10-16: Fireworks - tester: "this effect is supposed to be a fan" (preview: a couple of balls high up)
+- Emission RE (0x9cbdf0, loop 0x9cbf04-0x9cc9db): the k-th particle's time t = start + k x [esi+0xc0] (window / N),
+  advanced per particle; the parent's position, velocity and frame are interpolated to t between the previous and the
+  new step ([esp+0x18] / [esp+0x1c] weights); the spin is SpinOffset + SpinRate x t (fmul [esi+0x94/98/9c] by
+  [esp+0x20], fadd [esi+0x88/8c/90]) - per particle. The viewer turned every particle of a step by SpinRate x the
+  step's age, so a fast-spinning emitter (a fan: N stars over a short window) stacked them into 1-2 balls.
+- Fix (fireworks.js emit): each particle's own time tj = (a + (b - a) j / N) life + delay; spin and the parent's
+  particle spin use tj; it starts where the parent was at tj, moved on by its own velocity for the rest of the step
+  (age = that remainder, not stepped again this frame).
+- tests/fw_fan.py: 11 stars over 0.02 s, SpinRateX 100: before 2 distinct directions, now 11 over 1.92 rad. All
+  shipped fireworks 6 s without NaN; tops change within the random spread. Not seen in the game (the tester's fan
+  file is not here).

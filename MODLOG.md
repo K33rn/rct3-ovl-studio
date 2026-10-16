@@ -1010,3 +1010,31 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Raised items: HEIGHT = round(tile mean ground) + HEIGHTOFFSET (16,783 items on slopes, 30 parks). Items with an
   offset were dropped onto the slope when HEIGHT fell inside the tile's height range (Box Office WWest_Fence balcony
   rails, walls 1-3 m up); place() now keeps HEIGHT when HEIGHTOFFSET > 0.
+
+## 2026-10-16: Fireworks made in the game's Advanced firework editor (simple and complex), and back
+- In the game (Steam RCT3, Money Pit copy loaded from My Documents\RCT3\Parks): a guest renamed "Guido Fawkes" adds
+  "Advanced firework editor" to the top of the MixMaster effect picker (double-click it). Its buttons, top to bottom:
+  add emitter (to the selected node; with nothing selected nothing happens), remove, Firework Designer (settings window,
+  groups in a drop-down), Load, Save. Clicks only register after the pointer has hovered (hc.sh: move, wait, click).
+  Colour: clicking the Particle basics colour area opens an R/G/B bar picker; the stop is saved as R/G/B/A curves
+  with one point (A 1.0).
+- Made there: ZZSimpleBurst (base -> 89 x Flare_00, Start 0 End 0, speed 2.37, sphere 1.87, empty colour curves) and
+  ZZComplex (burst -> 89 stars 2 s -> 55 orange trail sparks per star). All parse in the viewer field for field.
+- FireworkEffects files: 80-byte header (0, 0, 0xF11EDA2A, 0x40, 2, 0, 2, 3, 32 x 0, -1, -1, 0, 0), the trk body, and
+  a u32 checksum: Adobe eexec over every byte before it - c = byte ^ (r >> 8), sum += c, r = (c + r) * 52845 + 22719
+  (written 0x58BF - (c + r) * 0x3193), r0 = 55665 (RCT3plus.exe 0x801de4, seed found as `mov word [x+0x14], 55665`).
+  Brute force over the seed also matched 0x8B15 on one file (sums collide); the game rejected that ("may have been
+  corrupted"). fireworks.designer_file() rebuilds the game's own file byte for byte. Shipped Fireworks\*.frw have no
+  header or checksum.
+- The game's editor preview showed NOTHING for ZZSimpleBurst, nor for copies with white colour curves, faster stars
+  or ParticleRelative off; End Time 0.05 or 1 showed the burst (white, empty curves = white). Emitter code 0x9cbdf0:
+  returns unless t0 < end and t1 >= start (t0/t1 = the parent's previous/current time, absolute); count =
+  k1 - k0 with k = floor((t - start) / window x N) + 1 (k0 = 0 when t0 <= start, k1 = N when t1 >= end). A particle's
+  first step has t0 = 0, so End 0 never fires; Start = End > 0 (Golden Explosion, Solar Strike 1.0; Comet 0.8) fire
+  all N at once. The viewer released all N for any empty window: now an emitter with End <= 0 is skipped
+  (fireworks.js emit), and the AFE tree / panel mark such emitters "never fires". Shipped files with End 0 emitters:
+  AtlantisTorch, Bonfire, Candlefire (1 particle each, now not drawn, as the game's rule says).
+- Save to game now also writes the firework into My Documents\RCT3\FireworkEffects in the designer format (never over
+  a file you made there): a Green Peony saved this way opened and played in the game's editor.
+- tests/fw_game_made.py (fixtures tests/data/ZZ*.frw, made in the game): End 0 -> 0 stars, End 0.05 -> 89, complex ->
+  89 stars + 162 sparks at most. fw_fan passes. Test files removed from My Documents\RCT3 and the game folder after.

@@ -544,7 +544,10 @@ async function build() {
     for (let i = 0; i < es.length; i++) {
       const e = es[i];
       const N = e.useS ? Math.max(0, Math.round(e.N * strength)) : e.N;
-      if (!N) continue;
+      // the game releases particles only while the parent's previous time is before the window's end (0x9cbdf0:
+      // t0 < end and t1 >= start); a particle's first step starts at 0, so an emitter whose End Time is 0 never fires
+      // (seen in the game: a Start 0 / End 0 burst made in its Advanced firework editor shows nothing; End 0.05 bursts)
+      if (!N || e.b <= 0) continue;
       const ff = f - p.delays[i] / p.life;
       // the first particle leaves at the window's start, the rest spread evenly over it (the game's Titan Missile
       // stars release one glow at 1% that lives as long as they do; leaving at the window's end, a 1-particle shell

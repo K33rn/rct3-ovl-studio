@@ -49,6 +49,7 @@ const css = `
   #fw .afe-texgrid canvas { width: 46px; height: 46px; border-radius: 6px; border: 1px solid var(--line); background: #000; cursor: pointer; }
   #fw .afe-texgrid canvas.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
   #fw .afe-hint { color: var(--dim); font-size: 11px; padding: 2px 12px; }
+  #fw .afe-warn { color: #e0a030; }
 `;
 let styled = false;
 
@@ -196,7 +197,8 @@ export function openAFE(ctx, def, key) {
     if (n.kind === 'base') return `<b>${esc(n.Name || 'Firework')}</b> <small>base</small>`;
     const p = N()[n.ParticleDesc] || {};
     const when = n.StartTime === n.EndTime ? `at ${(n.StartTime * 100).toFixed(0)}%` : `${(n.StartTime * 100).toFixed(0)}–${(n.EndTime * 100).toFixed(0)}%`;
-    return `<span class="nm">${n.NumParticles}× ${esc(p.Name || p.TextureNameReduced || 'particle')}</span> <small>${when} · ${(+p.Lifetime || 0).toFixed(2)}s</small>`;
+    const never = +n.EndTime <= 0 && +n.NumParticles > 0 ? ' <small class="afe-warn" title="End Time 0: the game never releases these particles (set End Time above 0, e.g. 0.01 for a burst)">⚠ never fires</small>' : '';
+    return `<span class="nm">${n.NumParticles}× ${esc(p.Name || p.TextureNameReduced || 'particle')}</span> <small>${when} · ${(+p.Lifetime || 0).toFixed(2)}s</small>${never}`;
   }
   function renderTree() {
     const rows = [];
@@ -245,7 +247,7 @@ export function openAFE(ctx, def, key) {
       title.textContent = 'Particle emitter and its particle';
       html = EMITTER_GROUPS.map(([g, fs]) => `<div class="afe-grp"><b>${g}</b>${fs.map(f => fieldHtml('n', f)).join('')}</div>`).join('');
       const shared = Object.values(N()).filter(x => x.kind === 'emitter' && String(x.ParticleDesc) === String(n.ParticleDesc)).length;
-      html += `<div class="afe-hint" style="padding:6px 12px 0">${shared > 1 ? `This particle is shared by ${shared} emitters: changes show in all of them. <button data-a="unshare">Make its own copy</button>` : 'Start / End Time: when in its parent\'s life (0 = start, 1 = end) the emitter releases its particles.'}</div>`;
+      html += `<div class="afe-hint" style="padding:6px 12px 0">${shared > 1 ? `This particle is shared by ${shared} emitters: changes show in all of them. <button data-a="unshare">Make its own copy</button>` : 'Start / End Time: when in its parent\'s life (0 = start, 1 = end) the emitter releases its particles.'}${+n.EndTime <= 0 ? ' <b class="afe-warn">End Time 0: the game never releases these particles - for one burst at the start use End Time 0.01.</b>' : ''}</div>`;
       html += PARTICLE_GROUPS.map(([g, fs]) => `<div class="afe-grp"><b>${g}</b>${fs.map(f => fieldHtml('p', f)).join('')}</div>`).join('');
     }
     props.innerHTML = html;
@@ -495,7 +497,7 @@ export function openAFE(ctx, def, key) {
       ctx.toast(`Saved “${out.title}” in your fireworks (drag it onto the MixMaster timeline)`);
     }
     if (a === 'game') {
-      try { const r = await ctx.saveToGame('frw', clean(), fw.title); ctx.toast(`Saved ${r.file} into the game's Fireworks folder`); ctx.reload(); }
+      try { const r = await ctx.saveToGame('frw', clean(), fw.title); ctx.toast(`Saved ${r.file} into the game's Fireworks folder (and My Documents\\RCT3\\FireworkEffects, for the game's own Advanced firework editor)`); ctx.reload(); }
       catch (err) { ctx.toast('Could not save: ' + err.message); }
     }
     if (a === 'dl') ctx.download('frw', clean(), fw.title).catch(err => ctx.toast('Could not build: ' + err.message));

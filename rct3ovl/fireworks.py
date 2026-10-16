@@ -467,6 +467,26 @@ class _Ids:
         return self.n
 
 
+def designer_checksum(data: bytes) -> int:
+    """The u32 the game's designers append to what they save (RCT3plus.exe 0x801de4: each byte xor the key's high byte
+    is added to the sum, and the key becomes 0x58BF - (that + key) * 0x3193, 16 bits, starting at 55665: Adobe eexec). A file whose
+    last 4 bytes don't match is "corrupted" to the Advanced firework editor's Load."""
+    s, r = 0, 55665
+    for b in data:
+        c = ((r >> 8) ^ b) & 0xFF
+        s += c
+        r = (0x58BF - (c + r) * 0x3193) & 0xFFFF
+    return s & 0xFFFFFFFF
+
+
+def designer_file(body: bytes) -> bytes:
+    """A .frw the way the game's Advanced firework editor saves it (My Documents\\RCT3\\FireworkEffects): its 80-byte
+    header (0, 0, magic 0xF11EDA2A, 64, 2, 0, 2, 3 ... -1, -1, 0, 0), the file without one, and the checksum."""
+    hdr = struct.pack('<2I2I4I', 0, 0, 0xF11EDA2A, 0x40, 2, 0, 2, 3) + bytes(32) + struct.pack('<2i2I', -1, -1, 0, 0)
+    blob = hdr + body
+    return blob + struct.pack('<I', designer_checksum(blob))
+
+
 def build_frw(lib: Library, fw: dict) -> bytes:
     """A .frw from the editor's firework {title, cost, colour, root, nodes: {id: {kind, ...fields}}}."""
     t = _template(lib, 'frw')
@@ -689,6 +709,17 @@ def save_to_game(lib: Library, kind: str, filename: str, data: dict) -> str:
         _write(vs, blob)
         path = vs
     made.add(os.path.normcase(os.path.abspath(path)))
+    # a firework also goes into My Documents\RCT3\FireworkEffects the way the game's Advanced firework editor saves
+    # (its header and checksum), so that editor's Load opens it; one you made there yourself is never overwritten
+    ud = user_dir()
+    if kind == 'frw' and ud and os.path.isdir(ud):
+        dpath = os.path.join(ud, USER_FOLDERS['Fireworks'], base + EXT[kind])
+        if not os.path.exists(dpath) or os.path.normcase(os.path.abspath(dpath)) in made:
+            try:
+                _write(dpath, designer_file(blob))
+                made.add(os.path.normcase(os.path.abspath(dpath)))
+            except OSError:
+                pass
     json.dump(sorted(made), open(_manifest_path(lib), 'w'))
     lib.__dict__.pop('_fireworks', None)
     return path

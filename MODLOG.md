@@ -931,3 +931,15 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   middle, weather, Paths; reorder -> 2 rectangles moved; import a 6-colour strip into MassiveWaiting -> frame 3's
   place reads (80,140,255); restore -> Main.common.ovl md5 identical. No page errors. Not tried in the game this
   time (icon rectangles and pixels were shown to work in the game on 2026-10-14).
+
+## 2026-10-15: Front screen designer - simulate the menus; pick several buttons and remove them
+- **▶ Simulate** (front screen toolbar): click through the menus with the current layout (saved or not). Play / Tools /
+  Sandbox / Custom scenario open their menu wherever they sit (the button carries its action, frontscreen.py);
+  the other 11 buttons leave the front screen, shown as a note. Back (the corner button, Backspace, Esc) walks a
+  history, Quit on the main menu. Opening a menu slides the buttons round the circle from the animator's resting
+  angle 1.885 rad to their places, staggered (an approximation of the game's slide-in, timing not measured).
+- Picking: Shift / Ctrl-click, a box on empty space, or the list's tick boxes; picked places drag together; Delete /
+  Backspace or **Remove picked** removes them (the main menu keeps at least one button); Ctrl+A picks all.
+- tests/ui_front_sim.py (viewer on fg/): Main > Play > Sandbox, New sandbox note, Esc Esc back to Play, Back to
+  Main, Esc stays in the editor; Shift-pick places 1 + 3 of Play, drag moves both by 32 and not place 2; Delete
+  leaves 2 of 4; box picks all 3 of Main, removing all refused, removing 2 leaves 1. Nothing saved. No page errors.

@@ -313,6 +313,7 @@ function build() {
     openTexture: async (path, name, opts) => { setMode('tex'); await tex.open(path, name, opts); } });
   addEventListener('keydown', e => {
     if (root.style.display === 'none' || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || document.querySelector('#tour')) return;
+    if (e.key === 'Escape' && S.mode === 'gui' && !root.querySelector('.dlg') && gui.escape()) return;
     if (e.key === 'Escape' && !root.querySelector('.dlg') && !(S.mode === 'tex' && tex.hasSelection())) { $('#tg-back', root).click(); return; }
     (S.mode === 'tex' ? tex : gui).key(e);
   });
@@ -1738,7 +1739,15 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     ['FrontEndBG3', 'Circle quarters'], ['FrontEndBG4', 'Pieces over the circle'], ['FrontEndLogo', 'The big picture'], ['FrontEndParts', 'Logo, badges, bar ends, crowd'],
     ['FrontEndIcons', 'Button icons'], ['GUI2Main2', 'Expansion badges']];
   const W = 1280, H = 800, SX = W / 1024, SY = H / 768, NPL = 5, CX = 734, CY = 239.5;
-  const F = { menu: 'main', L: null, vals: {}, colour: 0, places: [], lists: {}, tex: {}, icons: null, texts: null, lang: null, words: new Map(), drag: null };
+  const F = { menu: 'main', L: null, vals: {}, colour: 0, places: [], lists: {}, tex: {}, icons: null, texts: null, lang: null, words: new Map(), drag: null,
+    sel: new Set(), box: null, sim: false, hist: [], hover: -1, anim: 0, note: null };
+  // simulating: what each game button does wherever it sits (the four that open another front-screen menu, the rest
+  // leave the front screen for a screen of their own)
+  const OPENS = { play: 'play', tools: 'tools', sandbox: 'sandbox', custom: 'custom' };
+  const LEAVES = { options: 'the Options screen', tutorial: 'the tutorial pages', career: 'the career scenarios', people: 'the People designer',
+    scenario_ed: 'the Scenario editor', coaster: 'the Coaster designer', building: 'the Building designer', new: 'the sandbox parks to start',
+    load: 'the saved sandbox parks', custom_new: 'the custom scenarios to start', custom_load: 'the saved custom scenario parks' };
+  const SLIDE = 380, STAGGER = 70, PARKED = 1.885;     // ms; the animator's resting angle (frontscreen.py)
   // not '#tg .stage canvas' (absolute at the top left, over the menu tabs): sized to fit its box, kept 1280:800
   const fcv = document.createElement('canvas'); fcv.width = W; fcv.height = H;
   fcv.style.cssText = 'position:static;inset:auto;margin:auto;display:block;flex:none;cursor:default;border-radius:6px;box-shadow:0 2px 16px #0008';
@@ -1773,10 +1782,51 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       <div class="ctool"><span class="title">Front screen</span>${Object.entries(MENU_NAMES).map(([k, v]) => `<button data-m="${k}">${v}</button>`).join('')}<span style="flex:1"></span><small style="color:var(--dim)">drag a button (or an empty place) anywhere · places are shared by every menu</small></div>
       <div style="flex:1;min-height:0;padding:12px;display:flex;overflow:hidden" id="fs-stage"></div></div>`;
     $('#fs-stage', panel).appendChild(fcv); fitFront.disconnect(); fitFront.observe($('#fs-stage', panel));
-    panel.querySelectorAll('button[data-m]').forEach(b => b.onclick = () => { F.menu = b.dataset.m; drawFront(); markMenu(); renderRight(); });
-    markMenu(); drawFront(); renderRight();
+    const tool = $('.ctool', panel);
+    tool.insertAdjacentHTML('beforeend', '<button id="fs-sim" title="Click through the menus as in the game">▶ Simulate</button>');
+    tool.querySelector('small').id = 'fs-hint';
+    panel.querySelectorAll('button[data-m]').forEach(b => b.onclick = () => { F.hist = []; goMenu(b.dataset.m); });
+    $('#fs-sim', panel).onclick = () => simulate(!F.sim);
+    F.sim = false; F.sel.clear(); markMenu(); drawFront(); renderRight();
   }
-  function markMenu() { $('#gu-panel', P.centre).querySelectorAll('button[data-m]').forEach(b => b.style.cssText = b.dataset.m === F.menu ? 'border-color:var(--accent);color:var(--accent)' : ''); }
+  function markMenu() {
+    const panel = $('#gu-panel', P.centre);
+    panel.querySelectorAll('button[data-m]').forEach(b => b.style.cssText = b.dataset.m === F.menu ? 'border-color:var(--accent);color:var(--accent)' : '');
+    const sim = $('#fs-sim', panel), hint = $('#fs-hint', panel); if (!sim) return;
+    sim.textContent = F.sim ? '■ Stop simulating' : '▶ Simulate'; sim.style.cssText = F.sim ? 'border-color:var(--accent);color:var(--accent)' : '';
+    hint.textContent = F.sim ? [...F.hist, F.menu].map(m => MENU_NAMES[m]).join(' › ') + ' · click a button · Back / Esc goes back'
+      : 'drag to move · Shift-click or drag a box to pick several · Delete removes';
+  }
+  function goMenu(m, slide = F.sim) {
+    F.menu = m; F.sel.clear(); F.note = null; F.hover = -1;
+    if (slide) { F.anim = performance.now(); requestAnimationFrame(tick); }
+    drawFront(); markMenu(); renderRight();
+  }
+  function tick() {
+    if (!F.anim || !G.front) return;
+    if (performance.now() - F.anim > SLIDE + STAGGER * NPL) F.anim = 0; else requestAnimationFrame(tick);
+    drawFront();
+  }
+  function simulate(on) {
+    F.sim = on; F.hist = []; F.note = null; F.drag = null; F.box = null; F.sel.clear();
+    if (on) goMenu('main'); else { F.anim = 0; drawFront(); markMenu(); renderRight(); }
+  }
+  function simBack() {          // Back (or Quit on the main menu)
+    if (F.note) { F.note = null; drawFront(); return; }
+    if (F.hist.length) { goMenu(F.hist.pop()); return; }
+    if (F.menu !== 'main') { goMenu('main'); return; }
+    F.note = 'Quit: the game asks whether to quit to Windows'; drawFront();
+  }
+  // where place n's badge is drawn: while a menu opens in the simulation the buttons slide round the circle from the
+  // animator's resting angle to their place, one after another, as the game does
+  function placeAt(n) {
+    const [x, y] = F.places[n]; if (!F.anim) return [x, y];
+    const t = Math.min(1, Math.max(0, (performance.now() - F.anim - STAGGER * n) / SLIDE)), e = 1 - (1 - t) ** 3;
+    const r = Math.hypot(x - CX, y - CY); let a = Math.atan2(CY - y, x - CX);
+    while (a - PARKED > Math.PI) a -= 2 * Math.PI; while (a - PARKED < -Math.PI) a += 2 * Math.PI;
+    const b = PARKED + (a - PARKED) * e;
+    return [CX + r * Math.cos(b), CY - r * Math.sin(b)];
+  }
   async function loadFrontTextures() {
     F.tex = {};
     await Promise.all(PICTURES.map(async ([n]) => { try { F.tex[n] = await loadImage(imgUrl(MAIN, n + ':tex') + '&t=' + Date.now()); } catch (e) {} }));
@@ -1807,18 +1857,21 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     g.fillStyle = '#000'; g.font = '700 22px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText(word(TITLES[F.menu]), 512, 724);
     // Back / Quit (type 4, slots 4 and 5) on the main menu's corner arc
-    for (const s of [4, 5]) { const [x, y] = cornerAt(s); g.fillStyle = '#4aa0e0'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 15, 0, 7); g.fill(); g.stroke(); }
+    for (const s of [4, 5]) { const [x, y] = cornerAt(s); g.fillStyle = F.sim && F.hover === 'back' ? '#7cc4ff' : '#4aa0e0'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 15, 0, 7); g.fill(); g.stroke(); }
+    if (F.sim) { const [x, y] = cornerAt(4); g.fillStyle = '#fff'; g.font = '700 13px Arial'; g.fillText(F.menu === 'main' ? 'Quit' : 'Back', x, y + 27); }
     // the 5 places: an empty one is a numbered marker (still draggable - other menus use it)
     const size = F.vals.menu_size, items = F.lists[F.menu];
     F.places.forEach(([x, y], n) => {
-      if (items[n]) return;
+      if (items[n] || F.sim) return;
+      if (F.sel.has(n)) { g.strokeStyle = '#3cf'; g.lineWidth = 3; g.beginPath(); g.arc(x, y, size / 2 + 5, 0, 7); g.stroke(); }
       g.strokeStyle = '#fffa'; g.setLineDash([5, 5]); g.lineWidth = 2; g.beginPath(); g.arc(x, y, size / 2, 0, 7); g.stroke(); g.setLineDash([]);
       g.fillStyle = '#fffc'; g.font = '700 20px Arial'; g.fillText(n + 1, x, y);
     });
     // the menu's buttons: bar (the code's colour), its rounded end and slant (FrontEndParts), the badge and the icon
     items.forEach((key, n) => {
-      const [x, y] = F.places[n], h = 94, bw = 226, b = btn(key), text = b.text;
+      const [x, y] = placeAt(n), h = 94, bw = 226, b = btn(key), text = b.text;
       g.fillStyle = argbCss(F.colour);
+      if (F.sim && F.hover === n && !F.anim) { g.save(); g.shadowColor = '#fff'; g.shadowBlur = 18; }
       g.beginPath(); g.moveTo(x, y - h / 2); g.lineTo(x + bw, y - h / 2); g.lineTo(x + bw + 22, y + h / 2); g.lineTo(x, y + h / 2); g.fill();
       img('FrontEndParts', 90, 2, 95, 97, x - size * 0.6, y - h / 2, 95 * h / 97, h);
       img('FrontEndParts', 186, 2, 78, 80, x - size / 2, y - size / 2, size, size);
@@ -1828,10 +1881,21 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       const lines = word(text).split(/\s+/), two = lines.length > 1 && word(text).length > 9;
       if (two) { const m = Math.ceil(lines.length / 2); g.fillText(lines.slice(0, m).join(' '), x + 130, y - 13); g.fillText(lines.slice(m).join(' '), x + 130, y + 13); }
       else g.fillText(word(text), x + 130, y);
+      if (F.sim) { if (F.hover === n && !F.anim) g.restore(); return; }
       g.fillStyle = '#000a'; g.beginPath(); g.arc(x - size / 2 + 8, y - size / 2 + 8, 10, 0, 7); g.fill();
       g.fillStyle = '#fff'; g.font = '700 13px Arial'; g.fillText(n + 1, x - size / 2 + 8, y - size / 2 + 8);
+      if (F.sel.has(n)) { g.strokeStyle = '#3cf'; g.lineWidth = 3; g.strokeRect(x - size / 2 - 6, y - h / 2 - 2, size / 2 + bw + 34, h + 4); }
       if (F.drag?.n === n) { g.strokeStyle = '#fff'; g.setLineDash([6, 4]); g.lineWidth = 2; g.strokeRect(x - size / 2 - 4, y - size / 2 - 4, size + 8, size + 8); g.setLineDash([]); }
     });
+    if (F.box) {           // the selection box being dragged
+      const [x0, y0, x1, y1] = F.box, bx = Math.min(x0, x1), by = Math.min(y0, y1), bw = Math.abs(x1 - x0), bh = Math.abs(y1 - y0);
+      g.fillStyle = '#33ccff22'; g.strokeStyle = '#3cf'; g.lineWidth = 1.5; g.setLineDash([5, 3]); g.fillRect(bx, by, bw, bh); g.strokeRect(bx, by, bw, bh); g.setLineDash([]);
+    }
+    if (F.note) {          // a button that leaves the front screen
+      g.fillStyle = '#000b'; g.fillRect(0, 0, 1024, 768);
+      g.fillStyle = '#fff'; g.font = '700 26px Arial'; g.fillText(F.note, 512, 360);
+      g.fillStyle = '#ccc'; g.font = '16px Arial'; g.fillText('(not part of the front screen) · click or press Esc to go back', 512, 400);
+    }
     g.setTransform(1, 0, 0, 1, 0, 0);
   }
   function fpos(e) { const b = fcv.getBoundingClientRect(); return [(e.clientX - b.left) * W / b.width / SX, (e.clientY - b.top) * H / b.height / SY]; }
@@ -1843,17 +1907,56 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     }
     return -1;
   }
+  const onBack = (x, y) => [4, 5].some(s => { const [bx, by] = cornerAt(s); return Math.hypot(x - bx, y - by) < 20; });
+  function simClick(x, y) {
+    if (F.note) { F.note = null; drawFront(); return; }
+    if (onBack(x, y)) { simBack(); return; }
+    const k = F.lists[F.menu][fhit(x, y)]; if (!k) return;
+    if (OPENS[k]) { F.hist.push(F.menu); goMenu(OPENS[k]); }
+    else { F.note = btn(k).label + ' opens ' + LEAVES[k]; drawFront(); }
+  }
   fcv.addEventListener('pointerdown', e => {
-    const [x, y] = fpos(e), n = fhit(x, y); if (n < 0) return;
-    const [bx, by] = F.places[n]; F.drag = { n, dx: x - bx, dy: y - by }; fcv.setPointerCapture(e.pointerId); drawFront();
+    const [x, y] = fpos(e);
+    if (F.sim) { simClick(x, y); return; }
+    const n = fhit(x, y), add = e.shiftKey || e.ctrlKey || e.metaKey;
+    fcv.setPointerCapture(e.pointerId);
+    if (n < 0) { if (!add) F.sel.clear(); F.box = [x, y, x, y, new Set(F.sel)]; drawFront(); renderRight(); return; }
+    if (add) { F.sel.has(n) ? F.sel.delete(n) : F.sel.add(n); drawFront(); renderRight(); if (!F.sel.has(n)) return; }
+    else if (!F.sel.has(n)) { F.sel.clear(); F.sel.add(n); }
+    // drag every picked place together
+    F.drag = { n, x, y, from: new Map([...F.sel].map(m => [m, [...F.places[m]]])) }; drawFront(); renderRight();
   });
   fcv.addEventListener('pointermove', e => {
     const [x, y] = fpos(e);
-    if (!F.drag) { fcv.style.cursor = fhit(x, y) >= 0 ? 'grab' : 'default'; return; }
-    F.places[F.drag.n] = [Math.round(Math.min(1124, Math.max(-100, x - F.drag.dx))), Math.round(Math.min(868, Math.max(-100, y - F.drag.dy)))];
+    if (F.sim) {
+      const n = fhit(x, y), h = F.note ? -1 : onBack(x, y) ? 'back' : F.lists[F.menu][n] ? n : -1;
+      fcv.style.cursor = h === -1 && !F.note ? 'default' : 'pointer'; if (h !== F.hover) { F.hover = h; drawFront(); } return;
+    }
+    if (F.box) {
+      F.box[2] = x; F.box[3] = y; const [x0, y0, x1, y1, keep] = F.box;
+      F.sel = new Set(keep); F.places.forEach(([px, py], m) => { if (px >= Math.min(x0, x1) && px <= Math.max(x0, x1) && py >= Math.min(y0, y1) && py <= Math.max(y0, y1)) F.sel.add(m); });
+      drawFront(); return;
+    }
+    if (!F.drag) { fcv.style.cursor = fhit(x, y) >= 0 ? 'grab' : 'crosshair'; return; }
+    const dx = x - F.drag.x, dy = y - F.drag.y;
+    for (const [m, [px, py]] of F.drag.from) F.places[m] = [Math.round(Math.min(1124, Math.max(-100, px + dx))), Math.round(Math.min(868, Math.max(-100, py + dy)))];
     drawFront(); syncFrontInputs();
   });
-  fcv.addEventListener('pointerup', () => { if (F.drag) { F.drag = null; drawFront(); renderRight(); } });
+  fcv.addEventListener('pointerup', () => {
+    if (F.box) { F.box = null; drawFront(); renderRight(); }
+    if (F.drag) { F.drag = null; drawFront(); renderRight(); }
+  });
+  fcv.addEventListener('pointerleave', () => { if (F.sim && F.hover !== -1) { F.hover = -1; drawFront(); } });
+  // take the picked buttons out of this menu (the places stay; the buttons after them move up)
+  function removePicked() {
+    const l = F.lists[F.menu], gone = [...F.sel].filter(n => l[n]);
+    if (!gone.length) return toast('Pick buttons of this menu first (an empty place has nothing to remove)', true);
+    if (F.menu === 'main' && gone.length >= l.length) return toast('The main menu needs at least one button', true);
+    F.lists[F.menu] = l.filter((_, n) => !gone.includes(n)); F.sel.clear();
+    toast(`Removed ${gone.length} button${gone.length > 1 ? 's' : ''} from ${MENU_NAMES[F.menu]}`);
+    drawFront(); renderRight();
+  }
+  function pickAll() { F.sel = new Set(F.lists[F.menu].map((_, n) => n)); drawFront(); renderRight(); }
 
   function syncFrontInputs() {
     const el = $('#gu-right', P.right);
@@ -1864,6 +1967,16 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   }
   function frontRight(el) {
     if (!F.L) { el.innerHTML = '<h3>Front screen</h3>'; return; }
+    if (F.sim) {
+      const items = F.lists[F.menu];
+      el.innerHTML = `<h3>Simulating · ${esc(MENU_NAMES[F.menu])}</h3><div class="sec">
+        <div class="note">Click the buttons on the screen to go through the menus as the game does, with your layout and buttons (saved or not). <b>Back</b> (the round button by the circle, Backspace or Esc) goes to the menu before.</div>
+        ${items.map((k, n) => `<div class="li" data-go="${n}" style="padding-left:6px">${n + 1}. ${esc(btn(k).label)}<small>${OPENS[k] ? 'opens ' + esc(MENU_NAMES[OPENS[k]]) : 'leaves the front screen'}</small></div>`).join('') || '<div class="note">This menu has no buttons: Back is the only way out.</div>'}
+        <div class="btns"><button id="fs-sback">${F.menu === 'main' && !F.hist.length ? 'Quit' : 'Back'}</button><button id="fs-shome">Main menu</button><button id="fs-sstop">Stop simulating</button></div></div>`;
+      el.querySelectorAll('[data-go]').forEach(d => d.onclick = () => { const [x, y] = F.places[+d.dataset.go]; simClick(x, y); });
+      $('#fs-sback', el).onclick = simBack; $('#fs-shome', el).onclick = () => { F.hist = []; goMenu('main'); }; $('#fs-sstop', el).onclick = () => simulate(false);
+      return;
+    }
     const row = p => `<label class="fs-row" title="the game's own: ${p.angle ? deg(p.orig).toFixed(2) + '°' : p.orig}">
       <span>${esc(p.label)}</span><input type="number" data-k="${p.key}" step="${p.angle ? 0.5 : 1}" value="${+(p.angle ? deg(F.vals[p.key]) : F.vals[p.key]).toFixed(p.angle ? 2 : 1)}">${p.angle ? '°' : ''}</label>`;
     const grp = gk => F.L.params.filter(p => p.group === gk).map(row).join('');
@@ -1871,14 +1984,15 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     const items = F.lists[F.menu], where = k => Object.keys(MENU_NAMES).find(m => F.lists[m].includes(k));
     const addable = Object.keys(M().buttons).filter(k => !items.includes(k));
     el.innerHTML = `<style>#gu-right .fs-row{display:grid;grid-template-columns:1fr 84px 12px;gap:6px;align-items:center;margin:3px 0;font-size:12px}#gu-right .fs-row input{width:100%}
-      #gu-right .fs-item{display:grid;grid-template-columns:18px 1fr auto;gap:6px;align-items:center;margin:3px 0;font-size:12px}#gu-right .fs-item .n{color:var(--dim);text-align:right}
+      #gu-right .fs-item{display:grid;grid-template-columns:16px 18px 1fr auto;gap:6px;align-items:center;margin:3px 0;font-size:12px}#gu-right .fs-item .n{color:var(--dim);text-align:right}
       #gu-right .fs-item button{padding:1px 6px;min-width:0}#gu-right .fs-pl{display:grid;grid-template-columns:1fr 70px 70px;gap:6px;align-items:center;margin:3px 0;font-size:12px}#gu-right .fs-pl input{width:100%}</style>
       <h3>Layout</h3><div class="sec"><div class="note" id="fs-state"></div>
         <div class="btns"><button class="primary" id="fs-save">Save into game</button><button id="fs-undo">Undo changes</button></div>
         <div class="btns"><button id="fs-reset" title="Every place, menu, number and the bar colour back to the game's own (saved into the game)">Game's own layout</button></div>
         <div class="note">Saved into the game's program (RCT3plus.exe); it is copied first and <b>Changed files</b> puts it back. Close the game before saving.</div></div>
       <h3>Buttons · ${esc(MENU_NAMES[F.menu])}</h3><div class="sec">
-        ${items.map((k, n) => `<div class="fs-item"><span class="n">${n + 1}</span><span>${esc(btn(k).label)}</span><span><button data-up="${n}" ${n ? '' : 'disabled'} title="Earlier (place ${n})">↑</button><button data-down="${n}" ${n < items.length - 1 ? '' : 'disabled'} title="Later (place ${n + 2})">↓</button><button data-del="${n}" title="Remove from this menu">✕</button></span></div>`).join('') || '<div class="note">No buttons in this menu.</div>'}
+        ${items.map((k, n) => `<div class="fs-item"><input type="checkbox" data-pick="${n}" ${F.sel.has(n) ? 'checked' : ''} title="Pick (Shift / Ctrl-click on the screen picks several)"><span class="n">${n + 1}</span><span>${esc(btn(k).label)}</span><span><button data-up="${n}" ${n ? '' : 'disabled'} title="Earlier (place ${n})">↑</button><button data-down="${n}" ${n < items.length - 1 ? '' : 'disabled'} title="Later (place ${n + 2})">↓</button><button data-del="${n}" title="Remove from this menu">✕</button></span></div>`).join('') || '<div class="note">No buttons in this menu.</div>'}
+        ${items.length ? `<div class="btns"><button id="fs-pickall">${[...F.sel].filter(n => items[n]).length === items.length ? 'Pick none' : 'Pick all'}</button><button id="fs-delpicked" ${[...F.sel].some(n => items[n]) ? '' : 'disabled'}>Remove picked (${[...F.sel].filter(n => items[n]).length})</button></div>` : ''}
         <div class="fs-item" style="grid-template-columns:1fr auto;margin-top:8px"><select id="fs-addk" ${items.length >= NPL ? 'disabled' : ''}>${addable.map(k => { const m = where(k); return `<option value="${k}">${esc(btn(k).label)}${m ? ` (moves from ${MENU_NAMES[m]})` : ' (removed)'}</option>`; }).join('')}</select><button id="fs-add" ${items.length >= NPL || !addable.length ? 'disabled' : ''}>Add button</button></div>
         <div class="note">A button works as it does in the game wherever it sits: <b>Play</b> opens the Play menu, <b>Coaster designer</b> starts the coaster designer, and so on. Each game button can be in one menu at a time (adding it here takes it out of the other menu), and a menu holds up to ${NPL} (the game's ${NPL} places). A removed button is not shown anywhere.</div></div>
       <h3>Places</h3><div class="sec">
@@ -1896,7 +2010,10 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       <h3>${esc(F.L.groups.corner)}, lists, tutorial</h3><div class="sec"><details><summary style="cursor:pointer;color:var(--dim)">More numbers</summary>${grp('corner')}<div class="grp" style="margin-top:6px">${esc(F.L.groups.list)}</div>${grp('list')}<div class="grp" style="margin-top:6px">${esc(F.L.groups.tutorial)}</div>${grp('tutorial')}</details></div>`;
     el.querySelectorAll('input[data-k]').forEach(i => i.oninput = () => { const p = F.L.params.find(q => q.key === i.dataset.k); const v = +i.value; if (!isFinite(v)) return; F.vals[p.key] = p.angle ? rad(v) : v; drawFront(); syncFrontInputs(); });
     el.querySelectorAll('input[data-pl]').forEach(i => i.oninput = () => { const [n, c] = i.dataset.pl.split(',').map(Number), v = +i.value; if (!isFinite(v) || i.value === '') return; F.places[n][c] = v; drawFront(); syncFrontInputs(); });
-    const relist = fn => { fn(F.lists[F.menu]); drawFront(); renderRight(); };
+    const relist = fn => { fn(F.lists[F.menu]); F.sel.clear(); drawFront(); renderRight(); };
+    el.querySelectorAll('input[data-pick]').forEach(i => i.onchange = () => { const n = +i.dataset.pick; i.checked ? F.sel.add(n) : F.sel.delete(n); drawFront(); renderRight(); });
+    const pa = $('#fs-pickall', el); if (pa) pa.onclick = () => { if (pa.textContent === 'Pick none') { F.sel.clear(); drawFront(); renderRight(); } else pickAll(); };
+    const dp = $('#fs-delpicked', el); if (dp) dp.onclick = removePicked;
     el.querySelectorAll('[data-up]').forEach(b => b.onclick = () => relist(l => { const n = +b.dataset.up; [l[n - 1], l[n]] = [l[n], l[n - 1]]; }));
     el.querySelectorAll('[data-down]').forEach(b => b.onclick = () => relist(l => { const n = +b.dataset.down; [l[n + 1], l[n]] = [l[n], l[n + 1]]; }));
     el.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
@@ -1927,7 +2044,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       try { const r = await post('/api/tx/menu', body); F.L = { ...F.L, ...r }; takeLayout(); setEdits((await fetch('/api/tx/gui').then(r => r.json())).edits); toast('Saved the layout into RCT3plus.exe'); drawFront(); renderRight(); }
       catch (e) { toast('Could not save: ' + e.message, true); }
     };
-    $('#fs-undo', el).onclick = () => { takeLayout(); drawFront(); renderRight(); };
+    $('#fs-undo', el).onclick = () => { takeLayout(); F.sel.clear(); drawFront(); renderRight(); };
     $('#fs-reset', el).onclick = async () => {
       if (!await confirmBox("Game's own layout", "Put every place, every menu's buttons, every number and the bar colour back to the game's own, in RCT3plus.exe?", 'Reset')) return;
       try { const r = await post('/api/tx/menu/reset', {}); F.L = { ...F.L, ...r }; takeLayout(); setEdits((await fetch('/api/tx/gui').then(r => r.json())).edits); toast("The game's own layout is back"); drawFront(); renderRight(); }
@@ -1946,6 +2063,13 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   }
 
   function key(e) {
+    if (G.front && F.L) {
+      const k = e.key.toLowerCase();
+      if (F.sim) { if (k === 'backspace') simBack(); return; }
+      if ((k === 'delete' || k === 'backspace') && F.sel.size) { e.preventDefault(); removePicked(); }
+      if (k === 'a' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); pickAll(); }
+      return;
+    }
     if (G.front || G.view === 'hud') return;
     const k = e.key.toLowerCase();
     if (G.view !== 'sheet' || !G.sel || !G.sheet?.icons.includes(G.sel)) { if (k === '0') view.fit(); return; }
@@ -1970,5 +2094,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     if (!S.gui && !loading) loading = fetch('/api/tx/gui').then(r => r.json()).then(c => { S.gui = c; setEdits(c.edits); renderLeft(); if (!G.ovl && !G.lang && !G.front) openOvl(c.icons.find(o => /^main\.common/i.test(o.path))?.path || c.icons[0]?.path); });
     view.redraw();
   }
-  return { shown, key, afterRestore };
+  // Esc in the simulation goes back a menu instead of leaving the editor
+  const escape = () => { if (!G.front || !F.sim) return false; simBack(); return true; };
+  return { shown, key, escape, afterRestore };
 }

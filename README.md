@@ -204,7 +204,11 @@ The buttons at the top:
     menu: remove a button (✕), move it up or down, or **Add button** - pick any of the game's 15 menu buttons (Play,
     Tools, Options, Tutorial, Career, Sandbox, Custom scenario, the four designers and editor, New / Load...) and it
     works there as it does in the game. Each game button can be in one menu at a time (adding it takes it out of the
-    other one), and a menu holds up to 5. **Put the places on an arc** puts them back on the game's kind of arc. Set
+    other one), and a menu holds up to 5. Pick several buttons with Shift / Ctrl-click, a box dragged round them or
+    their tick boxes: they drag together, and **Remove picked** (or Delete) takes them all out. **▶ Simulate** plays
+    the menus as the game does with your layout, saved or not: click a button and its menu opens with the buttons
+    sliding in, **Back** (or Esc) goes back, and a button that leaves the front screen (Options, a designer...) says
+    where it goes. **Put the places on an arc** puts them back on the game's kind of arc. Set
     the badge size and the bars' colour. **More numbers** moves the Back / Quit buttons, the scenario lists and the
     tutorial pages. **Menu words**
     renames the buttons and titles, **Pictures** opens each front-screen picture in the Texture Editor, and **Themes**

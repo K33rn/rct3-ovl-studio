@@ -3,9 +3,10 @@
 //   fill, shapes, text, selections, colour adjustments, import / export PNG; "Save into game" writes the picture
 //   back into its OVL in the same size and format (texedit.py), the original files are backed up first.
 // - GUI Editor: the interface built from those pictures: icon sheets with every icon's rectangle (move and resize
-//   them, edit their pixels), all icons as a gallery, button states played as a button (normal / hover / pressed /
-//   disabled), numbered icon sets played as animations, window frame pieces stretched like a window, the menu
-//   screens and fonts, and every menu text of each language.
+//   them, edit their pixels), the in-park screen (top bar and left buttons) drawn from those icons, all icons as a
+//   gallery, button states played as a button (normal / hover / pressed / disabled), numbered icon sets played and
+//   edited as animations, window frame pieces stretched like a window, the menu screens and fonts, and every menu
+//   text of each language.
 // Opened full-window from the viewer's "Textures & GUI" tab; "Back" returns to the viewer.
 import { runTour, tourRunning } from './tour.js';
 
@@ -331,7 +332,7 @@ function build() {
     { target: '#tg-left', title: 'Every texture', html: `<p>All the textures of the game. Search by name, or filter by folder and kind (animated, recolourable, interface). A ● marks pictures you have changed.</p>` },
     { target: '#tg-centre', title: 'The canvas', html: `<p>Tools on the left: <kbd>B</kbd> brush, <kbd>P</kbd> pencil, <kbd>E</kbd> eraser, <kbd>G</kbd> fill, <kbd>I</kbd> colour picker, <kbd>L</kbd> line, <kbd>R</kbd> rectangle, <kbd>O</kbd> ellipse, <kbd>M</kbd> select (drag inside to move), <kbd>T</kbd> text.</p><p>Wheel zooms, right-drag or <kbd>Space</kbd>-drag pans, <kbd>0</kbd> fits. <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> undo and redo, <kbd>Ctrl+C</kbd> / <kbd>Ctrl+V</kbd> copy and paste (also pictures from other programs).</p>` },
     { target: '#tg-right', title: 'Colours, adjustments, saving', html: `<p>Colours and brush, then adjustments (brightness, contrast, hue, saturation, invert, flips…) for the selection or the whole picture, frames of animated textures, and the recolour preview of recolourable ones.</p><p><b>Save into game</b> writes the picture into its game file in the same size and format; the original file is copied first and <b>Changed files</b> (top right) restores it.</p>` },
-    { target: '#tg-modes', title: 'GUI Editor', html: `<p>The interface: open <b>Game interface</b> for the main icon sheets. Drag an icon's rectangle to move it, its handles to resize it, or edit its pixels. <b>Button states</b> plays them as a real button, <b>Animations</b> plays numbered icon sets, <b>Menu text</b> edits what the menus say.</p>`, before: () => setMode('gui') },
+    { target: '#tg-modes', title: 'GUI Editor', html: `<p>The interface: open <b>Game interface</b> for the main icon sheets. <b>In-park screen</b> shows the top bar and the left buttons you see in a park, built from your icons: click a piece to change its picture. Drag an icon's rectangle to move it, its handles to resize it, or edit its pixels. <b>Button states</b> plays them as a real button, <b>Animations</b> plays and edits numbered icon sets (frame order, single frames, a whole strip or GIF), <b>Menu text</b> edits what the menus say.</p>`, before: () => setMode('gui') },
     { target: '#tg-modes', title: 'Front screen designer', html: `<p><b>Main menus › Front screen designer</b> lays out the game's front screen (the Play / Tools / Options menus): drag any button anywhere, remove buttons or add any of the game's menu buttons to any menu, set the badge size and bar colour, change the menu words and the pictures, or apply a whole theme like <b>Neon Nights</b>. The layout is saved into the game's program (RCT3plus.exe), copied first and restorable like every other file.</p>`, before: () => setMode('gui') },
   ];
   function tour(force) { if (root.style.display === 'none' || tourRunning()) return; runTour('texgui', TOUR, { force }); }
@@ -1063,6 +1064,133 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     return [...m].filter(([, v]) => v.length >= 2).map(([k, v]) => ({ name: k.replace(/[_ ]$/, ''), frames: v.sort((a, b) => a[0] - b[0]).map(x => x[1]) }))
       .sort((a, b) => real(a) - real(b) || a.name.localeCompare(b.name));
   }
+  // ---- the in-park screen: the top bar and the buttons down the left -----------------------------------------------
+  // Which icon each piece shows comes from RCT3plus.exe (top bar built at 0x655788: Top_WindowFrame_Left / _Middle /
+  // _Right, DayNightModeButton, ObjectiveStatusButton, Pause / Play / FastForward / SuperFastForwardButton, Money,
+  // PeopleInPark, Top_ThumbsDown, ParkRatingBar, Top_ThumbsUp, Temperature + weather icon, DateAndTime,
+  // AvatarNameButton, Fireworks, EscapedAnimals; left toolbar at 0x5f686a: Map, View, File, File_Quit / File_CareerMap,
+  // Man, Obj_Rides, Obj_Shops, Obj_Scenery, Obj_Paths, Land, Obj_Delete on MenuButtonSmall discs). The game lays
+  // them out at run time; where they sit here was measured in the game at 1280 × 800.
+  const HUD_W = 1280, HUD_H = 800;
+  const LEFT_BTNS = [['Map', 'Park map'], ['View', 'View options'], ['File', 'File (save, load, options)'], ['File_Quit', 'Quit', 'File_CareerMap'],
+    ['Man', 'Park management'], ['Obj_Rides', 'Rides'], ['Obj_Shops', 'Shops and stalls'], ['Obj_Scenery', 'Scenery'], ['Obj_Paths', 'Paths'], ['Land', 'Landscape'], ['Obj_Delete', 'Delete']];
+  const LEFT_Y = [157, 197, 237, 277, 337, 377, 417, 457, 497, 537, 577];
+  const HUD = [
+    { id: 'barL', label: 'Top bar, left half', widget: 'Top_WindowFrame_Left', icons: ['Top_WindowFrame_Left'], box: [301, 0, 299, 23], sliced: true },
+    { id: 'barM', label: 'Top bar, middle', widget: 'Top_WindowFrame_Middle', icons: ['Top_WindowFrame_Middle'], box: [600, 0, 38, 23], sliced: true },
+    { id: 'barR', label: 'Top bar, right half', widget: 'Top_WindowFrame_Right', icons: ['Top_WindowFrame_Right'], box: [638, 0, 338, 23], sliced: true },
+    { id: 'obj', label: 'Objective status (difficulty hat)', widget: 'ObjectiveStatusButton', icons: ['Difficulty_Hat_Apprentice', 'Difficulty_Hat_Entrepreneur', 'Difficulty_Hat_Tycoon'], box: [305, 3, 16, 16] },
+    { id: 'dn', label: 'Day / night mode', widget: 'DayNightModeButton', icons: ['GUI2_DayNightCycle_DayNight', 'GUI2_DayNightCycle_Day', 'GUI2_DayNightCycle_Night'], box: [327, 2, 16, 16] },
+    { id: 'pause', label: 'Pause', widget: 'PauseButton', icons: ['Top_Pause', 'Top_PauseSelected'], box: [348, 5, 8, 13], speed: 0 },
+    { id: 'play', label: 'Play', widget: 'PlayButton', icons: ['Top_Play', 'Top_PlaySelected'], box: [361, 5, 8, 13], speed: 1 },
+    { id: 'ff', label: 'Fast forward', widget: 'FastForwardButton', icons: ['Top_FastForward', 'Top_FastForwardSelected'], box: [374, 5, 13, 13], speed: 2 },
+    { id: 'sff', label: 'Super fast forward', widget: 'SuperFastForwardButton', icons: ['Top_SuperFastForward', 'Top_SuperFastForwardSelected'], box: [392, 5, 17, 13], speed: 3 },
+    { id: 'money', label: 'Money', widget: 'Money', text: '$ unlimited', box: [423, 4, 71, 15] },
+    { id: 'guests', label: 'Guests in the park', widget: 'PeopleInPark', text: '20', box: [519, 4, 19, 15], right: true },
+    { id: 'down', label: 'Park rating: thumbs down', widget: 'Top_ThumbsDown', icons: ['Top_ThumbsDown'], box: [543, 4, 12, 15] },
+    { id: 'rating', label: 'Park rating bar', widget: 'ParkRatingBar', bar: true, box: [557, 6, 25, 10] },
+    { id: 'up', label: 'Park rating: thumbs up', widget: 'Top_ThumbsUp', icons: ['Top_ThumbsUp'], box: [584, 4, 12, 15] },
+    { id: 'temp', label: 'Temperature', widget: 'Temperature', text: '62 F', box: [645, 4, 29, 15] },
+    { id: 'weather', label: 'Weather', widget: 'IconCloudWithSun', icons: ['IconSun', 'IconCloudWithSun', 'IconCloud', 'IconLightRain', 'IconHeavyRain', 'IconThunderstorm', 'IconSnow'], box: [679, 3, 16, 16] },
+    { id: 'date', label: 'Date and time', widget: 'DateAndTime', text: '4 March, Year 1   10:47 am', box: [741, 4, 185, 15] },
+    { id: 'dart', label: 'Dart cam (when animals escape)', widget: 'EscapedAnimals', icons: ['DartCam_TopButton'], box: [921, 3, 16, 16], dim: 'animals' },
+    { id: 'fw', label: 'Watch the firework display', widget: 'Fireworks', icons: ['Firework_Icon'], box: [938, 3, 16, 16], dim: 'fireworks' },
+    { id: 'avatar', label: 'Your avatar', widget: 'AvatarNameButton', icons: ['Guest_Group', 'Guest_Group_Disabled'], box: [956, 3, 16, 16] },
+    ...LEFT_BTNS.map(([icon, label, alt], i) => ({ id: 'l' + i, label: label + ' button', widget: icon, icons: [icon, ...(alt ? [alt] : []), 'MenuButtonSmall'], box: [12, LEFT_Y[i], 32, 33], disc: true })),
+  ];
+  const HUD_VIEWS = { all: [0, 0, HUD_W, HUD_H], top: [290, 0, 700, 40], left: [0, 145, 120, 480] };
+  const HS = { view: 'all', speed: 1, weather: 'IconSun', hat: 'Difficulty_Hat_Apprentice', dn: 'GUI2_DayNightCycle_DayNight', career: false, fireworks: false, animals: false, sel: null, hover: null, cv: null, icons: new Map(), xf: null };
+  const hudIcon = el => {             // which of its icons an element shows now
+    if (el.speed != null) return el.icons[el.speed === HS.speed ? 1 : 0];
+    if (el.id === 'weather') return HS.weather;
+    if (el.id === 'obj') return HS.hat;
+    if (el.id === 'dn') return HS.dn;
+    if (el.id === 'l3') return HS.career ? 'File_CareerMap' : 'File_Quit';
+    return el.icons[0];
+  };
+  const iconByName = n => G.icons.find(g => g.name === n);
+  const hudScaled = h => { const g = h.icons && iconByName(hudIcon(h)), r = g && rectOf(g); return h.disc || !!(r && (r[2] - r[0] !== h.box[2] || r[3] - r[1] !== h.box[3])); };
+  async function hudPrepare() {
+    const names = new Set(HUD.flatMap(el => el.icons || []));
+    await Promise.all([...names].map(async n => { const g = iconByName(n); HS.icons.set(n, g ? await iconCanvas(g, 1) : null); }));
+  }
+  // a stretchable piece drawn at a size: the parts between its cuts stretch, the outer ones keep their size
+  function stretchSpans(cuts, want) {
+    const c = cuts.map(v => v - cuts[0]);
+    if (c.length === 2) return { src: [[0, c[1]]], dst: [[0, want]] };
+    const keep = c[1] + (c[3] - c[2]), mid = Math.max(0, want - keep);
+    return { src: [[0, c[1]], [c[1], Math.max(c[2], c[1] + 1)], [c[2], c[3]]], dst: [[0, c[1]], [c[1], c[1] + mid], [c[1] + mid, c[1] + mid + (c[3] - c[2])]] };
+  }
+  function drawStretched(x, src, g, dx, dy, dw, dh) {
+    const sx = stretchSpans(g.xs, dw), sy = stretchSpans(g.ys, dh);
+    sx.src.forEach((a, i) => sy.src.forEach((b, j) => {
+      const sw = Math.min(a[1], src.width) - a[0], sh = Math.min(b[1], src.height) - b[0], d = sx.dst[i], e = sy.dst[j];
+      if (sw > 0 && sh > 0 && d[1] > d[0] && e[1] > e[0]) x.drawImage(src, a[0], b[0], sw, sh, dx + d[0], dy + e[0], d[1] - d[0], e[1] - e[0]);
+    }));
+  }
+  function showHud(el) {
+    el.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column">
+      <div class="ctool" id="hud-opts" style="gap:10px">
+        <label>Show <select id="hud-view"><option value="all">Whole screen</option><option value="top">Top bar (zoomed)</option><option value="left">Left buttons (zoomed)</option></select></label>
+        <label>Speed <select id="hud-speed"><option value="0">Paused</option><option value="1">Normal</option><option value="2">Fast</option><option value="3">Super fast</option></select></label>
+        <label>Weather <select id="hud-weather">${HUD.find(e => e.id === 'weather').icons.map(n => `<option value="${n}">${esc(spaced(n.replace(/^Icon/, '')))}</option>`).join('')}</select></label>
+        <label>Hat <select id="hud-hat">${HUD.find(e => e.id === 'obj').icons.map(n => `<option value="${n}">${esc(n.split('_').pop())}</option>`).join('')}</select></label>
+        <label>Day / night <select id="hud-dn">${HUD.find(e => e.id === 'dn').icons.map(n => `<option value="${n}">${esc(spaced(n.split('_').pop()))}</option>`).join('')}</select></label>
+        <label title="A career game shows the Career map button where sandbox shows Quit"><input type="checkbox" id="hud-career"> Career</label>
+        <label title="The firework button is greyed unless a display is running"><input type="checkbox" id="hud-fw"> Firework display on</label>
+        <label title="The dart cam button is greyed unless animals have escaped"><input type="checkbox" id="hud-animals"> Animals escaped</label>
+      </div>
+      <div style="position:relative;flex:1;min-height:0"><canvas id="hud-cv" style="position:absolute;inset:0;width:100%;height:100%;cursor:default"></canvas></div>
+      <div class="note" style="color:var(--dim);padding:6px 10px;font-size:11px">The game's top bar and left buttons, drawn from the icons in this file as the game draws them (laid out as in the game at 1280 × 800). Click a piece to edit its picture on the right; double-click to paint it. Texts are drawn by the game in its own font (their words come from the game, not from these icons).</div>
+    </div>`;
+    HS.cv = $('#hud-cv', el);
+    const bind = (id, key, conv = v => v) => { const s = $('#' + id, el); s.value = String(HS[key]); s.onchange = () => { HS[key] = conv(s.value); drawHud(); }; };
+    bind('hud-view', 'view'); bind('hud-speed', 'speed', Number); bind('hud-weather', 'weather'); bind('hud-hat', 'hat'); bind('hud-dn', 'dn');
+    for (const [id, key] of [['hud-career', 'career'], ['hud-fw', 'fireworks'], ['hud-animals', 'animals']]) { const c = $('#' + id, el); c.checked = HS[key]; c.onchange = () => { HS[key] = c.checked; drawHud(); renderRight(); }; }
+    const at = e => { const b = HS.cv.getBoundingClientRect(), t = HS.xf; if (!t) return null; const x = (e.clientX - b.left - t.ox) / t.s, y = (e.clientY - b.top - t.oy) / t.s;
+      return [...HUD].reverse().find(h => !h.sliced && x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) ||
+        HUD.find(h => h.sliced && x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) || null; };
+    HS.cv.onpointermove = e => { const h = at(e); if (h !== HS.hover) { HS.hover = h; HS.cv.style.cursor = h ? 'pointer' : 'default'; HS.cv.title = h ? h.label : ''; drawHud(); } };
+    HS.cv.onpointerleave = () => { HS.hover = null; drawHud(); };
+    HS.cv.onclick = e => { selectHud(at(e)); };
+    HS.cv.ondblclick = e => { const h = at(e); if (h && G.sel && h.icons) openTexture(G.sel.sheet, G.sel.texture, { rect: rectOf(G.sel) }); };
+    new ResizeObserver(() => drawHud()).observe(HS.cv);
+    hudPrepare().then(drawHud);
+  }
+  function selectHud(h) {
+    HS.sel = h;
+    G.sel = h?.icons ? iconByName(hudIcon(h)) || null : null;
+    drawHud(); renderRight();
+  }
+  function drawHud() {
+    const c = HS.cv; if (!c || G.view !== 'hud') return;
+    const W = c.clientWidth, Hh = c.clientHeight; if (!W || !Hh) return;
+    const dpr = devicePixelRatio || 1; c.width = Math.round(W * dpr); c.height = Math.round(Hh * dpr);
+    const x = c.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, Hh);
+    const [vx, vy, vw, vh] = HUD_VIEWS[HS.view], s = Math.min(W / vw, Hh / vh), ox = (W - vw * s) / 2 - vx * s, oy = (Hh - vh * s) / 2 - vy * s;
+    HS.xf = { s, ox, oy };
+    x.save(); x.beginPath(); x.rect((W - vw * s) / 2, (Hh - vh * s) / 2, vw * s, vh * s); x.clip();
+    x.translate(ox, oy); x.scale(s, s); x.imageSmoothingEnabled = s < 1.5;
+    const gr = x.createLinearGradient(0, 0, 0, HUD_H); gr.addColorStop(0, '#6f9a24'); gr.addColorStop(1, '#5d8a1c');   // a park's grass
+    x.fillStyle = gr; x.fillRect(0, 0, HUD_W, HUD_H);
+    x.fillStyle = '#ffffff10'; for (let i = 0; i < 400; i++) { const a = (i * 7919) % HUD_W, b = (i * 104729) % HUD_H; x.fillRect(a, b, 3, 2); }
+    for (const h of HUD) {
+      const [bx, by, bw, bh] = h.box;
+      if (h.sliced) { const g = iconByName(h.icons[0]), src = HS.icons.get(h.icons[0]); if (g && src) { if (g.xs) drawStretched(x, src, g, bx, by, bw, bh); else x.drawImage(src, bx, by, bw, bh); } continue; }
+      if (h.disc) { const d = HS.icons.get('MenuButtonSmall'); if (d) x.drawImage(d, bx, by, bw, bh); const ic = HS.icons.get(hudIcon(h)); if (ic) x.drawImage(ic, bx + 3, by + 3, 27, 27); continue; }
+      if (h.text) {
+        x.font = 'bold 11px Verdana, Tahoma, sans-serif'; x.textBaseline = 'middle'; x.textAlign = h.right ? 'right' : 'left';
+        const tx = h.right ? bx + bw : bx, ty = by + bh / 2 + 0.5;
+        x.fillStyle = '#0008'; x.fillText(h.text, tx + 1, ty + 1); x.fillStyle = '#fff'; x.fillText(h.text, tx, ty); continue;
+      }
+      if (h.bar) { x.fillStyle = '#cfe6f7'; x.fillRect(bx, by, bw, bh); x.fillStyle = '#1fbf2f'; x.fillRect(bx + 1, by + 1, Math.round((bw - 2) * 0.62), bh - 2); x.strokeStyle = '#2d6f9e'; x.lineWidth = 1; x.strokeRect(bx + .5, by + .5, bw - 1, bh - 1); continue; }
+      const ic = HS.icons.get(hudIcon(h)); if (!ic) continue;
+      x.globalAlpha = h.dim && !HS[h.dim] ? 0.3 : 1; x.drawImage(ic, bx, by, bw, bh); x.globalAlpha = 1;
+    }
+    for (const [h, col] of [[HS.hover, '#ffffffb0'], [HS.sel, '#f2a93b']]) if (h) { x.strokeStyle = col; x.lineWidth = 1.5 / s; x.strokeRect(h.box[0] - 1, h.box[1] - 1, h.box[2] + 2, h.box[3] + 2); }
+    x.restore();
+  }
+
   const FRAME_TYPES = { 2: 'Panel (3 × 3 parts)', 3: 'Window frame (3 × 3 parts)', 4: 'Bar (3 parts across)', 5: 'Bar (3 parts down)', 1: 'Solid colour' };
   const sliced = g => !!g.xs;     // panels, frames and bars: they move with all their cuts, only plain icons resize
 
@@ -1132,8 +1260,10 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     if (!G.sheet) $('#gu-empty', P.centre).textContent = 'No icons with a picture in this file.';
     G.sel = focus ? G.icons.find(g => g.name === focus) || null : null;
     if (G.sel) G.sheet = G.groups.sheets.find(s => s.icons.includes(G.sel)) || G.sheet;
-    setView('sheet');
+    HS.sel = null; HS.icons.clear();
+    setView(isMain() && !focus ? 'hud' : 'sheet');
   }
+  const isMain = () => /^main\.common\.ovl$/i.test(G.ovl || '');
   function renderTabs() {
     const t = $('#gu-tabs', P.centre);
     if (G.lang) { t.innerHTML = `<span class="title">Menu text · ${esc(G.lang.replace(/^gui\\/, '').replace(/\.common\.ovl$/i, ''))}</span>`; return; }
@@ -1141,7 +1271,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     t.style.display = '';
     const g = G.groups, b = (v, label, n) => `<button data-v="${v}" class="${G.view === v ? 'on' : ''}" ${n === 0 ? 'disabled' : ''}>${label}${n != null ? ` <small>${n}</small>` : ''}</button>`;
     t.innerHTML = `<span class="title">${esc(G.ovl.replace(/\.common\.ovl$/i, ''))}</span>
-      ${b('sheet', 'Icon sheets', g.sheets.length)}${b('gallery', 'All icons', G.icons.length)}${b('states', 'Button states', g.states.length)}${b('anims', 'Animations', g.anims.length)}${b('frames', 'Window frames', g.frames.length)}
+      ${isMain() ? b('hud', 'In-park screen') : ''}${b('sheet', 'Icon sheets', g.sheets.length)}${b('gallery', 'All icons', G.icons.length)}${b('states', 'Button states', g.states.length)}${b('anims', 'Animations', g.anims.length)}${b('frames', 'Window frames', g.frames.length)}
       <span style="flex:1"></span>${G.view === 'sheet' && g.sheets.length > 1 ? `<select id="gu-sheet">${g.sheets.map((s, i) => `<option value="${i}" ${s === G.sheet ? 'selected' : ''}>${esc(s.name.split(':')[0])} (${s.icons.length})</option>`).join('')}</select>` : ''}
       ${G.view === 'sheet' ? '<button id="gu-fit">Fit</button>' : ''}`;
     t.querySelectorAll('button[data-v]').forEach(x => { x.style.cssText = x.classList.contains('on') ? 'border-color:var(--accent);color:var(--accent)' : ''; x.onclick = () => setView(x.dataset.v); });
@@ -1153,7 +1283,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     const panel = $('#gu-panel', P.centre);
     stopAnim();
     if (v === 'sheet') { panel.style.display = 'none'; cv.style.display = ''; showSheet(); }
-    else { cv.style.display = 'none'; panel.style.display = ''; panel.innerHTML = ''; ({ gallery: showGallery, states: showStates, anims: showAnims, frames: showFrames })[v](panel); }
+    else { cv.style.display = 'none'; panel.style.display = ''; panel.innerHTML = ''; ({ hud: showHud, gallery: showGallery, states: showStates, anims: showAnims, frames: showFrames })[v](panel); }
     renderRight();
   }
 
@@ -1306,33 +1436,136 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   }
   let animT = 0;
   function stopAnim() { if (animT) { clearInterval(animT); animT = 0; } }
+  // ---- animations: numbered icon sets, played and edited ------------------------------------------------------
+  // The game shows frame N by the icon named <set>N, so the order is changed by giving each frame another frame's
+  // rectangle (saved like any moved rectangle), and a frame can show the same picture as another. Pixels are painted
+  // into the frames' places on their sheets (a PNG strip, an animated GIF or one picture per frame). How fast a set
+  // plays is up to the game's code, not the file: the speed here is only for the preview.
+  const animPrefs = new Map();
+  function setAnimRects(a, rects) {
+    a.frames.forEach((g, i) => { const r = rects[i]; if (r.join() !== g.rect.join()) G.moved.set(g.name, [...r]); else G.moved.delete(g.name); });
+    const sc = $('#gu-panel .panelview', P.centre)?.scrollTop || 0; setView('anims'); const pv = $('#gu-panel .panelview', P.centre); if (pv) pv.scrollTop = sc;
+  }
+  function placeRect(r) { return { x: Math.min(r[0], r[2]), y: Math.min(r[1], r[3]), w: Math.abs(r[2] - r[0]), h: Math.abs(r[3] - r[1]), fx: r[2] < r[0], fy: r[3] < r[1] }; }
+  // paint pictures into icons' places on their sheets and save the sheets into the game
+  async function writeIcons(items, what) {
+    if (items.some(it => G.moved.has(it.g.name))) { toast('Save or undo the moved rectangles of these frames first', true); return false; }
+    const bySheet = new Map();
+    for (const it of items) { if (!it.g.sheet || !it.g.texture) continue; const k = it.g.sheet + '|' + it.g.texture; if (!bySheet.has(k)) bySheet.set(k, []); bySheet.get(k).push(it); }
+    const files = [...new Set([...bySheet.keys()].map(k => k.split('|')[0]))];
+    if (files.some(f => !S.edits[f]) && !await confirmBox('Save into the game', `This paints ${esc(what)} into ${files.map(f => '<b>' + esc(f) + '</b>').join(', ')} (${[...bySheet.keys()].map(k => esc(k.split('|')[1].split(':')[0])).join(', ')}). Compressed sheets may shift colours very slightly.<br><br>The original file is copied first; <b>Changed files</b> at the top right puts it back. Close the game before saving.`, 'Save into game')) return false;
+    try {
+      for (const [k, list] of bySheet) {
+        const [path, name] = k.split('|');
+        const img = await loadImage(imgUrl(path, name) + '&t=' + Date.now());
+        const c = canvasOf(img.width, img.height), x = c.getContext('2d'); x.drawImage(img, 0, 0);
+        for (const { g, src } of list) {
+          const q = placeRect(g.rect); if (!q.w || !q.h) continue;
+          x.clearRect(q.x, q.y, q.w, q.h); x.save(); x.translate(q.x + (q.fx ? q.w : 0), q.y + (q.fy ? q.h : 0)); x.scale(q.fx ? -1 : 1, q.fy ? -1 : 1);
+          x.imageSmoothingEnabled = src.width !== q.w || src.height !== q.h; x.drawImage(src, 0, 0, q.w, q.h); x.restore();
+        }
+        const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+        await post('/api/tx/write', { path, name, frame: 0, b64: await blobB64(blob) });
+        G.sheets.delete(path + '|' + name.toLowerCase());
+      }
+      const r = await fetch('/api/tx/gui').then(r => r.json()); setEdits(r.edits);
+      toast(`Saved ${what} into the game`); return true;
+    } catch (e) { toast('Could not save: ' + e.message, true); return false; }
+  }
+  // an animated GIF / WebP / APNG as frames (null for a still picture)
+  async function decodeFrames(file) {
+    if (!('ImageDecoder' in window) || !/gif|webp|png/i.test(file.type)) return null;
+    try {
+      const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: file.type });
+      await dec.tracks.ready;
+      const n = dec.tracks.selectedTrack?.frameCount || 1; if (n < 2) return null;
+      const out = [];
+      for (let i = 0; i < n; i++) { const { image } = await dec.decode({ frameIndex: i }); const c = canvasOf(image.displayWidth, image.displayHeight); c.getContext('2d').drawImage(image, 0, 0); image.close(); out.push(c); }
+      return out;
+    } catch (e) { return null; }
+  }
+  // a still picture cut into n frames: side by side or one above the other, whichever fits the frames' shape
+  function cutStrip(img, n, fw, fh) {
+    const want = fw / fh, across = (img.width / n) / img.height, down = img.width / (img.height / n);
+    const horiz = Math.abs(Math.log(across / want)) <= Math.abs(Math.log(down / want));
+    return Array.from({ length: n }, (_, i) => { const w = horiz ? img.width / n : img.width, h = horiz ? img.height : img.height / n;
+      const c = canvasOf(Math.max(1, Math.round(w)), Math.max(1, Math.round(h))); c.getContext('2d').drawImage(img, horiz ? i * w : 0, horiz ? 0 : i * h, w, h, 0, 0, c.width, c.height); return c; });
+  }
+  const pickFile = accept => new Promise(res => { const f = document.createElement('input'); f.type = 'file'; f.accept = accept; f.onchange = () => res(f.files[0] || null); f.click(); });
+  async function importAnim(a, file) {
+    file = file || await pickFile('image/png,image/gif,image/webp'); if (!file) return;
+    let frames = await decodeFrames(file);
+    if (!frames) { const img = await loadImage(URL.createObjectURL(file)); const q = placeRect(a.frames[0].rect); frames = cutStrip(img, a.frames.length, q.w || 1, q.h || 1); }
+    const n = Math.min(frames.length, a.frames.length);
+    const shared = new Set(), seen = new Set();
+    a.frames.slice(0, n).forEach((g, i) => { const k = g.rect.join(); if (seen.has(k)) shared.add(i + 1); seen.add(k); });
+    if (shared.size && !await confirmBox('Frames share a picture', `Frame${shared.size > 1 ? 's' : ''} ${[...shared].join(', ')} use${shared.size > 1 ? '' : 's'} the same place on the sheet as an earlier frame, so only one of those pictures can be kept. Go on?`, 'Go on')) return;
+    if (await writeIcons(a.frames.slice(0, n).map((g, i) => ({ g, src: frames[i] })), `${n} frame${n > 1 ? 's' : ''} of ${spaced(a.name)}`)) {
+      if (frames.length !== a.frames.length) toast(`${file.name} has ${frames.length} frames and the set ${a.frames.length}: the first ${n} were used`);
+      setView('anims');
+    }
+  }
   function showAnims(el) {
-    el.innerHTML = `<div class="panelview"><div class="note" style="color:var(--dim);margin-bottom:12px">Icons numbered in order (State0, State1, …) played one after another. Speed in frames per second; click a frame to select it.</div><div id="gu-anims"></div></div>`;
+    el.innerHTML = `<div class="panelview"><div class="note" style="color:var(--dim);margin-bottom:12px">Icons numbered in order (State0, State1, …) that the game shows one after another. Change the order with ◀ ▶ (or drag a frame onto another), make a frame show another frame's picture, paint a frame (✎), replace it with a picture (🖼), or import the whole animation from a PNG strip (frames side by side or stacked) or an animated GIF. A new order and shared pictures are saved with <b>Save into game</b> on the right; painted pictures are saved straight away. The speed is only for this preview: the game decides how fast each set plays.</div><div id="gu-anims"></div></div>`;
     const box = $('#gu-anims', el), players = [];
     for (const a of G.groups.anims) {
-      const sec = document.createElement('div'); sec.style.cssText = 'border-bottom:1px solid var(--line);padding:10px 0 14px';
-      sec.innerHTML = `<div style="font-weight:600;margin-bottom:8px">${esc(spaced(a.name))} <small style="color:var(--dim);font-weight:400">${a.frames.length} frames</small>
-        <label style="color:var(--dim);font-weight:400;margin-left:12px">Speed <input type="range" min="1" max="30" value="6" class="fps" style="vertical-align:middle;width:90px"> <output>6</output>/s</label>
-        <button class="pp" style="margin-left:8px;font-size:12px;padding:2px 8px">❚❚</button> <button class="strip" style="font-size:12px;padding:2px 8px" title="Download the frames side by side as one PNG">Export strip</button></div>
+      const pref = animPrefs.get(a.name) || { fps: 6, on: true, bounce: false }; animPrefs.set(a.name, pref);
+      const changed = a.frames.some(g => G.moved.has(g.name));
+      const sec = document.createElement('div'); sec.className = 'anim'; sec.dataset.name = a.name; sec.style.cssText = 'border-bottom:1px solid var(--line);padding:10px 0 14px';
+      sec.innerHTML = `<div style="font-weight:600;margin-bottom:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${esc(spaced(a.name))} <small style="color:var(--dim);font-weight:400">${a.frames.length} frames</small>${changed ? ' <span class="mod" title="A new order or shared pictures, not saved yet">● not saved</span>' : ''}
+        <label style="color:var(--dim);font-weight:400">Speed <input type="range" min="1" max="30" value="${pref.fps}" class="fps" style="vertical-align:middle;width:90px"> <output>${pref.fps}</output>/s</label>
+        <label style="color:var(--dim);font-weight:400" title="Play forwards then backwards"><input type="checkbox" class="bounce" ${pref.bounce ? 'checked' : ''}> Back and forth</label>
+        <button class="pp" style="font-size:12px;padding:2px 8px">${pref.on ? '❚❚' : '▶'}</button>
+        <button class="rev" style="font-size:12px;padding:2px 8px" title="Play the frames the other way round">Reverse</button>
+        <button class="imp" style="font-size:12px;padding:2px 8px" title="Paint every frame from a PNG strip or an animated GIF">Import animation…</button>
+        <button class="strip" style="font-size:12px;padding:2px 8px" title="Download the frames side by side as one PNG">Export strip</button></div>
         <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap"><div class="mock"></div><div class="row2" style="display:flex;flex-wrap:wrap"></div></div>`;
       box.appendChild(sec);
       Promise.all(a.frames.map(g => iconCanvas(g, 1))).then(cs => {
-        const W = Math.max(...cs.map(c => c.width)), H = Math.max(...cs.map(c => c.height)), sc = Math.max(1, Math.min(4, Math.floor(128 / Math.max(W, H))));
-        const c = canvasOf(W * sc, H * sc), x = c.getContext('2d'); x.imageSmoothingEnabled = false; sec.querySelector('.mock').appendChild(c);
-        const pl = { i: 0, fps: 6, on: true, t: 0, draw() { x.clearRect(0, 0, c.width, c.height); const f = cs[this.i]; x.drawImage(f, 0, 0, f.width * sc, f.height * sc); } };
+        const W = Math.max(...cs.map(c => c.width)), Hh = Math.max(...cs.map(c => c.height)), sc = Math.max(1, Math.min(4, Math.floor(128 / Math.max(W, Hh))));
+        const c = canvasOf(W * sc, Hh * sc), x = c.getContext('2d'); x.imageSmoothingEnabled = false; sec.querySelector('.mock').appendChild(c);
+        const pl = { i: 0, dir: 1, t: 0, pref, frames: cs.length, draw() { x.clearRect(0, 0, c.width, c.height); const f = cs[this.i]; x.drawImage(f, 0, 0, f.width * sc, f.height * sc); } };
         pl.draw(); players.push(pl);
-        sec.querySelector('.fps').oninput = e => { pl.fps = +e.target.value; e.target.nextElementSibling.value = e.target.value; };
-        sec.querySelector('.pp').onclick = e => { pl.on = !pl.on; e.target.textContent = pl.on ? '❚❚' : '▶'; };
-        sec.querySelector('.strip').onclick = () => { const s = canvasOf(W * cs.length, H); cs.forEach((f, i) => s.getContext('2d').drawImage(f, i * W, 0)); s.toBlob(b => download(b, a.name + '_strip.png')); };
+        sec.querySelector('.fps').oninput = e => { pref.fps = +e.target.value; e.target.nextElementSibling.value = e.target.value; };
+        sec.querySelector('.bounce').onchange = e => { pref.bounce = e.target.checked; };
+        sec.querySelector('.pp').onclick = e => { pref.on = !pref.on; e.target.textContent = pref.on ? '❚❚' : '▶'; };
+        sec.querySelector('.strip').onclick = () => { const s = canvasOf(W * cs.length, Hh); cs.forEach((f, i) => s.getContext('2d').drawImage(f, i * W, 0)); s.toBlob(b => download(b, a.name + '_strip.png')); };
+        const rects = () => a.frames.map(g => rectOf(g));
+        sec.querySelector('.rev').onclick = () => setAnimRects(a, rects().reverse());
+        sec.querySelector('.imp').onclick = () => importAnim(a);
         const row = sec.querySelector('.row2');
-        cs.forEach((f, i) => { const d = document.createElement('div'); d.className = 'state'; d.appendChild(f); d.insertAdjacentHTML('beforeend', `<small>${i + 1}</small>`); d.onclick = () => { G.sel = a.frames[i]; pl.i = i; pl.draw(); renderRight(); }; row.appendChild(d); });
-        pl.frames = cs.length;
+        const move = (i, j) => { if (j < 0 || j >= cs.length || i === j) return; const r = rects(); const [m] = r.splice(i, 1); r.splice(j, 0, m); setAnimRects(a, r); };
+        cs.forEach((f, i) => {
+          const g = a.frames[i], d = document.createElement('div'); d.className = 'state'; d.draggable = true; d.title = g.name + (G.moved.has(g.name) ? ' (changed, not saved)' : '');
+          const k2 = Math.min(2, sc), fv = canvasOf(f.width * k2, f.height * k2), fx = fv.getContext('2d'); fx.imageSmoothingEnabled = false; fx.drawImage(f, 0, 0, fv.width, fv.height);
+          d.appendChild(fv);
+          const same = a.frames.findIndex(o => rectOf(o).join() === rectOf(g).join());
+          d.insertAdjacentHTML('beforeend', `<small>${i + 1}${G.moved.has(g.name) ? ' <span class="mod">●</span>' : ''}</small>
+            <div style="display:flex;gap:2px;justify-content:center">${[['l', '◀', 'Earlier'], ['r', '▶', 'Later'], ['e', '✎', 'Paint this frame'], ['p', '🖼', 'Replace with a picture']].map(([k, t, ti]) => `<button data-k="${k}" title="${ti}" style="font-size:10px;padding:1px 4px">${t}</button>`).join('')}</div>
+            <select data-k="s" title="Show the picture of another frame" style="font-size:10px;max-width:96px"><option value="-1">Own picture</option>${a.frames.map((o, k) => k === i ? '' : `<option value="${k}" ${same === k && same < i ? 'selected' : ''}>Same as ${k + 1}</option>`).join('')}</select>`);
+          d.onclick = e => {
+            const k = e.target.dataset?.k;
+            if (k === 'l') move(i, i - 1); else if (k === 'r') move(i, i + 1);
+            else if (k === 'e') openTexture(g.sheet, g.texture, { rect: rectOf(g) });
+            else if (k === 'p') pickFile('image/*').then(async file => { if (!file) return; const img = await loadImage(URL.createObjectURL(file)); if (await writeIcons([{ g, src: img }], `frame ${i + 1} of ${spaced(a.name)}`)) setView('anims'); });
+            else if (k !== 's') { G.sel = g; pl.i = i; pl.draw(); renderRight(); }
+          };
+          d.querySelector('select').onchange = e => { const k = +e.target.value, r = rects(); r[i] = k < 0 ? [...g.rect] : [...rectOf(a.frames[k])]; setAnimRects(a, r); };
+          d.ondragstart = e => { e.dataTransfer.setData('text/plain', a.name + '|' + i); };
+          d.ondragover = e => e.preventDefault();
+          d.ondrop = e => { e.preventDefault(); const [n, from] = e.dataTransfer.getData('text/plain').split('|'); if (n === a.name) move(+from, i); };
+          row.appendChild(d);
+        });
       });
     }
     let last = performance.now();
     animT = setInterval(() => {
       const now = performance.now(), dt = (now - last) / 1000; last = now;
-      for (const p of players) if (p.on && p.frames) { p.t += dt; if (p.t >= 1 / p.fps) { p.t = 0; p.i = (p.i + 1) % p.frames; p.draw(); } }
+      for (const p of players) if (p.pref.on && p.frames > 1) {
+        p.t += dt; if (p.t < 1 / p.pref.fps) continue; p.t = 0;
+        if (p.pref.bounce) { if (p.i + p.dir >= p.frames || p.i + p.dir < 0) p.dir = -p.dir; p.i += p.dir; } else p.i = (p.i + 1) % p.frames;
+        p.draw();
+      }
     }, 30);
   }
   function showFrames(el) {
@@ -1373,6 +1606,17 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     if (!G.ovl) { el.innerHTML = `<h3>GUI Editor</h3><div class="sec"><div class="note">The game's interface is made of icon sheets (big pictures) and icons cut out of them. Open <b>Main interface</b> on the left for the menus and toolbars, or any object's file for its build-menu icon.<br><br>Menu screens and fonts open in the Texture Editor; menu texts are under <b>Menu text</b>.</div></div>`; return; }
     const g = G.sel, moved = G.moved.size;
     let h = '';
+    const hs = G.view === 'hud' ? HS.sel : null;
+    if (G.view === 'hud' && !hs) h += `<h3>In-park screen</h3><div class="sec"><div class="note">The bar along the top of the screen and the buttons down the left, as the game shows them in a park. Click any piece to change its picture: edit its pixels, replace it with a picture of your own, or move its rectangle on the icon sheet. The options above the picture show the other states (speed buttons, weather, career mode, greyed buttons).</div></div>`;
+    if (hs) {
+      h += `<h3>${esc(hs.label)}</h3><div class="sec"><div class="kv"><span>In the game</span><b>${esc(hs.widget)}</b><span>Where</span><b>${hs.box[0]}, ${hs.box[1]} · ${hs.box[2]} × ${hs.box[3]}${hs.sliced ? ' (stretched)' : hudScaled(hs) ? ' (scaled)' : ''}</b></div>
+        ${hs.icons ? `<div class="note">${hs.icons.length > 1 ? 'Its pictures (click one to edit it):' : 'Its picture:'}</div><div id="hud-vars" style="display:flex;flex-wrap:wrap;gap:6px"></div>` : ''}
+        ${hs.text ? `<div class="note">Text the game writes in its own font (the AOP glyph textures under <b>Menu screens, sheets &amp; fonts</b>); the words and numbers come from the park, not from a picture.</div>` : ''}
+        ${hs.bar ? `<div class="note">Drawn by the game as a filled bar (no picture): green for the part of the park rating reached.</div>` : ''}
+        ${hs.sliced ? `<div class="note">A stretchable piece: the game stretches the parts between its cuts (dashed on the sheet) to fit the bar; the rounded ends keep their size.</div>` : ''}
+        ${hs.disc ? `<div class="note">The blue disc (<b>MenuButtonSmall</b>) is shared by all eleven left buttons; the icon is drawn 27 × 27 on top of it.</div>` : ''}
+        ${hs.icons ? `<div class="btns"><button id="hud-sheet" title="Its rectangle on the icon sheet (move or resize it there)">Show on its sheet</button></div>` : ''}</div>`;
+    }
     if (g) {
       const r = rectOf(g);
       h += `<h3>Icon</h3><div class="sec"><div id="gu-prev" style="background:#0003;border-radius:8px;padding:10px;text-align:center;min-height:60px"></div>
@@ -1392,6 +1636,18 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
         <div class="btns"><button id="gu-sheetedit">✎ Edit the whole sheet</button></div></div>`;
     }
     el.innerHTML = h;
+    if (hs?.icons) {
+      const box = $('#hud-vars', el);
+      for (const n of hs.icons) {
+        const ig = iconByName(n); if (!ig) continue;
+        const d = document.createElement('div'); d.className = 'state'; d.title = n; d.style.margin = '0'; if (ig === g) d.style.outline = '2px solid var(--accent)';
+        iconCanvas(ig, 1).then(c => { const k = Math.max(1, Math.min(3, Math.floor(40 / Math.max(c.width, c.height)))); const z = canvasOf(c.width * k, c.height * k), zx = z.getContext('2d'); zx.imageSmoothingEnabled = false; zx.drawImage(c, 0, 0, z.width, z.height); d.prepend(z); });
+        d.insertAdjacentHTML('beforeend', `<small>${esc(spaced(n))}</small>`);
+        d.onclick = () => { G.sel = ig; renderRight(); };
+        box.appendChild(d);
+      }
+      $('#hud-sheet', el).onclick = () => { if (!G.sel) return; G.sheet = G.groups.sheets.find(s => s.icons.includes(G.sel)) || G.sheet; setView('sheet'); };
+    }
     if (g) {
       iconCanvas(g, 1).then(c => { const sc = Math.max(1, Math.min(4, Math.floor(160 / Math.max(c.width, c.height)))); const d = canvasOf(c.width * sc, c.height * sc), x = d.getContext('2d'); x.imageSmoothingEnabled = false; x.drawImage(c, 0, 0, d.width, d.height); d.style.imageRendering = 'pixelated'; $('#gu-prev', el)?.appendChild(d); });
       el.querySelectorAll('input.rc').forEach(i => i.onchange = () => {
@@ -1399,7 +1655,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
         if (sliced(g)) { const d = v - r[k]; r[k] += d; r[k + 2] += d; } else r[k] = v;
         if (r[2] <= r[0] || r[3] <= r[1]) { toast('Right must be more than Left and Bottom more than Top', true); renderRight(); return; }
         if (r.join() !== g.rect.join()) G.moved.set(g.name, r); else G.moved.delete(g.name);
-        view.redraw(); renderRight();
+        view.redraw(); renderRight(); if (G.view === 'hud') hudPrepare().then(drawHud);
       });
       $('#gu-edit', el).onclick = () => openTexture(g.sheet, g.texture, { rect: rectOf(g) });
       $('#gu-png', el).onclick = () => iconCanvas(g, 1).then(c => c.toBlob(b => download(b, g.name + '.png')));
@@ -1410,7 +1666,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       };
     }
     $('#gu-save', el).onclick = saveRects;
-    $('#gu-undo', el).onclick = () => { G.moved.clear(); view.redraw(); renderRight(); };
+    $('#gu-undo', el).onclick = () => { G.moved.clear(); view.redraw(); renderRight(); if (G.view === 'hud') hudPrepare().then(drawHud); if (G.view === 'anims') setView('anims'); };
     $('#gu-restore', el)?.addEventListener('click', async () => {
       if (!await confirmBox('Restore original', `Put the original <b>${esc(G.ovl)}</b> back? Every change made to it here is lost.`, 'Restore')) return;
       try { const r = await post('/api/tx/restore', { path: G.ovl }); setEdits(r.edits); toast('Restored ' + G.ovl); afterRestore(G.ovl); } catch (e) { toast(e.message, true); }
@@ -1426,7 +1682,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   }
   async function afterRestore(path) {
     if (G.front && (path === MAIN || path === 'RCT3plus.exe' || path === F.lang)) { F.texts = null; await openFront(); }
-    if (path === G.ovl) { G.moved.clear(); G.sheets.clear(); await openOvl(path, G.sel?.name); }
+    if (path === G.ovl) { const v = G.view; G.moved.clear(); G.sheets.clear(); await openOvl(path, v === 'hud' ? null : G.sel?.name); if (v !== G.view && v !== 'sheet') setView(v); }
     if (path === G.lang) openTexts(path);
     G.sheets.clear();
   }
@@ -1690,7 +1946,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   }
 
   function key(e) {
-    if (G.front) return;
+    if (G.front || G.view === 'hud') return;
     const k = e.key.toLowerCase();
     if (G.view !== 'sheet' || !G.sel || !G.sheet?.icons.includes(G.sel)) { if (k === '0') view.fit(); return; }
     if (k.startsWith('arrow')) {
@@ -1709,6 +1965,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   async function shown() {
     G.sheets.clear();                                  // sheets may have been painted in the Texture Editor
     if (G.ovl && G.view === 'sheet') showSheet(true);
+    if (G.ovl && G.view === 'hud') { HS.icons.clear(); hudPrepare().then(drawHud); renderRight(); }
     if (G.front) loadFrontTextures().then(drawFront);       // pictures may have been painted in the Texture Editor
     if (!S.gui && !loading) loading = fetch('/api/tx/gui').then(r => r.json()).then(c => { S.gui = c; setEdits(c.edits); renderLeft(); if (!G.ovl && !G.lang && !G.front) openOvl(c.icons.find(o => /^main\.common/i.test(o.path))?.path || c.icons[0]?.path); });
     view.redraw();

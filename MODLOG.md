@@ -902,3 +902,32 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   not the Comet uses BurnLength (all 0); checked by giving Gemini Rockets' particles BurnLength 30 in the page.
 - Not done: the strip's per-point weight min(1, 0.01 x ...) (a screen-space term, unclear) - points kept at full colour.
 - Checks: all 29 fireworks (+ the Comet) 6 s without NaN, no page errors; ui_fireworks unchanged (favicon 404 only).
+
+## 2026-10-15: GUI Editor - in-park screen (top bar, left buttons) and an animation editor
+- Request: the bar along the top of the screen in a park and the buttons down the left in the Game interface page;
+  editing the animations of every GUI item that has them.
+- In-park HUD, from RCT3plus.exe: top bar built at 0x655788 (strings 0xf4cb00-0xf4d200): Top_WindowFrame_Left /
+  _Middle / _Right, DayNightModeButton, ObjectiveStatusButton, Pause / Play / FastForward / SuperFastForwardButton
+  (Top_Pause / Top_PauseSelected ... switched at 0x65760f-0x657b0b), Money, PeopleInPark, Top_ThumbsDown,
+  ParkRatingBar, Top_ThumbsUp, Temperature, IconCloudWithSun / IconWeatherArrow / IconCloud, DateAndTime,
+  AvatarNameButton (Guest_Group / _Disabled), Fireworks, EscapedAnimals (DartCam_*), then MainBottomLeft /
+  MainBottomRight (not done). Left toolbar at 0x5f686a: Obj_Delete, Land, Obj_Paths, Obj_Scenery, Obj_Shops,
+  Obj_Rides, Man, File_Quit, File_CareerMap, File, View, Map (icons on GUI2LargeIcons), on MenuButtonSmall discs
+  (GUI2MainIcons). Positions are not immediates (a layout pass); measured in the game (Steam, sandbox, 1280 x 800):
+  bar x 301-975, y 0-22 (Left piece stretched over the left half through its cuts, Middle 600-638 = the notch,
+  Right the right half); icons 1:1 except the 40 px ones drawn 16 (hat, weather, dart cam, firework, avatar); left
+  discs 32 x 33 at x 12, y 157 + 40 k (60 between the 4th and 5th), icon 27 x 27 at +3,+3. Icon names for the hat /
+  weather / right-end buttons identified by eye (template matching at small sizes was unreliable on flat icons).
+- GUI Editor: Main interface opens on a new **In-park screen** tab (texgui.js HUD table, showHud / drawHud): whole
+  screen or zoomed bar / buttons; speed, weather, hat, day / night, career and greyed-button options; click a piece
+  -> its pictures (states / alternatives) on the right with the usual icon editing; double-click paints it.
+- No interface texture has animation frames (all 20 animated ftx are scenery / rides); GUI animations are numbered
+  icon sets (62 in Main: MassiveWaiting_1-6, the editor's state icons, colour sets...). Animations tab now edits them:
+  order (each frame takes another frame's rectangle, saved as rectangles; ◀ ▶, drag, Reverse), "Same as" another
+  frame, paint / replace one frame, Import animation (PNG strip, across or stacked by the frames' shape, or an
+  animated GIF / WebP via ImageDecoder) painted into the frames' places on their sheets (/api/tx/write per sheet).
+  Playback speed is the game code's, so only a preview setting here.
+- tests/ui_hud_anims.py (viewer on the scratch copy fg/): clicks resolve to Pause (2 pictures), the bar halves, the
+  middle, weather, Paths; reorder -> 2 rectangles moved; import a 6-colour strip into MassiveWaiting -> frame 3's
+  place reads (80,140,255); restore -> Main.common.ovl md5 identical. No page errors. Not tried in the game this
+  time (icon rectangles and pixels were shown to work in the game on 2026-10-14).

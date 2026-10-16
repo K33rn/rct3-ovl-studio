@@ -183,9 +183,16 @@ The buttons at the top:
     **Object icons** (scenery, rides, shops, paths, pools, animals, carried items) open their icon sheets with every
     icon outlined: drag an icon's box to move it, its handles to resize it (or type the numbers), double-click or
     **Edit pixels** to paint it in the Texture Editor, **Replace with picture…** to put your own picture in its place.
+    **In-park screen** (Main interface) shows the bar along the top of the screen in a park (game speed, money,
+    guests, park rating, temperature and weather, date, firework / dart cam / avatar buttons) and the buttons down the
+    left (map, view, file, quit, park management, rides, shops, scenery, paths, landscape, delete), drawn from your
+    icons where the game puts them (measured at 1280 × 800); options show their other states (speed, weather,
+    difficulty hat, day / night, career, greyed buttons). Click any piece to edit its picture.
     **All icons** shows them as a gallery. **Button states** plays each button with its own pictures (normal, hover,
-    pressed, disabled). **Animations** plays numbered icon sets frame by frame at the speed you choose (and exports
-    them as a strip). **Window frames** shows the window, panel and scroll bar pieces cut where the game cuts them and
+    pressed, disabled). **Animations** plays numbered icon sets and edits them: change the frame order (◀ ▶ or drag),
+    make a frame show another frame's picture, paint or replace a single frame, or import the whole animation from a
+    PNG strip or an animated GIF; export as a strip. (How fast a set plays is decided by the game's code, so the speed
+    is only for the preview.) **Window frames** shows the window, panel and scroll bar pieces cut where the game cuts them and
     stretched to the size you pick. **Menu screens, sheets & fonts** open the front-end backgrounds, logos, icon
     sheets and font letter sheets in the Texture Editor. **Menu text** edits every text of each language (a text can be
     as long as the one it replaces).

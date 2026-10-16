@@ -983,3 +983,30 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - tests/ui_hud_sim.py (viewer on fg/): Rides flyout, RollerCoasters list, Park Operations window, grid toggle, fast
   forward, objectives, day/night pick, Map, Quit, Esc x2 stops simulating and stays in the editor; no page errors.
   ui_hud_anims still passes, fg Main md5 unchanged.
+
+## 2026-10-16: track placement as the game does it; park entrances, fences, raised walls
+- Tester screenshots: some ride designs drawn wrong; Money Pit coaster pieces in wrong places; floating fences; wrong
+  park entrances; texture glitches in parks.
+- Track pieces were chained end to end (each joined to the previous exit), which drifts on any piece whose geometry
+  was misjudged (Inferno Tower's TowerCap, ring slides, tilt lift, robotic arm...). Learned from the 165 designs that
+  closed: every piece's origin is its footprint's centre, the stored tile (POSX/POSZ) the footprint's lowest corner,
+  footprint = the sid's squares (swapped at odd rotations), rotation (DIRECTION + 2) % 4, HEIGHT its base (2,148 of
+  2,200 piece kinds, the rest learned from the chaining's own mistakes). designs.lay_track now places every piece
+  from its grid data alone; the check is the gap between consecutive pieces (info joint_gap, tests/design_direct.py).
+- Lift pieces (Sky Swinger LiftBottom/Middle/Top, ThrillLift*) list the lift car's rails first; the train rides the
+  '...joinSpline' pair. Stormrunner names Track5 + Track9_CT pieces: Track5 held more of the names, but its
+  Straight2Steepslope is 4 tiles, the Track9 one 5 - track_sets now prefers one track folder holding every piece.
+- Result: 207 / 208 designs every joint < 10 cm (King Rapids 0.27 m at one piece); 39 / 39 tracked rides in the parks.
+- Park entrances: themed styles keep the sid in Style\Themed\X\Style.common.ovl and the model in a subfolder OVL named
+  after it (EntranceExit\MainEntrance\MainEntrance.common.ovl); the global name index gave every theme the Vanilla
+  art-deco gate. Library.find_near now also looks in the folder's subfolders at OVLs named like the resource (also
+  fixes Broom Lake's Space entrance wall set 'Straight', which was a queue piece). Entrance (3 x 1) placement: the
+  stored tile is the middle one and the gate straddles the land edge: half a tile towards +row / +col / -row / -col at
+  directions 0-3 (Chequered Flag / Box Office / Vanilla Hills / Zoo Rescue, checked against the game on CF).
+- Park fence: Park.ParkFenceEntry names the fence item (CorralBarbedWireFence in Wild West parks, LazerFence,
+  SpiderWebFence, RickertyFence, Standard2Chain...). All are 4 m along local z; viewer lays one per land-edge tile side,
+  each vertex lifted to the ground along the edge (CF barbed wire matches the game). Placed fence items (sid type
+  'fence') bend to the ground too instead of floating over slopes.
+- Raised items: HEIGHT = round(tile mean ground) + HEIGHTOFFSET (16,783 items on slopes, 30 parks). Items with an
+  offset were dropped onto the slope when HEIGHT fell inside the tile's height range (Box Office WWest_Fence balcony
+  rails, walls 1-3 m up); place() now keeps HEIGHT when HEIGHTOFFSET > 0.

@@ -1,12 +1,11 @@
 """Premade ride designs ('Coaster Designs\\[Ride]Name.trk') assembled into one 3D model.
 
 The design lists its track pieces as a chain (TrackPiece.Next) with grid data (POSX/POSZ tiles of 4 m, HEIGHT in 1 m
-steps, DIRECTION 0-3). Single-tile pieces sit on their tile, but the reference tile of multi-tile pieces (curves,
-helices) isn't simply their start or footprint corner, so pieces are placed by following the chain instead: the first
-piece by its grid position, every next piece joined end-to-end to the previous one, turned to whichever of the four
-directions continues the previous exit heading (DIRECTION breaks ties), ridden forwards or backwards - downhill track is
-an uphill piece placed reversed. Each piece's ends and headings come from its rail splines. A closed circuit returning
-to its start is the check (see build_design info['closure_gap']).
+steps, DIRECTION 0-3). Each piece is placed as the game does: turned by (DIRECTION + 2) % 4, its stored tile the
+lowest corner of its footprint (its sid's squares, swapped when turned a quarter) and its origin the footprint's
+centre, HEIGHT its base. Each piece's ends come from its rail splines (the train's 'joinSpline' on lift pieces); the
+gaps between consecutive pieces and round each circuit are the check (build_design info['joint_gap'],
+info['closure_gap']).
 """
 from __future__ import annotations
 
@@ -36,9 +35,17 @@ def design_files(lib: Library) -> list[dict]:
     return out
 
 
+def _rail_splines(o, r) -> list:
+    """The two splines the train rides along. Lift pieces (Sky Swinger, ThrillLift) list the lift car's own rails
+    first and the train's track as '...joinSpline'."""
+    spl = [n for n in _imports(o, r) if n.lower().endswith(':spl')]
+    join = [n for n in spl if 'joinspline' in n.lower()]
+    return (join or spl)[:2]
+
+
 def _piece_geometry(lib, o, r):
     """Rail-spline ends and headings of a piece in its own space: (start, start_dir, end, end_dir)."""
-    spl = [n for n in _imports(o, r) if n.lower().endswith(':spl')][:2]
+    spl = _rail_splines(o, r)
     starts, ends, sd, ed = [], [], [], []
     for s in spl:
         h = lib.find_near(s, o)
@@ -57,7 +64,7 @@ def _piece_geometry(lib, o, r):
 def _piece_path(lib, o, r):
     """The piece's centreline in its own space, sampled along its two rail splines: (points (n, 3), across (n, 3)
     from the left rail to the right one, or None for a single spline)."""
-    spl = [n for n in _imports(o, r) if n.lower().endswith(':spl')][:2]
+    spl = _rail_splines(o, r)
     lines = []
     for s in spl:
         h = lib.find_near(s, o)
@@ -132,6 +139,10 @@ def build_design(lib: Library, path: str) -> tuple[bytes, dict]:
     footprint = (allp[:, [0, 2]].max(0) - allp[:, [0, 2]].min(0)) / 4
     info['footprint_tiles'] = f'{int(np.ceil(footprint[0] - 1e-3))} x {int(np.ceil(footprint[1] - 1e-3))}'
     info['closure_gap'] = round(max(gaps), 3) if gaps else None
+    js = merged.joints
+    info['joint_gap'] = round(max(j[0] for j in js), 3) if js else None
+    info['bad_joints'] = [(i, n, round(g, 2)) for g, i, n in js if g > 0.1][:12]
+    info['joints'] = [(i, n, round(g, 2)) for g, i, n in js]
     info.update({'pieces': len(d['pieces']), 'placed': placed, 'tracks': len(d['chains']),
                  'missing_pieces': sorted(missing), 'track_files': ts['track_ovls']})
     return track_glb(lib, merged), info
@@ -149,7 +160,8 @@ def track_glb(lib: Library, merged: Shape, colors=None) -> bytes:
 
 
 def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
-    """Track pieces placed end to end, chain by chain, in the grid's own coordinates (tile n centred on 4n m).
+    """Track pieces placed from their stored grid data, chain by chain, in the grid's own coordinates (tile n centred
+    on 4n m); the joints between consecutive pieces and each circuit's closing joint are measured as the check.
     chains: [([TrackPiece fields], closed)]. -> (merged Shape, pieces placed, circuit gaps, missing pieces, track set)"""
     ride = ride_symbol.lower()
     ts = next((s for s in track_sets(lib) if s['ride'] == ride), None)
@@ -158,7 +170,7 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
     where = {n.lower(): (o, n) for o, n in ts['pieces']}
     merged = Shape(name, 'shs', ((0, 0, 0), (0, 0, 0)))
     merged.path = []                                  # the centreline, piece by piece: [(points, across)]
-    geo_cache, shape_cache, path_cache, missing = {}, {}, {}, set()
+    geo_cache, shape_cache, path_cache, half_cache, missing = {}, {}, {}, {}, set()
     placed, gaps = 0, []
 
     def geometry(name):
@@ -171,65 +183,59 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
             geo_cache[key] = _piece_geometry(lib, o, r)
             shape_cache[key] = _piece_shape(lib, o, r)
             path_cache[key] = _piece_path(lib, o, r)
+            half_cache[key] = _half_footprint(lib, o, r)
         if geo_cache[key] is None or shape_cache[key] is None:
             return None
         return geo_cache[key], shape_cache[key]
 
+    joints = []                                       # (gap m, piece index, name) between consecutive pieces
     for chain, closed in chains:                      # each separate track on its own
-        cur_pos = cur_dir = None
-        first_in = out_first = None
+        prev = first = None
         for ci, v in enumerate(chain):
             got = geometry(v['SYMBOLNAME'])
             if got is None:
-                missing.add(v['SYMBOLNAME']); continue
-            (s, sdir, e, edir), shp = got
+                missing.add(v['SYMBOLNAME']); prev = None; continue
+            (s, _sd, e, _ed), shp = got
+            # the game's own placement: turned by DIRECTION, the stored tile is the lowest corner of the footprint
+            # (the piece's sid squares), the piece's origin the footprint's centre and HEIGHT its base
             gd = v['SceneryItemDataField']
-            grid_rot = (gd['DIRECTION'] + 2) % 4
-            if cur_pos is None:                        # first piece of the track: its own grid position
-                R = _roty(grid_rot); T = np.array([gd['POSX'] * 4.0, gd['HEIGHT'] * 1.0, gd['POSZ'] * 4.0])
-                out_p, out_d = R @ e + T, R @ edir
-            else:
-                best = None
-                nd = chain[ci + 1]['SceneryItemDataField'] if ci + 1 < len(chain) else None
-                nxt = np.array([nd['POSX'] * 4.0, nd['POSZ'] * 4.0]) if nd else None
-                grid_xz = np.array([gd['POSX'] * 4.0, gd['POSZ'] * 4.0])
-                local_low = min(s[1], e[1])
-                for k in range(4):
-                    R = _roty(k)
-                    for rev in (False, True):
-                        ip, idir, op, odir = (e, -edir, s, -sdir) if rev else (s, sdir, e, edir)
-                        hd = R @ idir
-                        Tc = cur_pos - R @ ip
-                        # 1) continue the previous heading; 2) sit at the stored HEIGHT (a slope ridden forwards
-                        # climbs, the same slope turned round and ridden backwards falls); 3) stay near its tile
-                        low = min((R @ s + Tc)[1], (R @ e + Tc)[1])
-                        height_err = abs(low - (gd['HEIGHT'] * 1.0 + local_low))
-                        mid = (R @ ((s + e) / 2) + Tc)[[0, 2]]
-                        score = 10 * float(np.dot(hd, cur_dir)) - height_err \
-                            - 0.02 * float(np.linalg.norm(mid - grid_xz)) + (0.01 if k == grid_rot else 0)
-                        if abs(cur_dir[1]) > 0.9 and nxt is not None:
-                            # vertical joint (top-hat towers, vertical lifts): every rotation continues straight up
-                            # or down; the one whose exit lands nearest the next piece's tile wins
-                            score -= 0.5 * float(np.linalg.norm((R @ op + Tc)[[0, 2]] - nxt))
-                        if best is None or score > best[0]:
-                            best = (score, R, ip, op, odir)
-                _, R, ip, op, odir = best
-                T = cur_pos - R @ ip
-                out_p, out_d = R @ op + T, R @ odir
+            k = (gd['DIRECTION'] + 2) % 4
+            hx, hz = half_cache[v['SYMBOLNAME'].lower()]
+            if k % 2:
+                hx, hz = hz, hx
+            R, T = _roty(k), np.array([gd['POSX'] * 4.0 + hx, gd['HEIGHT'] * 1.0, gd['POSZ'] * 4.0 + hz])
             _append(merged, shp, R, T)
             pp = path_cache.get(v['SYMBOLNAME'].lower())
             if pp is not None:
                 C, L = pp
                 merged.path.append((C @ R.T + T, None if L is None else L @ R.T))
-            if first_in is None:
-                first_in, out_first = R @ s + T, R @ e + T   # where a circuit has to come back to
-            cur_pos, cur_dir = out_p, out_d
+            here = (R @ s + T, R @ e + T)
+            if prev is not None:
+                joints.append((_gap(prev, here), ci, v['SYMBOLNAME']))
+            first = first or here
+            prev = here
             placed += 1
-        if closed and first_in is not None:
-            gaps.append(float(min(np.linalg.norm(cur_pos - first_in), np.linalg.norm(cur_pos - out_first))))
-    if not merged.meshes:
-        raise OvlError('none of the track pieces could be placed')
+        if closed and first is not None and prev is not None and len(chain) > 1:
+            gaps.append(_gap(prev, first))
+    merged.joints = joints
     return merged, placed, gaps, missing, ts
+
+
+def _gap(a, b) -> float:
+    """How far apart two pieces' nearest ends are: (start, end) each."""
+    return float(min(np.linalg.norm(p - q) for p in a for q in b))
+
+
+def _half_footprint(lib, o, r) -> tuple:
+    """A piece's origin from its footprint's lowest tile centre (x, z): the origin is the centre of the footprint its
+    sid gives in squares (4 m tiles)."""
+    from .structs import load_sid
+    sid = next((n for n in _imports(o, r) if n.lower().endswith(':sid')), None)
+    h = lib.find_near(sid, o) if sid else None
+    if not h:
+        return 0.0, 0.0
+    sq = load_sid(h[0], h[1])['squares']
+    return max(0, sq[0] - 1) * 2.0, max(0, sq[1] - 1) * 2.0
 
 
 def _piece_shape(lib, o, r):

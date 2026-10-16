@@ -115,12 +115,23 @@ def track_sets(lib: Library) -> list[dict]:
                         break
             except OvlError:
                 pass
-        chosen, left = [], set(want)
+        chosen, left, pool = [], set(want), list(holders)
         if first:
             first = next((k for k in holders if k.lower() == first.lower()), None)
+        if not first:
+            # a style whose pieces are split over several OVLs of one track folder (Stormrunner: Track9 +
+            # Track9_CT) beats a big shared set holding most of the names in another style (Track5's
+            # Straight2Steepslope is a tile shorter): use the folder that holds every piece, the smallest such
+            folders = {}
+            for k in holders:
+                folders.setdefault(os.path.dirname(k).lower(), []).append(k)
+            whole = [ks for ks in folders.values() if not left - set().union(*(holders[k].keys() for k in ks))]
+            if whole:
+                best = min(whole, key=lambda ks: sum(len(holders[k]) for k in ks))
+                first, pool = max(best, key=lambda k: len(left & holders[k].keys())), best
         while left:
             pick = first if first and first not in chosen else max(
-                (k for k in holders if k not in chosen), key=lambda k: (len(left & holders[k].keys()), -len(holders[k])),
+                (k for k in pool if k not in chosen), key=lambda k: (len(left & holders[k].keys()), -len(holders[k])),
                 default=None)
             first = None
             if not pick or not left & holders[pick].keys():

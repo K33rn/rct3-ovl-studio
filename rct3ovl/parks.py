@@ -41,7 +41,7 @@ from .media import text
 from .meshes import load_shape
 from .rides import _imports, _short, list_rides, track_sets
 from .scenery import list_scenery
-from .structs import SID_SIZES, load_sid
+from .structs import SID_SIZES, SID_TYPES, load_sid
 from .trk import Trk
 
 GROUPS = [('Campaigns\\Base', 'scenario', 'RollerCoaster Tycoon 3'), ('Campaigns\\Base\\Soaked', 'aop0_scenario', 'Soaked!'),
@@ -556,10 +556,13 @@ def park_world(lib: Library, rel: str) -> dict:
             sids.append({'name': key[0], 'overlay': key[1], **({'col': list(col)} if col else {})})
         return sid_index[key]
 
-    def place(gd, sid, kind, ref=None, absolute=False):
+    def place(gd, sid, kind, ref=None, absolute=False, above=None):
+        # HEIGHT is the tile's mean ground height rounded to a metre plus HEIGHTOFFSET (`above`): an item standing on
+        # the ground (offset 0) sits on the slope; a raised one (walls stacked up a building, offset > 0) keeps its
+        # HEIGHT, even where that is inside the slope's range
         c, r = gd['POSX'], gd['POSZ']
         y = float(gd['HEIGHT'])
-        if not absolute and 0 <= c < W and 0 <= r < H:
+        if not absolute and not above and 0 <= c < W and 0 <= r < H:
             lo, hi = float(hgrid[r, c].min()), float(hgrid[r, c].max())
             if lo - 0.01 <= y <= hi + 0.01:
                 y = float(hgrid[r, c].mean())          # on sloping ground: sit on the slope, not its low corner
@@ -575,7 +578,7 @@ def park_world(lib: Library, rel: str) -> dict:
             if own[0] == 'SceneryItemPlacementSingle':
                 continue                                   # placed below, with the ride or stall it belongs to
             place(v['SceneryItemDataField'], sid_of(v['DATABASEENTRY'], v.get('FlexiColourField') or own[1].get('FlexiColourField')), kinds.get(own[0], 0),
-                  absolute=bool(v.get('FORCEABSOLUTEHEIGHT')) or own[0] != 'SceneryItem')
+                  absolute=bool(v.get('FORCEABSOLUTEHEIGHT')) or own[0] != 'SceneryItem', above=v.get('HEIGHTOFFSET'))
         elif n == 'SceneryItemPlacementSingle':
             place(v['SceneryItemDataField'], sid_of(v['SIDDatabaseEntry'], v.get('FlexiColourField')), 3, ref=v.get('Owner'))
     # trees on the land around the map: kind 5, world x / z in place of column / row
@@ -585,6 +588,10 @@ def park_world(lib: Library, rel: str) -> dict:
             items.append([sid_of(v['DATABASEENTRY'], v.get('FlexiColourField')), round(x, 2), round(z, 2), round(y, 3),
                           v['SceneryItemDataField']['DIRECTION'], -1, 5, -1])
     world['sids'] = sids
+    # the park fence: the engine draws the park's own fence item (Park.ParkFenceEntry: barbed wire in the Wild West
+    # parks, lasers in Broom Lake, chain link in Vanilla Hills) along the edge of its land
+    fe = O.get(next((v for n, v in O.values() if n == 'Park'), {}).get('ParkFenceEntry'), ('', {}))[1]
+    world['park_fence'] = {'name': fe['SYMBOLNAME'], 'overlay': fe.get('OVERLAYFILENAME', '')} if fe.get('SYMBOLNAME') else None
     # supports under raised paths and queues: the path piece's sid names its support style (pathcrazy,
     # pathasphalt, flatqueueset1...); one column per piece at the tile's centre. The viewer finds where the column
     # meets the piece's underside and what it stands on (the ground, or a path below) from the pieces' own models
@@ -761,6 +768,7 @@ def sid_model(lib: Library, name: str, overlay: str = '', col=None) -> tuple[byt
         v = struct.unpack('<31I', o.read(r.data, 124))
         squares = [v[4], v[5]] if 0 < v[4] < 64 and 0 < v[5] < 64 else [1, 1]
         size = SID_SIZES[v[2] & 0xFFFF] if (v[2] & 0xFFFF) < len(SID_SIZES) else 'full tile'   # word 2, low half (flags above)
+        typ = SID_TYPES[v[18]] if v[18] < len(SID_TYPES) else ''
         visuals = [i for i in _imports(o, r) if i.lower().endswith(':svd')]
         if not visuals:
             try:
@@ -793,7 +801,7 @@ def sid_model(lib: Library, name: str, overlay: str = '', col=None) -> tuple[byt
             for a, short in zip(anims, _short([a.name.split(':')[0] for a in anims])):
                 a.name = short[:1].upper() + short[1:]
             glb = shape_to_glb(shape, lambda n: lib.texture_image(n, prefer=hm[0], colors=colors), anims if shape.bones else None)
-            res = (glb, {'name': name, 'squares': squares, 'size': size,
+            res = (glb, {'name': name, 'squares': squares, 'size': size, 'type': typ,
                          'animations': [a.name for a in anims] if shape.bones else []})
             break
     if len(cache) > 600:

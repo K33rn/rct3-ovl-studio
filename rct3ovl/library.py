@@ -149,7 +149,8 @@ class Library:
         return None
 
     def find_near(self, name: str, ovl: Ovl):
-        """Like find(), but looks in `ovl`, then in the other OVLs of the same folder, before the whole game.
+        """Like find(), but looks in `ovl`, then in the other OVLs of the same folder (then in its subfolders), before
+        the whole game.
         Track styles reuse names (every coaster has a Medcurve): tracks\\coasters\\Track2 keeps each piece's
         visual and model in its own Medcurve_data OVL next to Track2.common.ovl, and the game resolves there."""
         hit = self.find(name, prefer=ovl)
@@ -171,6 +172,19 @@ class Library:
                             names.setdefault(r.name.lower(), ov['path'])
             cache[folder] = names
         rel = names.get(name.lower())
+        if not rel and folder:
+            # a themed style keeps its sids in Style\Themed\WildWest and each item's visual and model in an OVL
+            # named after the item in a subfolder (EntranceExit\MainEntrance\MainEntrance.common.ovl), while
+            # every theme calls its entrance MainEntrance: look in the subfolders' OVLs named like the resource
+            stem = name.split(':')[0].lower()
+            for ov in sorted((ov for ov in self.index['ovls'] if not ov.get('error')
+                              and ov['path'].lower().startswith(folder + os.sep)
+                              and os.path.basename(ov['path']).lower().startswith(stem + '.')),
+                             key=lambda ov: ov['path'].count(os.sep)):
+                o, ts = self.open(ov['path'])
+                r = next((r for r in o.resources if r.name.lower() == name.lower()), None)
+                if r:
+                    return o, r, ts
         if rel:
             o, ts = self.open(rel)
             for r in o.resources:

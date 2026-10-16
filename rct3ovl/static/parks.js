@@ -186,8 +186,10 @@ function build() {
     x.geometry?.dispose(); if (x.isSkinnedMesh) x.skeleton?.dispose();
     for (const m of [x.material].flat()) {
       if (!m) continue;
-      for (const v of Object.values(m)) if (v?.isTexture && !cached.has(v)) v.dispose();
-      for (const t of m.userData.textures || []) t.dispose();
+      if (!x.userData.keepTextures) {                // a model's own textures, shared with the cached model
+        for (const v of Object.values(m)) if (v?.isTexture && !cached.has(v)) v.dispose();
+        for (const t of m.userData.textures || []) t.dispose();
+      }
       m.dispose();
     }
   }
@@ -448,29 +450,20 @@ vec4 groundTex(float l, vec3 w) {
       layers.terrain.add(m);
     }
   }
-  // the park fence: the engine draws it along every edge between the park's land (ownership bit 2) and land that
-  // isn't, open where a path crosses; 2 m panels from perimiterfence (its top-left panel: posts, top rail, concrete
-  // base), dark as in the game
-  function buildFence() {
-    const W = world.cols, H = world.rows, T = world.tile, P = 2, HT = 2, V0 = 1 - 126 / 256;
+  // the park fence: the engine draws the park's fence item (world.park_fence: barbed wire, lasers, chain link...)
+  // along every edge between the park's land (ownership bit 2) and land that isn't, open where a path crosses, each
+  // 4 m piece bent to follow the ground along its edge (checked in the game on Chequered Flag's barbed wire). Parks
+  // without one get 2 m chain-link panels from perimiterfence (its top-left panel), dark as in the game
+  function fenceEdges() {
+    const W = world.cols, H = world.rows, T = world.tile, out = [];
     const owned = i => i >= 0 && (world.own[i] & 2) !== 0, path = new Set();
     for (const [c, r] of world.paths) path.add(r * W + c);
-    const p = [], uv = [];
-    const edge = (x0, z0, h0, x1, z1, h1) => {
-      for (let k = 0; k < T / P; k++) {
-        const a = k / (T / P), b = (k + 1) / (T / P);
-        const ax = x0 + (x1 - x0) * a, az = z0 + (z1 - z0) * a, ah = h0 + (h1 - h0) * a;
-        const bx = x0 + (x1 - x0) * b, bz = z0 + (z1 - z0) * b, bh = h0 + (h1 - h0) * b;
-        p.push(ax, ah, Z(az), bx, bh, Z(bz), bx, bh + HT, Z(bz), ax, ah, Z(az), bx, bh + HT, Z(bz), ax, ah + HT, Z(az));
-        uv.push(0, V0, 0.5, V0, 0.5, 1, 0, V0, 0.5, 1, 0, 1);
-      }
-    };
     // between tile i (corners ki0, ki1) and neighbour j (corners kj0, kj1; -1 off the map), from (x0, z0) to (x1, z1)
     const side = (i, j, ki0, ki1, kj0, kj1, x0, z0, x1, z1) => {
       if (owned(i) === owned(j) || (path.has(i) && path.has(j))) return;
       const h0 = j < 0 ? tileH(i, ki0) : Math.max(tileH(i, ki0), tileH(j, kj0));
       const h1 = j < 0 ? tileH(i, ki1) : Math.max(tileH(i, ki1), tileH(j, kj1));
-      edge(x0, z0, h0, x1, z1, h1);
+      out.push([x0, z0, h0, x1, z1, h1]);
     };
     for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
       const i = r * W + c, x = world.x0 + c * T, z = world.z0 + r * T;
@@ -479,12 +472,98 @@ vec4 groundTex(float l, vec3 w) {
       if (c === 0) side(i, -1, 0, 2, 0, 0, x, z, x, z + T);
       if (r === 0) side(i, -1, 0, 1, 0, 0, x, z, x + T, z);
     }
-    if (!p.length) return;
+    return out;
+  }
+  function buildFence() {
+    const edges = fenceEdges(), seq = loadSeq;
+    if (!edges.length) return;
+    const pick = { title: 'Park fence', detail: 'the edge of the park\'s land' };
+    if (world.park_fence) {
+      sidModel(world.park_fence).then(got => {
+        if (seq !== loadSeq) return;
+        if (!got) return fencePanels(edges, pick);
+        for (const m of bentAlong(got.g.scene, edges)) { m.userData.pick = pick; m.userData.keepTextures = true; layers.terrain.add(m); }
+      });
+      return;
+    }
+    fencePanels(edges, pick);
+  }
+  // a 4 m model lying along its own z (-2..2) laid on each edge [x0, z0, h0, x1, z1, h1], every vertex lifted by the
+  // ground height along the edge where it is: one merged mesh per part of the model
+  function bentAlong(scene, edges) {
+    const out = [];
+    scene.updateMatrixWorld(true);
+    scene.traverse(o => {
+      if (!o.isMesh) return;
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+      const src = g.getAttribute('position'), uv = g.getAttribute('uv'), n = src.count, v = new THREE.Vector3();
+      const local = new Float32Array(n * 3);
+      for (let k = 0; k < n; k++) { v.fromBufferAttribute(src, k).applyMatrix4(o.matrixWorld); local.set([v.x, v.y, v.z], k * 3); }
+      const p = new Float32Array(edges.length * n * 3), t = uv ? new Float32Array(edges.length * n * 2) : null;
+      edges.forEach(([x0, z0, h0, x1, z1, h1], e) => {
+        const L = Math.hypot(x1 - x0, z1 - z0), dx = (x1 - x0) / L, dz = (z1 - z0) / L, mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+        for (let k = 0; k < n; k++) {
+          const lx = local[k * 3], ly = local[k * 3 + 1], lz = local[k * 3 + 2], f = Math.min(1, Math.max(0, lz / L + 0.5));
+          const x = mx + lz * dx + lx * dz, z = mz + lz * dz - lx * dx;
+          // mirrored like the rest of the park (z -> -z), so the triangles turn round: swap two corners of each
+          const kk = k % 3 === 1 ? k + 1 : k % 3 === 2 ? k - 1 : k, q = (e * n + kk) * 3;
+          p[q] = x; p[q + 1] = ly + h0 + (h1 - h0) * f; p[q + 2] = Z(z);
+          if (t) { t[(e * n + kk) * 2] = uv.getX(k); t[(e * n + kk) * 2 + 1] = uv.getY(k); }
+        }
+      });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+      if (t) geo.setAttribute('uv', new THREE.BufferAttribute(t, 2));
+      geo.computeVertexNormals();
+      const mats = [o.material].flat().map(m => { const c = m.clone(); c.side = THREE.DoubleSide; return c; });
+      out.push(new THREE.Mesh(geo, mats.length > 1 ? mats : mats[0]));
+    });
+    return out;
+  }
+  // a model placed by each matrix (viewer space), every vertex lifted by how much the ground under it is above the
+  // ground under the item's own origin: one merged mesh per part of the model
+  function bentToGround(scene, mats) {
+    const out = [];
+    scene.updateMatrixWorld(true);
+    scene.traverse(o => {
+      if (!o.isMesh) return;
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+      const src = g.getAttribute('position'), uv = g.getAttribute('uv'), n = src.count, v = new THREE.Vector3(), o0 = new THREE.Vector3();
+      const p = new Float32Array(mats.length * n * 3), t = uv ? new Float32Array(mats.length * n * 2) : null, M = new THREE.Matrix4();
+      mats.forEach((m, e) => {
+        M.multiplyMatrices(m, o.matrixWorld); o0.setFromMatrixPosition(m);
+        const base = heightAt(o0.x, o0.z);
+        for (let k = 0; k < n; k++) {
+          v.fromBufferAttribute(src, k).applyMatrix4(M);
+          const q = (e * n + k) * 3;
+          p[q] = v.x; p[q + 1] = v.y + (base == null ? 0 : (heightAt(v.x, v.z) ?? base) - base); p[q + 2] = v.z;
+          if (t) { t[(e * n + k) * 2] = uv.getX(k); t[(e * n + k) * 2 + 1] = uv.getY(k); }
+        }
+      });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+      if (t) geo.setAttribute('uv', new THREE.BufferAttribute(t, 2));
+      geo.computeVertexNormals();
+      out.push(new THREE.Mesh(geo, o.material));
+    });
+    return out;
+  }
+  function fencePanels(edges, pick) {
+    const T = world.tile, P = 2, HT = 2, V0 = 1 - 126 / 256, p = [], uv = [];
+    for (const [x0, z0, h0, x1, z1, h1] of edges) {
+      for (let k = 0; k < T / P; k++) {
+        const a = k / (T / P), b = (k + 1) / (T / P);
+        const ax = x0 + (x1 - x0) * a, az = z0 + (z1 - z0) * a, ah = h0 + (h1 - h0) * a;
+        const bx = x0 + (x1 - x0) * b, bz = z0 + (z1 - z0) * b, bh = h0 + (h1 - h0) * b;
+        p.push(ax, ah, Z(az), bx, bh, Z(bz), bx, bh + HT, Z(bz), ax, ah, Z(az), bx, bh + HT, Z(bz), ax, ah + HT, Z(az));
+        uv.push(0, V0, 0.5, V0, 0.5, 1, 0, V0, 0.5, 1, 0, 1);
+      }
+    }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.computeVertexNormals();
     const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: parkTex('perimiterfence:ftx'), color: 0x6a6a6a, alphaTest: 0.1, alphaToCoverage: true, side: THREE.DoubleSide }));
-    m.userData.pick = { title: 'Park fence', detail: 'the edge of the park\'s land' };
+    m.userData.pick = pick;
     layers.terrain.add(m);
   }
   function recolourTerrain() {
@@ -821,7 +900,10 @@ vec4 groundTex(float l, vec3 w) {
   // Placement: tile centre, turned by DIRECTION (0 faces the tile's -column edge, 1 +row, 2 +column, 3 -row; the
   // models have their edge side at +x). Quarter-tile items go to their CORNER; edge items (walls, benches, lamps) out
   // to the edge they face. Bigger items (flat rides, shops) cover squares[0] columns x squares[1] rows (swapped at
-  // directions 1 and 3) from the stored tile towards +column / +row, and stand in the middle of that.
+  // directions 1 and 3) from the stored tile towards +column / +row, and stand in the middle of that. The park
+  // entrance (3 x 1) also sits half a tile over (+row, +column, -row, -column at directions 0-3), straddling the
+  // edge of the park's land with the path through its middle (as in the game: Chequered Flag, Box Office, Vanilla Hills).
+  const GATE = [[0, 1], [1, 0], [0, -1], [-1, 0]];
   const CORNERS = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
   const EDGE = { 'wall': 2.0, 'path edge outer': 1.85, 'path edge join': 1.85, 'path edge inner': 1.35, 'half tile': 1.0 };
   const ROT = { off: 2, sign: -1 };       // the same turn as track pieces: checked on raised path slopes (they rise towards -x)
@@ -834,6 +916,7 @@ vec4 groundTex(float l, vec3 w) {
       const [w, h] = dir & 1 ? [sq[1], sq[0]] : sq;
       x += (w - 1) * T / 2; z += (h - 1) * T / 2;
     }
+    if (meta.type === 'park entrance') { x += GATE[dir & 3][0] * T / 2; z += GATE[dir & 3][1] * T / 2; }
     if (meta.size === 'quarter tile' && corner >= 0) { x += CORNERS[corner & 3][0]; z += CORNERS[corner & 3][1]; }
     const a = ROT.sign * ((dir + ROT.off) % 4) * Math.PI / 2, d = EDGE[meta.size] || 0;
     const m = new THREE.Matrix4().makeRotationY(a);
@@ -870,6 +953,12 @@ vec4 groundTex(float l, vec3 w) {
         return;
       }
       const mats = items.map(it => itemMatrix(it, meta));
+      if (meta.type === 'fence' || meta.type === 'animal fence') {
+        // fences bend to follow the ground along their edge, as in the game (a straight piece on a slope would
+        // step up at every tile and float over the low end)
+        for (const m of bentToGround(g.scene, mats)) { m.userData.pick = pick; m.userData.items = items; m.userData.keepTextures = true; group.add(m); }
+        return;
+      }
       g.scene.traverse(o => {
         if (!o.isMesh) return;
         const im = new THREE.InstancedMesh(o.geometry, o.material, mats.length);

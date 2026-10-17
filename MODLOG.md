@@ -1038,3 +1038,21 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   a file you made there): a Green Peony saved this way opened and played in the game's editor.
 - tests/fw_game_made.py (fixtures tests/data/ZZ*.frw, made in the game): End 0 -> 0 stars, End 0.05 -> 89, complex ->
   89 stars + 162 sparks at most. fw_fan passes. Test files removed from My Documents\RCT3 and the game folder after.
+
+## 2026-10-16: session summary and open items
+- Commits this session: 5efa4a2 front-screen simulate + multi-select; 2dbb4ea fireworks fan; 6f37707 in-park screen
+  simulate; 5045e85 track placement / entrances / park fence / bent fences / raised walls; 3ff9c4e game-made
+  fireworks (End 0 never fires, designer-format save with eexec checksum). Desktop rct3ovl.zip rebuilt after each.
+- Tests added: design_direct.py (joints in every design: 207/208 < 10 cm), park_tracks.py (39/39 park coasters),
+  ui_park_shots.py (park screenshots: @cam, @x,y,z,d, @tCOL,ROW,d[,yaw]), fw_game_made.py (fixtures tests/data/ZZ*.frw).
+- Game driving that worked (Steam, 1280 x 800): career map -> Checkered Flag / Box Office; locked parks via copies in
+  My Documents\RCT3\Parks + Load game (copies removed afterwards). RCT3 widgets need hover before click (move, wait
+  0.4 s, click); Esc in a park asks "quit to main menu" (cancel with the red X ~704,424). Map window (28,173) jumps
+  the camera to a clicked point.
+- Open:
+  - The tester's 10 screenshots (Pictures\Screenshots image.png ... ima9ge.png) could not be viewed (image request
+    limit); "texture glitching" was taken to mean the wrong models / floating fences found - ask for them if more remain.
+  - King Rapids: one joint 0.27 m (Medslope2straight at piece 3).
+  - Terrain look at a distance not re-compared with the game this session.
+  - In-park simulate: Pools / Enclosures / Animals / Track import / MixMaster item targets not checked in the game.
+  - Fireworks: viewer vs game compared by particle counts and shape (column burst), not frame by frame.

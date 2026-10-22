@@ -1197,3 +1197,17 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   267 guests; its 54 custom sets and 4 CTR_Matterhorn tracks are left out.
 - A park's / design's coaster of a missing custom ride: OvlError -> 404 with a readable message (do_GET handler), was 500.
 - ui_parks_all: 43 parks (42 game + the scenario), only problems listed are the scenario's missing custom content.
+
+## 2026-10-22: viewer stuck on "loading..." on another computer (no custom content)
+- User's screenshot (Firefox, other PC): tabs drawn, tree "loading...", stage "Loading game index..." forever.
+- Cause: index.html's importmap loaded three.js (and the file-type doc's marked) from cdn.jsdelivr.net. When the CDN is
+  blocked (network filter, offline), the module script never runs, so loadTree() is never called. Reproduced exactly
+  with Playwright routing cdn.jsdelivr.net to abort. Fresh profile (empty HOME, no My Documents\RCT3, no cache) with
+  the CDN reachable worked in Firefox and Chrome: not a custom-content or user-folder issue.
+- Fix: three@0.170.0 (build/three.module.js + the 15 addon files the pages import, found by following relative imports)
+  and marked@12.0.2 shipped in rct3ovl/static/vendor/ with their licences; importmap points at /vendor/; viewer.py
+  serves /vendor/**.js only from inside static/vendor. A classic script shows a red "page script did not start" after
+  10 s if the module never ran.
+- Verified from the rebuilt Desktop zip, unpacked fresh, clean profile, ALL non-localhost requests aborted: Firefox and
+  Chrome show 8108 OVL pairs in ~1 s; Fireworks / Mod Loader / Parks tabs start; no external requests, no errors.
+  Blocking /vendor/three/three.module.js shows the new error message.

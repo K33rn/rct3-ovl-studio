@@ -70,6 +70,10 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 if u.path in ('/fireworks.js', '/tour.js', '/parks.js', '/texgui.js', '/mods.js') or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
                                                  and os.path.exists(os.path.join(STATIC, u.path[1:]))):
                     return self.send(200, open(os.path.join(STATIC, u.path[1:]), 'rb').read(), 'text/javascript; charset=utf-8')
+                if u.path.startswith('/vendor/') and u.path.endswith('.js'):   # three.js and marked, shipped so no CDN is needed
+                    f = os.path.normpath(os.path.join(STATIC, u.path[1:]))
+                    if f.startswith(os.path.join(STATIC, 'vendor') + os.sep) and os.path.isfile(f):
+                        return self.send(200, open(f, 'rb').read(), 'text/javascript; charset=utf-8')
                 # Mod Loader (static/mods.js, mods.py): custom content in the game
                 if u.path == '/api/mods':
                     with lock:

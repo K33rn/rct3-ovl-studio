@@ -12,6 +12,7 @@ Where each kind goes (the game folder: lib.root; the user folder: My Documents\\
   firework shows .fwd                     user  Fireworks         structures .dat    user  Structures
   scenarios .dat                          user  Start New Scenarios   saved parks .dat  user  Parks
   billboards (pictures)                   My Pictures\\RCT3\\Billboards   music  My Music\\RCT3
+  pictures a park / design names          My Pictures\\RCT3\\<the folder the save names>
 A folder laid out like the game folder (Cars, Tracks, Style, Path...) or like the user folder (Coasters, Structures...)
 keeps its layout. Files replaced by an install are copied first and put back when it is uninstalled; disabling moves a
 package's files out of the game (and puts back what they replaced) without deleting anything.
@@ -52,6 +53,7 @@ KINDS = {   # kind: (label, area, viewer tab that shows it)
     'structure': ('Structures', 'user', None),
     'peep': ('Peeps', 'user', None),
     'billboard': ('Billboards', 'pictures', None),
+    'picture': ('Pictures', 'pictures', None),
     'music': ('Music', 'music', None),
 }
 USER_SUB = {'design': 'Coasters', 'firework': 'FireworkEffects', 'laser': 'LaserEffects', 'waterjet': 'WaterJetEffects',
@@ -93,6 +95,18 @@ def _store(lib: Library) -> str:
     d = os.path.join(lib.cache_dir, 'mods', key)
     os.makedirs(d, exist_ok=True)
     return d
+
+
+def _tmp(lib: Library, tok: str) -> str:
+    """Where a download is unpacked while it is planned: short (not below the game folder's store), so the deep
+    folders of a pack stay under Windows' 260-character path limit."""
+    return os.path.join(lib.cache_dir, 'mods', 'tmp', tok)
+
+
+def _long(p: str) -> str:
+    """A path Windows opens even past 260 characters (the \\\\?\\ form)."""
+    p = os.path.abspath(p)
+    return '\\\\?\\' + p if os.name == 'nt' and len(p) >= 240 and not p.startswith('\\\\?\\') else p
 
 
 def _records_path(lib: Library) -> str:
@@ -168,8 +182,8 @@ def extract(path: str, out: str):
                 dst = os.path.join(out, *rel)
                 if not os.path.abspath(dst).startswith(os.path.abspath(out) + os.sep):
                     continue
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                with z.open(info) as src, open(dst, 'wb') as f:
+                os.makedirs(_long(os.path.dirname(dst)), exist_ok=True)
+                with z.open(info) as src, open(_long(dst), 'wb') as f:
                     shutil.copyfileobj(src, f)
         return
     sz = _seven_zip()
@@ -191,6 +205,27 @@ def _pairs_in(d: str, deep: bool) -> list:
         if not deep:
             break
     return out
+
+
+def _style_home(d: str) -> str | None:
+    """Where a scenery set (a folder with Style.ovl) has to be, by its own Style.ovl: it names the OVLs of its items
+    by path from the game folder ('Style\\Custom\\VTR\\Twister\\Twister' for Twister\\Twister.common.ovl -> the
+    set is Style/Custom/VTR/Twister). The game looks only there: a custom flat ride put anywhere else stops the game
+    with 'No :svd for :sid' when it is placed. None when the Style.ovl names none of the set's OVLs."""
+    style = next((p for p in _pairs_in(d, False) if os.path.basename(p).lower() == 'style.common.ovl'), None)
+    if not style:
+        return None
+    own = {os.path.relpath(p, d)[:-len('.common.ovl')].replace('\\', '/').lower() for p in _pairs_in(d, True)}
+    try:
+        data = open(style, 'rb').read()
+    except OSError:
+        return None
+    for m in re.finditer(rb'style[\\/](?:custom|themed)[\\/][\x20-\x7e]+', data, re.IGNORECASE):
+        parts = m.group().decode('latin1').replace('\\', '/').split('/')
+        for k in range(1, len(parts) - 2):
+            if '/'.join(parts[-k:]).lower() in own:
+                return '/'.join(parts[:-k])
+    return None
 
 
 def _ovl_facts(pairs: list) -> dict:
@@ -218,7 +253,7 @@ def classify_ovl_folder(d: str) -> str | None:
     t = facts['types']
     if 'ptd' in t:
         return 'path'
-    if 'trr' in t:
+    if 'trr' in t or 'tks' in t:           # a custom track, or a set of track sections ('tks') other tracks use
         return 'ride'
     if 'rit' in t or 'ric' in t:
         return 'cars'
@@ -252,10 +287,36 @@ def _readme_style(text: str) -> str:
 
 def _readme_folders(text: str) -> dict:
     """Folders a readme sends to a Style folder by name: 'Put "CFH-Rides" inside your Style/Custom folder' ->
-    {'cfh-rides': 'Custom'}."""
+    {'cfh-rides': 'Custom'}; 'Place the 'SpeedFlip' folder in the 'Zodi' folder' (an author's folder, which custom
+    flat rides keep under Style\\Custom) -> {'speedflip': 'Custom/Zodi'}."""
     out = {}
     for m in re.finditer(r'''["'“]([^"'”\r\n]{1,80})["'”][^\r\n]{0,40}?style[\\/ ](custom|themed)''', text, re.IGNORECASE):
         out[m.group(1).strip().lower()] = m.group(2).capitalize()
+    for m in re.finditer(r'''["'“]([^"'”\r\n]{1,80})["'”] folder (?:in|into|inside) (?:the |your )?["'“]([^"'”\r\n\\/]{1,40})["'”] folder''',
+                         text, re.IGNORECASE):
+        sub, into = m.group(1).strip(), m.group(2).strip()
+        if into.lower() not in ('style', 'custom', 'themed') and into.lower() not in _game_tops():
+            out.setdefault(sub.lower(), 'Custom/' + into)
+    return out
+
+
+def _picture_refs(src: str) -> dict:
+    """Pictures the parks / designs of a download name by path (custom walls, floors, signs: the save keeps
+    'My Pictures\\RCT3\\<folder>\\<file>.jpg') -> {file name lower: its path below Pictures\\RCT3}."""
+    out = {}
+    for dp, dn, fn in os.walk(src):
+        for f in fn:
+            if not f.lower().endswith(('.dat', '.trk')):
+                continue
+            try:
+                data = open(os.path.join(dp, f), 'rb').read()
+            except OSError:
+                continue
+            for m in re.finditer(rb'(?:[\x20-\x7e]\x00){8,}', data):
+                r = re.search(r'pictures\\rct3\\(.+?\.(?:jpe?g|png|bmp|tga))', m.group().decode('utf-16le'), re.IGNORECASE)
+                if r:
+                    rel = r.group(1).replace('\\', '/')
+                    out.setdefault(rel.rsplit('/', 1)[-1].lower(), rel)
     return out
 
 
@@ -283,6 +344,7 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
                     pass
     style = _readme_style('\n'.join(t for _, t in readmes))
     sent = _readme_folders('\n'.join(t for _, t in readmes))
+    pics = _picture_refs(src)
 
     planned = {}
 
@@ -316,6 +378,10 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
             return skip(p, 'not needed by the game')
         if hint == 'billboard' and ext in PICTURES:
             return add(p, 'pictures', 'Billboards/' + f, 'billboard', set_)
+        near = next((pics[s.lower()] for s in os.listdir(os.path.dirname(p)) if s.lower() in pics and '/' in pics[s.lower()]), None)
+        if ext in PICTURES and (f.lower() in pics or near):    # one the save names, or one beside those
+            rel = pics.get(f.lower()) or near.rsplit('/', 1)[0] + '/' + f
+            return add(p, 'pictures', rel, 'picture', rel.rsplit('/', 1)[0] if '/' in rel else set_)
         if (hint == 'music' or ext in AUDIO) and ext in AUDIO:
             return add(p, 'music', f, 'music', set_)
         k = EXT_KIND.get(ext)
@@ -341,6 +407,11 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
                     rel = _existing_case(lib.root, os.path.relpath(p, os.path.dirname(d)).replace('\\', '/'))
                     kind, set_ = _group_game(rel)
                     add(p, 'game', rel, kind, set_.split('/')[-1])
+            return
+        home = _style_home(d)
+        if home:
+            # the set's own Style.ovl names its models by path from the game folder: copied there as it is
+            whole(d, 'game', _existing_case(lib.root, home), 'scenery', os.path.basename(d) if depth else name)
             return
         # 'Style-Custom' / 'Style Themed' (how downloads often name them) as 'Custom' / 'Themed'
         low_style = re.sub(r'^style[\s_-]*', '', low)
@@ -385,6 +456,18 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
             else:
                 loose(p, d)
     walk(src)
+    # a folder repeated inside itself (CTR_Everest/CTR_Everest/...) holding the same files: installed once
+    by_name = {}
+    for it in items:
+        by_name.setdefault((it['area'], it['rel'].rsplit('/', 1)[-1].lower()), []).append(it)
+    for group in by_name.values():
+        for it in group:
+            d = it['rel'].rsplit('/', 1)[0].lower() + '/'
+            if any(o is not it and d.startswith(o['rel'].rsplit('/', 1)[0].lower() + '/') and d != o['rel'].rsplit('/', 1)[0].lower() + '/'
+                   and _same(o['src'], it['src']) for o in group):
+                items.remove(it)
+                planned.pop((it['area'], it['rel'].lower()), None)
+                skip(it['src'], 'the same file is in the download twice')
     ar = areas(lib)
     for it in items:
         dst = os.path.join(ar[it['area']], *it['rel'].split('/'))
@@ -488,7 +571,7 @@ _PLANS = {}
 def plan_upload(lib: Library, filename: str, data: bytes) -> dict:
     """An uploaded download (archive or a single file) unpacked into the store's tmp folder and planned."""
     tok = uuid.uuid4().hex[:12]
-    tmp = os.path.join(_store(lib), 'tmp', tok)
+    tmp = _tmp(lib, tok)
     os.makedirs(tmp)
     fname = os.path.basename(filename) or 'download'
     src = os.path.join(tmp, 'src')
@@ -504,7 +587,7 @@ def plan_upload(lib: Library, filename: str, data: bytes) -> dict:
 def plan_path(lib: Library, path: str) -> dict:
     """A download already on disk: an archive, a folder or a single file."""
     tok = uuid.uuid4().hex[:12]
-    tmp = os.path.join(_store(lib), 'tmp', tok)
+    tmp = _tmp(lib, tok)
     os.makedirs(tmp)
     src = os.path.join(tmp, 'src')
     if os.path.isdir(path):
@@ -533,7 +616,7 @@ def _public(plan: dict) -> dict:
 
 def cancel(lib: Library, tok: str):
     _PLANS.pop(tok, None)
-    shutil.rmtree(os.path.join(_store(lib), 'tmp', tok), ignore_errors=True)
+    shutil.rmtree(_tmp(lib, tok), ignore_errors=True)
 
 
 def install(lib: Library, tok: str, name: str | None = None, leave_out: list | None = None) -> dict:
@@ -556,10 +639,10 @@ def install(lib: Library, tok: str, name: str | None = None, leave_out: list | N
             backup = False
             if os.path.exists(dst):
                 b = os.path.join(bdir, it['area'], *it['rel'].split('/'))
-                os.makedirs(os.path.dirname(b), exist_ok=True)
-                shutil.copy2(dst, b)
+                os.makedirs(_long(os.path.dirname(b)), exist_ok=True)
+                shutil.copy2(dst, _long(b))
                 backup = True
-            shutil.copy2(it['src'], dst)
+            shutil.copy2(_long(it["src"]), _long(dst))
             files.append({'area': it['area'], 'rel': it['rel'], 'kind': it['kind'], 'set': it['set'], 'size': it['size'], 'backup': backup})
             kinds[it['kind']] = kinds.get(it['kind'], 0) + 1
     except PermissionError as e:
@@ -583,8 +666,8 @@ def _undo(lib, rec):
     for f in rec['files']:
         dst = os.path.join(ar[f['area']], *f['rel'].split('/'))
         b = os.path.join(_store(lib), 'backups', rec['id'], f['area'], *f['rel'].split('/'))
-        if f.get('backup') and os.path.exists(b):
-            shutil.copy2(b, dst)
+        if f.get('backup') and os.path.exists(_long(b)):
+            shutil.copy2(_long(b), _long(dst))
         elif os.path.exists(dst):
             os.remove(dst)
     _prune(lib, rec)
@@ -626,15 +709,15 @@ def set_enabled(lib: Library, pid: str, on: bool) -> dict:
         park = os.path.join(ddir, f['area'], *f['rel'].split('/'))
         b = os.path.join(_store(lib), 'backups', pid, f['area'], *f['rel'].split('/'))
         if on:
-            if os.path.exists(park):
+            if os.path.exists(_long(park)):
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
-                shutil.move(park, dst)
+                shutil.move(_long(park), _long(dst))
         else:
             if os.path.exists(dst):
-                os.makedirs(os.path.dirname(park), exist_ok=True)
-                shutil.move(dst, park)
-            if f.get('backup') and os.path.exists(b):
-                shutil.copy2(b, dst)
+                os.makedirs(_long(os.path.dirname(park)), exist_ok=True)
+                shutil.move(_long(dst), _long(park))
+            if f.get('backup') and os.path.exists(_long(b)):
+                shutil.copy2(_long(b), _long(dst))
     if not on:
         _prune(lib, rec)
     shutil.rmtree(ddir, ignore_errors=True) if on else None
@@ -661,8 +744,8 @@ def uninstall(lib: Library, pid: str) -> dict:
                 dst = os.path.join(ar[f['area']], *f['rel'].split('/'))
                 if os.path.exists(dst):
                     k = os.path.join(keep, f['area'], *f['rel'].split('/'))
-                    os.makedirs(os.path.dirname(k), exist_ok=True)
-                    shutil.move(dst, k)
+                    os.makedirs(_long(os.path.dirname(k)), exist_ok=True)
+                    shutil.move(_long(dst), _long(k))
             # content found in the game: only the set's own folder (a scenery set, path, ride) if it is left empty
             for d in {os.path.dirname(os.path.join(ar[f['area']], *f['rel'].split('/'))) for f in rec['files']
                       if f['area'] == 'game' and f['kind'] in ('scenery', 'path', 'ride', 'cars') and _norm(f['rel']).count('/') >= 3}:

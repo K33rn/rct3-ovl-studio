@@ -1,12 +1,13 @@
 """Every park opens in the Parks tab: no page errors, no failed requests, every model and track built, every raised
-path support reaching up to the first path piece above it with no pieces overlapping.
-usage: python tests/ui_parks_all.py <base>"""
+path support reaching up to the first path piece above it with no pieces overlapping. Given parts of file names, only
+those parks, each with a screenshot in the working folder.
+usage: python tests/ui_parks_all.py <base> [<part of a park's file name> ...]"""
 import sys
 import time
 
 from playwright.sync_api import sync_playwright
 
-base = sys.argv[1]
+base, only = sys.argv[1], [a.lower() for a in sys.argv[2:]]
 DONE = 'window.__pkdebug.loaded === f'           # set when the park has finished loading
 STATS = """() => { const D = window.__pkdebug, n = g => { let k = 0; g.traverse(o => { if (o.isInstancedMesh) k += o.count; else if (o.isMesh) k++; }); return k; };
   const tracks = D.world.tracks.length, built = Object.keys(D.rideSpots()).filter(k => D.world.tracks.some(t => String(t.id) === k)).length;
@@ -40,6 +41,8 @@ with sync_playwright() as p:
     pg.reload(); pg.wait_for_function("document.getElementById('rootinfo').textContent.includes('OVL pairs')", timeout=180000)
     pg.click('#b-parks'); pg.wait_for_selector('#pk .pk', timeout=60000)
     files = pg.eval_on_selector_all('#pk .pk', 'es => es.map(e => e.dataset.f)')
+    if only:
+        files = [f for f in files if any(o in f.lower() for o in only)]
     bad = []
     for f in files:
         before = len(errors); t0 = time.time()
@@ -50,6 +53,8 @@ with sync_playwright() as p:
             bad.append((f, 'timeout', pg.inner_text('#pk-load'))); continue
         items, meshes, tracks, built, animals = pg.evaluate(STATS)
         cols, overlap, off, n_off = pg.evaluate(SUPPORTS)
+        if only:
+            pg.wait_for_timeout(1500); pg.screenshot(path='park_' + ''.join(c if c.isalnum() else '_' for c in f)[-40:] + '.png')
         print(f'{f[10:50]:40} {time.time() - t0:5.1f}s items {items:5} meshes {meshes:6} tracks {built}/{tracks} animals {animals} path supports {cols}')
         if built != tracks or len(errors) > before or overlap or n_off:
             bad.append((f, errors[before:][:3], f'tracks {built}/{tracks}', f'supports overlapping {overlap}, not meeting their path {n_off} {off}'))

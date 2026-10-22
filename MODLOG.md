@@ -1238,3 +1238,43 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   I/II, Reflections of Earth), Paint the Night parade, Hogwarts Express, Villains Land, Expo 3000 - then Mod Loader
   install into both game folders and check everything in the viewer. Waiting on the Chrome extension connection
   (session restart).
+
+## 2026-10-22: parkcrafters batch (13 downloads) installed and checked
+- Downloaded in the user's Chrome (signed in; optional cookies rejected) into Downloads: matterhorn.zip (Matterhorn
+  Bobsleds CTR 1611), Harry_Pottah.zip (Hogwarts Express 4033), PAINT THE NIGHT ELECTRICAL PARADE.zip (3963), PyroForge
+  Volume I / II (3929 / 4036), wolfpaw's Reflections of Earth Pack.zip (3762), Villians Land Pack.zip (4037),
+  Expo 3000.zip (park 185), ExpeditionEverest_Extended.zip (3680), Banshee Pre-Release.rar (3531), VTR Twister.zip
+  (4026), Power Twist.zip (3964), and RR03InvisibleTrack.zip (1652) - Paint the Night's readme requires it.
+  Script-triggered downloads (a.click() on the do=download links) were blocked and froze the tab; clicking each page's
+  real "Download this file" button works. Download links carry a csrfKey; one file per entry.
+- Installed with the Mod Loader code into the Desktop copy and the Steam game (store ~/.rct3ovl/mods/<root>/;
+  nothing replaced; user-folder parts installed once, 'same' for the second root; the empty Steam records dropped).
+  Backup of My Documents\RCT3 first: ~\.universal-modder\backups\rct3-userdir\20261022-064459.zip.
+- Mod Loader fixes found by this batch (tests/mods_rules.py):
+  1. A set goes where its own Style.ovl says: it names its models by path from the game folder
+     ('Style\Custom\VTR\Twister\Twister'). VTR Twister had gone to Style\Themed\Twister; placing it in the game showed
+     a dialog "No :svd for :sid" (title Twister-Twister:sid) and the game quit on OK. _style_home() reads the path;
+     all 27 sets in both game folders (stock included) now sit where their Style.ovl says.
+  2. Readme 'Place the 'SpeedFlip' folder in the 'Zodi' folder' -> Style\Custom\Zodi\SpeedFlip (author folder).
+  3. A folder of track sections only ('tks', no 'trr': RR03InvisibleTrack, 3815 pieces) is a ride -> Tracks\TrackedRides
+     (was Style\Themed as scenery). Paint the Night's trr imports RR03.* sections: the viewer resolves 3794 pieces there.
+  4. Pictures a park names by path (Expo 3000.dat holds 'My Pictures\RCT3\Expo 3000\Floor.jpg' etc.) go to that folder
+     (kind 'picture'), with the unreferenced ones beside them; were skipped as previews.
+  5. A folder repeated inside itself with the same files (CTR_Everest/CTR_Everest/) installed once.
+  6. Unpacking for the Steam root went past 260 characters (FileNotFoundError): tmp folder now ~/.rct3ovl/mods/tmp,
+     and file copies / moves use the \?\ form past 240 characters.
+  Re-planned the earlier 8 downloads + Kamikaze + Mega Disko: every file 'same' (no placement changes).
+- Viewer (Desktop copy): every new car (rit), CFR, scenery item and track set builds; 227/227 new fireworks simulate
+  10 s (no NaN, all emit, top 2-296 m, no page errors); Expo 3000 opens (35,594 items, 14/14 tracks; 404s only for
+  the 66 sets it needs that are not installed); Matterhorn scenario now builds its 4 CTR_Matterhorn tracks.
+  tests/ui_parks_all.py takes parts of file names (only those parks, with screenshots).
+- In the game (Steam, sandbox, not saved): starts with everything installed. Roller coasters list CTR_MaleficentCoaster,
+  DI Matterhorn bobsleds (Designs available: 4), Expedition Everest, HogwartsExpress, "TheCodeMaster's Second Gen
+  Invert" (Banshee); Transport: DisneyPaintTheNightParade - its builder lists RR03.Station... RR03 helix pieces.
+  Thrill: Power Twist, Twister (VTR), Kamikaze / KamikazeClassic.
+- Open: VTR Twister and Power Twist place (ghost drawn full size) but the placed ride shows only its animated shadow;
+  stock Chairswing and KamikazeClassic (which has the 2.8 km anti-culling mesh) draw. Not the LOD distance (Twister
+  10000 -> 4000: still invisible), widening the bsh bbox to +-500 crashed the game on placing; bones 57 / 75 vs
+  Kamikaze 86. Test edits undone (texedit.restore; files identical to the Desktop copies). Circuit breaker: stopped.
+- Ride titles: CTRs without a txt keep their name as a UTF-16 string in the trr OVL ('TheCodeMaster's Second Gen
+  Invert', 'Expedition Everest'); the viewer's track sets show the trr name instead.

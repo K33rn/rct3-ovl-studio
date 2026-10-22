@@ -252,7 +252,8 @@ function build() {
     return [0.58, 0.6, 0.62];                      // not the park's
   }
   // The ground, as the game draws it: each tile has one texture (terrain_NN), blended into its neighbours' across the
-  // tile (bilinear between tile centres, in the shader), with the game's grey detail texture over it (modulate x2).
+  // tile (each corner the mean of its 4 tiles, linear between corners, in the shader), with the game's grey detail
+  // texture over it (modulate x2).
   // Where neighbouring tiles' edges are at different heights the game builds a cliff wall, textured with the tile's
   // cliff style (TerrainCliffN).
   const imgData = name => new Promise(res => {
@@ -307,15 +308,22 @@ vec4 groundTex(float l, vec3 w) {
 }`)
         .replace('#include <map_fragment>', `
 {
-  vec2 g = vec2((vWP.x - uGrid.x) / uGrid.z, (-vWP.z - uGrid.y) / uGrid.z) - 0.5, i = floor(g), f = fract(g);
-  f = f * f * (3.0 - 2.0 * f);
+  // as the game: each tile corner takes the mean of the 4 tiles meeting there, linear across the tile - a lone tile
+  // is a 25% plateau fading out over its neighbours (measured in the game with single painted tiles)
+  vec2 g = vec2((vWP.x - uGrid.x) / uGrid.z, (-vWP.z - uGrid.y) / uGrid.z), i = floor(g), f = fract(g);
+  vec3 wx = vec3(1.0 - f.x, 1.0, f.x) * 0.5, wy = vec3(1.0 - f.y, 1.0, f.y) * 0.5;
   vec3 w = pow(abs(normalize(vWN)), vec3(4.0)); w /= w.x + w.y + w.z;
-  float a = tileLayer(i), b = tileLayer(i + vec2(1.0, 0.0)), c = tileLayer(i + vec2(0.0, 1.0)), d = tileLayer(i + vec2(1.0, 1.0));
-  vec4 ta = groundTex(a, w);
-  vec4 tb = b == a ? ta : groundTex(b, w);
-  vec4 tc = c == a ? ta : groundTex(c, w);
-  vec4 td = d == a ? ta : d == b ? tb : d == c ? tc : groundTex(d, w);
-  vec4 col = mix(mix(ta, tb, f.x), mix(tc, td, f.x), f.y);
+  float L[9], Wt[9]; int n = 0;
+  for (int dy = 0; dy < 3; dy++) for (int dx = 0; dx < 3; dx++) {
+    float wt = wx[dx] * wy[dy];
+    if (wt <= 0.0) continue;
+    float l = tileLayer(i + vec2(float(dx - 1), float(dy - 1)));
+    int k = 0;
+    for (; k < n; k++) if (L[k] == l) { Wt[k] += wt; break; }
+    if (k == n) { L[n] = l; Wt[n] = wt; n++; }
+  }
+  vec4 col = vec4(0.0);
+  for (int k = 0; k < n; k++) col += groundTex(L[k], w) * Wt[k];
   // the game's detail texture (grey, modulate x2 in gamma space); its ground is lit brighter than the models, flat
   // ground coming out ~1.25x its texture (sand 174 -> 220, grass 124 -> 145 in screenshots)
   col.rgb *= pow(texture2D(uDetail, vWP.xz / 2.0).rgb * 2.0, vec3(2.2)) * 1.6;

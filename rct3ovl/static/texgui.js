@@ -1105,8 +1105,9 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   // ---- simulating the in-park screen: what each button opens, as seen in the game (Steam, sandbox, 1280 x 800) ------
   // A left button opens a column of discs (x 68, 40 apart) ending just above it, pushed down to start at y 24 when it
   // would go off the top; the button being used and the one under the pointer are drawn larger. Its tooltip is the
-  // game's own text (<icon>Help in the language file). What a flyout button opens: a list docked at the top left (rides,
-  // shops, scenery), a window (management, file), a round tool panel at the bottom left (paths, terrain) or a mode.
+  // game's own text (<icon>Help in the language file). What a flyout button opens: a list at x 84 centred on the button
+  // (kept on screen: rides, shops, scenery, animals, track import), a window (management, file), a round tool panel at
+  // the bottom left (paths, terrain, pools, enclosures, MixMaster) or a mode.
   const TIPS = { Map: 'MapHelp', View: 'ViewHelp', File: 'FileHelp', File_Quit: 'File_QuitHelp', File_CareerMap: 'File_CareerMapHelp', Man: 'ManHelp', Obj_Rides: 'Obj_RidesHelp',
     Obj_Shops: 'Obj_ShopsHelp', Obj_Scenery: 'Obj_SceneryHelp', Obj_Paths: 'Obj_PathsHelp', Land: 'Landhelp', Obj_Delete: 'Obj_DeleteHelp', CustomStructions_Icon: 'SavedSelection_SubMenuHelp',
     AnimalWalkingGridOff: 'ToggleEnclosureWalkInfo_TT', ThreeXFireworks: 'Obj_Scenery_FireworkSourcesHelp', Land_Brush_Height: 'Land_Brush_HeightHelp',
@@ -1124,15 +1125,17 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     l2: [['File_AboutRCT', 'dialog'], ['File_GameOptions', 'dialog'], ['File_SaveGame', 'dialog'], ['File_LoadGame', 'dialog']],
     l4: [['Man_Park', 'dialog'], ['Man_Finances', 'dialog'], ['Man_Staff', 'dialog'], ['Man_Objectives', 'objectives'], ['Man_Research', 'dialog'], ['Man_Rides', 'dialog'], ['Man_Guests', 'dialog'], ['Man_Challenges', 'dialog']],
     l5: [['Obj_Rides_RollerCoasters', 'picker'], ['Obj_Rides_JuniorCoasters', 'picker'], ['Obj_Rides_ThrillRides', 'picker'], ['Obj_Rides_WaterRides', 'picker'], ['Obj_Rides_GentleRides', 'picker'],
-      ['Obj_Rides_TransportRides', 'picker'], ['Obj_Rides_PoolRides', 'picker'], ['Obj_Rides_OtherRides', 'picker'], ['Obj_Rides_TrackImport', 'dialog'], ['Obj_Pools', 'tool'], ['Obj_Rides_Animals', 'picker'], ['Obj_Enclosures', 'tool']],
+      ['Obj_Rides_TransportRides', 'picker'], ['Obj_Rides_PoolRides', 'picker'], ['Obj_Rides_OtherRides', 'picker'], ['Obj_Rides_TrackImport', 'picker'], ['Obj_Pools', 'tool'], ['Obj_Rides_Animals', 'picker'], ['Obj_Enclosures', 'tool']],
     l6: [['Obj_Shops_FoodShops', 'picker'], ['Obj_Shops_DrinkShops', 'picker'], ['Obj_Shops_Stalls', 'picker'], ['Obj_Shops_Utilities', 'picker']],
     l7: [['Obj_Scenery_TreesNPlants', 'picker'], ['Obj_Scenery_Fences', 'picker'], ['Obj_Scenery_WallsRoofsAndBuildings', 'picker'], ['Obj_Scenery_PathExtras', 'picker'], ['Obj_Scenery_ThemeProps', 'picker'],
-      ['Obj_Scenery_RideEvents', 'picker'], ['Obj_Scenery_TerrainSurfaces', 'picker'], ['Obj_Scenery_Adverts', 'picker'], ['CustomStructions_Icon', 'picker'], ['ThreeXFireworks', 'dialog']],
+      ['Obj_Scenery_RideEvents', 'picker'], ['Obj_Scenery_TerrainSurfaces', 'picker'], ['Obj_Scenery_Adverts', 'picker'], ['CustomStructions_Icon', 'picker'], ['ThreeXFireworks', 'tool']],
     l9: [['Land_Brush_Height', 'tool'], ['Land_Brush_Paint', 'tool'], ['Land_Water', 'tool'], ['Land_Waterfall', 'tool']],
     l10: [['GUI2_DeleteSelection', 'mode'], ['GUI2_DeleteSingleItem', 'mode']],
   };
   const WIN_ICONS = ['WindowBackground', 'GUI2Dialog_Frame', 'GUI2Dialog_IconBackgroundNormal', 'GUI2Dialog_CloseIcon', 'GUI2Dialog_MinimiseIcon', 'GUI2MiniDialog_Frame', 'GUI2MiniDialog_Background', 'GUI2MiniDialog_Confirm', 'GUI2MiniDialog_Cancel',
     'Map_People', 'Map_Attractions', 'Map_Scenery', 'Difficulty_Hat_Apprentice', 'Difficulty_Hat_Entrepreneur', 'Difficulty_Hat_Tycoon'];
+  // tool panels' right edges where measured (the others as Paths)
+  const TOOL_RIGHT = { Obj_Paths: 362, Obj_Pools: 368, Obj_Enclosures: 332, ThreeXFireworks: 457 };
   const flyBoxes = id => {            // the discs of a left button's flyout, top to bottom
     const items = FLY[id] || [], by = LEFT_Y[+id.slice(1)] + 16;
     let y0 = by - 19 - 40 * (items.length - 1); if (y0 < 24) y0 = 24;
@@ -1320,7 +1323,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       hits.push({ box, label: tipOf(icon), widget: shown, icons: alt ? [shown, shown === icon ? alt : icon, 'MenuButtonSmall'] : [icon, 'MenuButtonSmall'], flyK: k, act: () => {
         if (kind === 'toggle') { HS.toggles.has(icon) ? HS.toggles.delete(icon) : HS.toggles.add(icon); return; }
         HS.item = HS.item === k && kind === 'mode' ? null : k;
-        HS.win = kind === 'mode' ? null : HS.item == null ? null : { kind, icon, title: tipOf(icon) };
+        HS.win = kind === 'mode' ? null : HS.item == null ? null : { kind, icon, title: tipOf(icon), at: box[1] + box[3] / 2 };
       } });
     });
     // the day / night list under its button
@@ -1332,15 +1335,21 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     // the window it opened
     const w = HS.win;
     if (w?.kind === 'picker') {
+      // centred on its button, kept on screen (Track import 185-500 for its button at 344, Animals 265-582 at 424)
+      const oy = w.at == null ? 0 : Math.max(0, Math.min(800 - 318, Math.round(w.at - 159)));
+      x.save(); x.translate(0, oy);
       x.fillStyle = '#0004'; x.beginPath(); x.roundRect(88, 4, 288, 318, 10); x.fill();
       x.fillStyle = '#4aa8e0'; x.beginPath(); x.roundRect(84, 0, 288, 318, 10); x.fill();
-      const close = HS.icons.get('GUI2Dialog_CloseIcon'), cb = [350, 6, 14, 14]; if (close) x.drawImage(close, ...cb);
-      hits.push({ box: cb, label: 'Close', widget: 'GUI2Dialog_CloseIcon', icons: ['GUI2Dialog_CloseIcon'], act: () => { HS.win = null; HS.item = null; } });
+      const close = HS.icons.get('GUI2Dialog_CloseIcon'); if (close) x.drawImage(close, 350, 6, 14, 14);
+      hits.push({ box: [350, 6 + oy, 14, 14], label: 'Close', widget: 'GUI2Dialog_CloseIcon', icons: ['GUI2Dialog_CloseIcon'], act: () => { HS.win = null; HS.item = null; } });
       x.fillStyle = '#fff'; x.fillRect(90, 46, 258, 224); x.fillStyle = '#efe9f2'; for (let r = 0; r < 4; r += 2) x.fillRect(90, 46 + 68 * r, 258, 68);
       x.fillStyle = '#4aa8e0'; x.fillRect(352, 46, 13, 224);
       const ic = HS.icons.get(w.icon); if (ic) x.drawImage(ic, 92, 6, 32, 32);
       x.fillStyle = '#000'; x.font = 'bold 13px Verdana, Tahoma, sans-serif'; x.textAlign = 'left'; x.textBaseline = 'middle'; x.fillText(w.title, 130, 22);
-      hudNote(x, `The game lists the ${w.title.toLowerCase()} you can build here: a picture, name, designs and price for each.`, 219, 140, 230);
+      hudNote(x, w.icon === 'Obj_Rides_TrackImport'
+        ? 'The game lists track designs from earlier RollerCoaster Tycoon games here, from the drive picked at the top.'
+        : `The game lists the ${w.title.toLowerCase()} you can build here: a picture, name, designs and price for each.`, 219, 140, 230);
+      x.restore();
     } else if (w?.kind === 'dialog') {
       hudWindow(x, [400, 170, 477, 335], w.icon, w.title, null, hits);
       hudNote(x, `The game's ${w.title} window: its tabs, lists and settings are drawn by the game's code here.`, 638, 340, 400);
@@ -1363,8 +1372,9 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       });
     } else if (w?.kind === 'tool') {
       x.fillStyle = '#2b86c5'; x.beginPath(); x.arc(78, 718, 66, 0, 7); x.fill();
-      x.fillStyle = '#4aa8e0'; x.beginPath(); x.roundRect(70, 655, 292, 128, 12); x.fill();
-      x.fillStyle = '#f4f2f7'; x.beginPath(); x.roundRect(172, 672, 172, 106, 10); x.fill();
+      const right = TOOL_RIGHT[w.icon] ?? 362;
+      x.fillStyle = '#4aa8e0'; x.beginPath(); x.roundRect(70, 655, right - 70, 128, 12); x.fill();
+      x.fillStyle = '#f4f2f7'; x.beginPath(); x.roundRect(172, 672, right - 190, 106, 10); x.fill();
       x.fillStyle = '#8a8a8a'; x.beginPath(); x.arc(78, 718, 54, 0, 7); x.fill();
       const ic = HS.icons.get(w.icon); if (ic) x.drawImage(ic, 62, 702, 32, 32);
       x.fillStyle = '#000'; x.font = 'bold 12px Verdana, Tahoma, sans-serif'; x.textAlign = 'left'; x.fillText(w.title, 180, 686);

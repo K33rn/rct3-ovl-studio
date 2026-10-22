@@ -42,6 +42,21 @@ with sync_playwright() as p:
     pg.screenshot(path=f'{out}/2_coasters.png')
     print('after the first Rides item:', h3()[:2])
     if not any('Rides button' in t for t in h3()) and not any('RollerCoasters' in t for t in h3()): problems.append(f'rides item: {h3()}')
+
+    def px(x, y):          # the simulated screen's colour at a 1280 x 800 point (through at(): the screen is letterboxed)
+        return pg.evaluate("""([x, y]) => { const c = document.querySelector('#hud-cv'), b = c.getBoundingClientRect();
+            return [...c.getContext('2d').getImageData(Math.round((x - b.left) * c.width / b.width),
+              Math.round((y - b.top) * c.height / b.height), 1, 1).data].slice(0, 3); }""", at(x, y))
+    blue = lambda c: c[2] > 180 and c[0] < 120  # noqa: E731  the list / panel frame #4aa8e0
+    # lists centred on their button as in the game (Track import 185-500, Animals 265-582); MixMaster is a tool panel
+    for y, top, name in ((344, 185, 'track import'), (424, 265, 'animals')):
+        click(68, y)
+        pg.screenshot(path=f'{out}/2_{name.replace(" ", "_")}.png')
+        if not blue(px(300, top + 3)) or blue(px(300, top - 6)): problems.append(f'{name} list not at y {top}: {px(300, top + 3)} {px(300, top - 6)}')
+    click(28, 473); click(68, 454)
+    pg.screenshot(path=f'{out}/2_mixmaster.png')
+    if not blue(px(440, 700)): problems.append(f'MixMaster tool panel not out to x 457: {px(440, 700)}')
+    pg.keyboard.press('Escape'); pg.wait_for_timeout(200)
     # Park management > Park Operations window
     click(28, 353); click(68, 54)
     pg.screenshot(path=f'{out}/3_park.png')

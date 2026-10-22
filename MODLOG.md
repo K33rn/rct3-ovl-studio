@@ -1070,3 +1070,40 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   +1.75, on the Medslope's end, ends 0.29 m high) and '_joinSpline' (starts 0.25 m off, ends on the Straight); the
   Medslope / Straight2medslope rails run +1.75 .. -2.25. designs._piece_ends: the joint check takes the nearest end of
   any rail pair. design_direct 208 / 208 < 10 cm (only King Rapids changed, 0.265 -> 0.01); park_tracks 39 / 39.
+- 2026-10-21 game session: backup of My Documents\RCT3 at ~\.universal-modder\backups\rct3-userdir\20261021-193604.zip
+  (um backup restore). Temporary copies: My Documents\RCT3\Parks\ZZ BroomLake.dat, ZZ CosmicCraggs.dat (remove after).
+
+## 2026-10-21: terrain blend as the game does it (painted single tiles in the game)
+- Game (Steam, Cosmic Craggs copy via Custom scenario > Load game, 1280 x 800, grid on): Terrain tools > Terrain
+  textures, brush 1, painted one green tile (27, 84), one black, a black 2 x 2 (rows 26-27, cols 88-89) and brush 3
+  (= 2 x 3, rows 28-29, cols 78-80); saved and diffed EngineTerrain byte 16 against the original (bytes 19 / 22 / 23
+  change on every tile at save - runtime). Copy kept outside the repo: ~/rct3-work/tmp/game21/paint_test_CosmicCraggs.dat.
+- Measured across the lone green tile: a flat plateau over the tile, fading linearly to nothing one tile out each
+  side; the 2 x 2 block peaks at its shared middle corner. = each tile corner takes the mean of its 4 tiles' textures,
+  linear across the tile: a lone tile is a 25% plateau, 3 tiles wide in all. The viewer (texture at full strength at
+  each tile centre, smoothstep to the next centre) made every speckled tile a strong round blob - the tester's
+  "texture glitching" (pink on Cosmic Craggs, white / grey on Broom Lake).
+- parks.js terrain shader: weights over the 3 x 3 tiles round the fragment, separable: x (1 - f) / 2, 1 / 2, f / 2
+  (f = position in the tile), same for z; repeated layers merged, one triplanar lookup per distinct layer.
+- tests/terrain_blend.py: finds a lone tile on flat ground, looks straight down, renders twice (only that tile's layer
+  flat grey vs every layer grey; grey 90 so nothing clips once lit) and divides in linear light: weight per 1/8 tile.
+  Box Office tile (37, 31): 0.250 plateau, 0.031 steps, 0 at 1.5 tiles - worst 0.002 off the game model.
+- Camera keys in the game: wheel and numpad +/- do nothing here; PageDown / PageUp move the camera down / up (not a
+  zoom). The Map window jumps the camera. Opening hours run into the night quickly - pause (331, 11) first.
+- Loading a park: Neon Nights front screen - RIDE badge (492, 97) -> Custom scenario badge (495, 410) -> Load game
+  (455, 200): lists My Documents\RCT3\Parks (ZZ copies). Saving from there wrote to My Documents\RCT3\Scenarios (+ .bak).
+  The front-screen buttons only react on their round badges, not the bars. um win drive has no 'wait' command - one
+  call per hover / click (tmp/hc21.sh).
+
+## 2026-10-21: in-park buttons checked in the game (Broom Lake copy)
+- Rides > Track import: a list window (x 84-370, y 185-500), its header a drive picker ("C:\"), "No items meet current
+  filter criteria"; tooltip "Import Track Designs from previous RollerCoaster Tycoon titles". Rides > Animals: list
+  "Purchase Animals" (Camel (Wooden Fence), Chimp (Chain Fence), ...) at y 265-582 and the ground turns to the
+  enclosure tint. Lists are centred on their button (344 -> 342.5, 424 -> 423.5), kept on screen (RollerCoasters at 0).
+- Rides > Pools: tool panel bottom left (to x 368) with a pool-shape brush on the ground. Rides > Enclosures: tool panel
+  (to x 332): fence types + delete. Scenery > MixMaster: tool panel (to x 457) with tabs (fireworks, red, folder),
+  two side buttons and a list.
+- texgui.js: Track import 'picker' (was dialog), MixMaster 'tool' (was dialog); pickers centred on their button;
+  TOOL_RIGHT per tool. tests/ui_hud_sim.py checks track import / animals list tops and the MixMaster panel width.
+- Session cleanup: ZZ copies removed from My Documents\RCT3\Parks and \Scenarios; game closed from its menu.
+- Still open: fireworks frame by frame vs the game (needs recording the game's editor preview and the viewer).

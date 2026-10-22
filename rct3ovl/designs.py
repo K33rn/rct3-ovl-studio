@@ -61,6 +61,21 @@ def _piece_geometry(lib, o, r):
     return np.mean(starts, 0), unit(np.mean(sd, 0)), np.mean(ends, 0), unit(np.mean(ed, 0))
 
 
+def _piece_ends(lib, o, r) -> list:
+    """Every rail pair's two ends (pair midpoints) in the piece's own space. A piece can carry a '_spline' and a
+    '_joinSpline' pair that each meet only one neighbour (Rapids Medslope2straight: '_spline' starts on the Medslope,
+    '_joinSpline' ends on the Straight), so the joint check takes the nearest end of any pair."""
+    spl = list(dict.fromkeys(n for n in _imports(o, r) if n.lower().endswith(':spl')))
+    pairs = {}
+    for s in spl:
+        h = lib.find_near(s, o)
+        if h:
+            d = load_spline(h[0], h[1])
+            key = re.sub(r'[lr](_(?:join)?spline:spl)$', r'\1', s.lower())
+            pairs.setdefault(key, []).append((np.array(d['nodes'][0]['pos']), np.array(d['nodes'][-1]['pos'])))
+    return [p for v in pairs.values() for p in (np.mean([a for a, _ in v], 0), np.mean([b for _, b in v], 0))]
+
+
 def _piece_path(lib, o, r):
     """The piece's centreline in its own space, sampled along its two rail splines: (points (n, 3), across (n, 3)
     from the left rail to the right one, or None for a single spline)."""
@@ -170,7 +185,7 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
     where = {n.lower(): (o, n) for o, n in ts['pieces']}
     merged = Shape(name, 'shs', ((0, 0, 0), (0, 0, 0)))
     merged.path = []                                  # the centreline, piece by piece: [(points, across)]
-    geo_cache, shape_cache, path_cache, half_cache, missing = {}, {}, {}, {}, set()
+    geo_cache, shape_cache, path_cache, half_cache, ends_cache, missing = {}, {}, {}, {}, {}, set()
     placed, gaps = 0, []
 
     def geometry(name):
@@ -184,6 +199,7 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
             shape_cache[key] = _piece_shape(lib, o, r)
             path_cache[key] = _piece_path(lib, o, r)
             half_cache[key] = _half_footprint(lib, o, r)
+            ends_cache[key] = _piece_ends(lib, o, r)
         if geo_cache[key] is None or shape_cache[key] is None:
             return None
         return geo_cache[key], shape_cache[key]
@@ -209,7 +225,7 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
             if pp is not None:
                 C, L = pp
                 merged.path.append((C @ R.T + T, None if L is None else L @ R.T))
-            here = (R @ s + T, R @ e + T)
+            here = [R @ p + T for p in [s, e] + ends_cache[v['SYMBOLNAME'].lower()]]
             if prev is not None:
                 joints.append((_gap(prev, here), ci, v['SYMBOLNAME']))
             first = first or here

@@ -1056,3 +1056,17 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   - Terrain look at a distance not re-compared with the game this session.
   - In-park simulate: Pools / Enclosures / Animals / Track import / MixMaster item targets not checked in the game.
   - Fireworks: viewer vs game compared by particle counts and shape (column burst), not frame by frame.
+
+## 2026-10-21: open items - tester's screenshots, King Rapids
+- Tester's 9 screenshots (Pictures\Screenshots image.png, ima2ge, im3age..im9age, Oct 16 03:55-04:00, taken on the
+  old build): designs that don't close (Butterfly Knot 54.7 m, Inferno Tower 16 m, Towering Turns 40 m) and Money Pit
+  coaster pieces - fixed by 5045e85. Still there with today's code: blotchy ground (pink / white / grey round patches
+  on Cosmic Craggs, Broom Lake, Checkered Flag; a dark smudge at a Box Office fence corner).
+- Those patches are in the data: designers speckled single tiles of other textures (Broom Lake 203 isolated tiles of
+  terrain_14, 171 of 18; Cosmic Craggs 191 of 15 (pink)). The viewer's smoothstep bilinear blend turns each into a
+  soft round 4 m blob. No blend / mask texture in the game (Terrain_RCT3 OVL: terrain_NN, Cliff_0N:ter,
+  TerrainCliffN; terrain_NN alpha all 255), so the shape comes from the engine's shader -> needs a look in the game.
+- King Rapids 0.27 m joint: not a placement error. Rapids Medslope2straight has two rail pairs, '_spline' (starts at
+  +1.75, on the Medslope's end, ends 0.29 m high) and '_joinSpline' (starts 0.25 m off, ends on the Straight); the
+  Medslope / Straight2medslope rails run +1.75 .. -2.25. designs._piece_ends: the joint check takes the nearest end of
+  any rail pair. design_direct 208 / 208 < 10 cm (only King Rapids changed, 0.265 -> 0.01); park_tracks 39 / 39.

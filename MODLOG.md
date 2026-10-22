@@ -1143,3 +1143,20 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   on by default) adds a haze over the whole pane at each burst flash (corners 20-60; game 0.1) - not in the game.
 - All 30 fireworks run 6 s without NaN (sweep in the page), fw_fan and fw_game_made pass.
 - __fwdebug gained stop / drawNow / scene / labels for frame-by-frame captures.
+
+## 2026-10-21: firework brightness (colour space) and Glow off by default
+- rct3.dgf (game folder, plain text) defines every render style. ParticlePreMultipliedAlpha: SrcBlend One, DestBlend
+  InvSrcAlpha, stage ModulateAlphaClamp = Colour Modulate(Texture, Current), Alpha Modulate(Texture, Current) - plain
+  1x, no MODULATE2X; ParticleBurnTrail One / One, ZFunc Always. The game works in gamma space: sheet x colour,
+  blended straight into the screen.
+- Viewer bug: particle sheets were loaded as sRGB (decoded to linear on sampling) and the custom shaders wrote that
+  linear value straight to the canvas (no encode without the composer): everything dark, dim parts far darker (the
+  flash's centre 202 for a 229 texel). Now: pages NoColorSpace (raw), particle + burn-trail shaders output the
+  gamma value; with Glow on (composer renders linear, OutputPass encodes) a shared uniform linOut turns it linear first.
+- Glow (bloom) off by default and remembered (rct3fw.glow); the game has none. tests/fw_frames.py: [glow] to turn it
+  on, [native] to draw at the pane's 224 px with device_scale_factor (as the game: no supersampling).
+- Result vs the game (one-shell peony, green light per m2 at 0.2 / 0.4 / 0.6 / 0.8 / 1.0 s): game 13.7 / 9.0 / 7.3 /
+  6.8 / 4.0; viewer before 3.9 / 2.2 / 2.0 / 2.0 / 2.2; now at 224 px 13.5 / 7.7 / 7.2 / 6.8 / 6.4 (2 runs in view);
+  rendered at 800 px and scaled down 16.6 ... 10.9 - the game's fade is partly its 224 px preview dropping sub-pixel
+  trail sparks. RMS spread 2.3 / 5.3 / 8.7 / 12.0 / 15.0 m (game 2.9 / 5.7 / 8.9 / 12.2 / 13.7). Flash centre ~235.
+- Test file ZZPeonyOne.frw removed again from the Desktop copy's Fireworks. fw_fan, fw_game_made pass.

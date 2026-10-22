@@ -202,7 +202,7 @@ async function build() {
     <button id="fw-grid" class="on" title="Grid placement: launchers snap to park tiles (off: place anywhere, turn freely)">Grid snap</button>
     <button id="fw-land" title="Shape the ground and add water">Landscape</button>
     <button id="fw-scenebtn" title="Time of day, backdrop, ground texture and grid lines">Scene</button>
-    <button id="fw-bloom" class="on" title="Glow effect">Glow</button>
+    <button id="fw-bloom" title="Glow effect (not in the game)">Glow</button>
     <select id="fw-cam" title="Camera"><option value="crowd">Crowd view</option><option value="auto">Autolook</option><option value="close">Close up</option><option value="top">Top down</option><option value="orbit">Slow orbit</option><option value="free">Freelook</option></select>
   </div>
   <div class="side">
@@ -368,7 +368,8 @@ async function build() {
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 1.1, 0.55, 0.12);
   composer.addPass(bloom); composer.addPass(new OutputPass());
-  let useBloom = true;
+  // Glow (bloom) is the viewer's own: the game has none (its preview stays black round a burst flash), so it starts off
+  let useBloom = store.get('rct3fw.glow') ?? false;
   const ribbons = createRibbons(scene);
 
   // ---- particle rendering: instanced camera-facing quads, stretched along velocity (+ a mirrored copy on water) ----
@@ -378,8 +379,10 @@ async function build() {
   const pages = {};
   function pageTexture(name) {
     if (!pages[name]) {
+      // read raw: the game draws particles in gamma space (rct3.dgf: sheet x colour, One / InvSrcAlpha or One / One,
+      // straight to the screen), so the shaders work on the sheet's own values
       const tex = new THREE.TextureLoader().load('/api/fw/page?name=' + encodeURIComponent(name));
-      tex.colorSpace = THREE.SRGBColorSpace; pages[name] = tex;
+      tex.colorSpace = THREE.NoColorSpace; pages[name] = tex;
     }
     return pages[name];
   }
@@ -387,6 +390,9 @@ async function build() {
   // sheet RGB x colour x alpha curve, added; 'pre' (ParticlePreMultipliedAlpha, ParticlePage01): sheet RGB x colour
   // added, what is behind dimmed by sheet alpha x alpha curve - flares and fire have alpha 0 there and simply glow,
   // smoke dims the sky, FWFlares01_07's off-centre alpha blob shows dark under a star glow
+  // particles' values are the screen's (gamma); with Glow the scene renders to a linear target that OutputPass encodes,
+  // so there they are turned to linear first (their sum is then taken in linear light, the game's in gamma)
+  const linOut = { value: 0 };
   const layers = {};
   function layerFor(pageName) {
     if (!layers[pageName]) {
@@ -402,7 +408,7 @@ async function build() {
     const A = (name, n) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(MAX_PARTICLES * n), n); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(name, a); return a; };
     const at = { pos: A('iPos', 3), vel: A('iVel', 3), size: A('iSize', 2), col: A('iCol', 4), uv: A('iUV', 4), rot: A('iRot', 1) };
     const mat = mirror => new THREE.ShaderMaterial({
-      uniforms: { map: { value: page }, level: { value: 0 }, gain: { value: mirror ? 0.35 : 1 } }, transparent: true, depthWrite: false, depthTest: !mirror,
+      uniforms: { map: { value: page }, level: { value: 0 }, gain: { value: mirror ? 0.35 : 1 }, linOut }, transparent: true, depthWrite: false, depthTest: !mirror,
       blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: additive ? THREE.OneFactor : THREE.OneMinusSrcAlphaFactor,
       blendEquation: THREE.AddEquation,
       ...(mirror ? { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp } : {}),
@@ -423,7 +429,7 @@ async function build() {
           vUv = mix(iUV.xy, iUV.zw, position.xy + 0.5);
           vCol = iCol;
         }`,
-      fragmentShader: `uniform sampler2D map; uniform float gain; varying vec2 vUv; varying vec4 vCol;
+      fragmentShader: `uniform sampler2D map; uniform float gain, linOut; varying vec2 vUv; varying vec4 vCol;
         void main() {
           vec4 t = texture2D(map, vUv);
         #ifdef ADDITIVE
@@ -431,6 +437,7 @@ async function build() {
         #else
           gl_FragColor = vec4(t.rgb * vCol.rgb * gain, t.a * vCol.a * gain);
         #endif
+          if (linOut > 0.5) gl_FragColor.rgb = pow(max(gl_FragColor.rgb, 0.0), vec3(2.2));
         }`,
     });
     const mesh = new THREE.Mesh(g, mat(false)); mesh.frustumCulled = false; mesh.renderOrder = 4; g.instanceCount = 0; scene.add(mesh);
@@ -513,7 +520,7 @@ async function build() {
   // one a frame (0x9cdba0, with the colour it had there); when it dies the trail loses a point a frame until under 2.
   // The game records at its frame rate; the viewer at a steady 40 a second.
   const BURN_DT = 1 / 40;
-  const trails = createTrails(scene, pageTexture('BurnTrail')), trailPts = new Float32Array(256 * 6);
+  const trails = createTrails(scene, pageTexture('BurnTrail'), undefined, linOut), trailPts = new Float32Array(256 * 6);
   function colourOf(p, f) {
     const d = p.d, gain = d.gain ?? 1;
     let r = curveAt(d.R, f) * gain, g = curveAt(d.G, f) * gain, b = curveAt(d.B, f) * gain;
@@ -2256,7 +2263,8 @@ async function build() {
   $('#fw-play', root).onclick = () => play();
   $('#fw-stop', root).onclick = () => { play(false); seek(0); lanes.scrollLeft = 0; };
   $('#fw-speed', root).onchange = ev => { S.speed = +ev.target.value; musicEl.playbackRate = S.speed; };
-  $('#fw-bloom', root).onclick = ev => { useBloom = !useBloom; ev.target.classList.toggle('on', useBloom); };
+  $('#fw-bloom', root).classList.toggle('on', useBloom); linOut.value = useBloom ? 1 : 0;
+  $('#fw-bloom', root).onclick = ev => { useBloom = !useBloom; linOut.value = useBloom ? 1 : 0; store.set('rct3fw.glow', useBloom); ev.target.classList.toggle('on', useBloom); };
   $('#fw-cam', root).onchange = ev => fitCamera(ev.target.value);
   $('#fw-back', root).onclick = () => close();
   function toast(t) { const el = $('#fw-toast', root); el.textContent = t; el.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => el.classList.remove('on'), 2400); }

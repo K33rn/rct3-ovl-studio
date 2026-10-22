@@ -94,7 +94,7 @@ export function createRibbons(scene, max = 8000) {
 // about the path through its neighbours (the game averages the two segments' sides at a point), and textured with
 // BurnTrail (a soft round glow) from its middle row at the newest point (v 0.5) to its edge at the oldest (v 1):
 // bright at the particle, fading out behind it and towards its sides. Added (ParticleBurnTrail).
-export function createTrails(scene, map, max = 30000) {
+export function createTrails(scene, map, max = 30000, linOut = { value: 0 }) {   // linOut: as the particles' (fireworks.js)
   const g = new THREE.BufferGeometry();
   const A = (name, n) => { const a = new THREE.BufferAttribute(new Float32Array(max * 4 * n), n); a.setUsage(THREE.DynamicDrawUsage); g.setAttribute(name, a); return a; };
   const at = { p: A('position', 3), t: A('aT', 3), s: A('aS', 2), col: A('aCol', 3) };
@@ -114,10 +114,10 @@ export function createTrails(scene, map, max = 30000) {
       gl_Position = projectionMatrix * vec4(P, 1.0);
       vUv = vec2(side * 0.5 + 0.5, aS.y); vCol = aCol;
     }`;
-  const fs = `uniform sampler2D map; uniform float gain; varying vec2 vUv; varying vec3 vCol;
-    void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb * vCol * gain, 1.0); }`;
+  const fs = `uniform sampler2D map; uniform float gain, linOut; varying vec2 vUv; varying vec3 vCol;
+    void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb * vCol * gain, 1.0); if (linOut > 0.5) gl_FragColor.rgb = pow(gl_FragColor.rgb, vec3(2.2)); }`;
   const mat = mirror => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fs,
-    uniforms: { map: { value: map }, level: { value: 0 }, gain: { value: mirror ? 0.35 : 1 } },
+    uniforms: { map: { value: map }, level: { value: 0 }, gain: { value: mirror ? 0.35 : 1 }, linOut },
     defines: mirror ? { MIRROR: 1 } : {}, transparent: true, depthWrite: false, depthTest: !mirror, side: THREE.DoubleSide,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendEquation: THREE.AddEquation,
     ...(mirror ? { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilZPass: THREE.KeepStencilOp, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp } : {}) });

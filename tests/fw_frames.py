@@ -1,7 +1,9 @@
 """A firework in the viewer frame by frame, from the game's MixMaster picker preview camera (pane 224 px; fitted to a
 recording of the game: 117 deg lens 12.1 m from the mortar, 2 m up, tilted up 23.8 deg).
 Saves one 224 x 224 picture per step for side by side comparison with a recording of the game's preview.
-usage: python tests/fw_frames.py <base> <out.npy> [file.frw] [seconds] [step s] [nobloom]"""
+`native` draws at the pane's own 224 px (as the game, no supersampling: sprites under a pixel can vanish) instead of
+at the browser's size scaled down.
+usage: python tests/fw_frames.py <base> <out.npy> [file.frw] [seconds] [step s] [glow] [native]"""
 import io
 import sys
 
@@ -13,17 +15,23 @@ base, out = sys.argv[1], sys.argv[2]
 key = sys.argv[3] if len(sys.argv) > 3 else 'GreenPeony.frw'
 secs = float(sys.argv[4]) if len(sys.argv) > 4 else 4.0
 every = float(sys.argv[5]) if len(sys.argv) > 5 else 0.1
-bloom = 'nobloom' not in sys.argv[6:]
+glow = 'glow' in sys.argv[6:]
+native = 'native' in sys.argv[6:]
 with sync_playwright() as p:
     b = p.chromium.launch(channel='chrome', headless=True, args=['--use-angle=d3d11', '--ignore-gpu-blocklist'])
-    pg = b.new_page(viewport={'width': 1300, 'height': 800})
+    scale = 1
+    if native:                                         # the view's height in CSS px, to draw it 224 device px tall
+        pg = b.new_page(viewport={'width': 1300, 'height': 800}); pg.goto(base + '/#fireworks')
+        pg.wait_for_selector('#fw canvas', timeout=180000); pg.wait_for_timeout(1500)
+        scale = 224 / pg.evaluate("document.querySelector('#fw canvas').getBoundingClientRect().height"); pg.close()
+    pg = b.new_page(viewport={'width': 1300, 'height': 800}, device_scale_factor=scale)
     errors = []
     pg.on('pageerror', lambda e: errors.append(str(e)))
     pg.goto(base + '/')
     pg.evaluate('localStorage.clear(); [`main`, `mixmaster`, `afe`].forEach(k => localStorage.setItem(`rct3ovl.tour.` + k, `1`))')
     pg.goto(base + '/#fireworks'); pg.wait_for_selector('#fw .fwk', timeout=180000); pg.wait_for_timeout(2500)
-    if not bloom:
-        pg.click('#fw-bloom')                          # the Glow button: off
+    if pg.evaluate("document.querySelector('#fw-bloom').classList.contains('on')") != glow:
+        pg.click('#fw-bloom')                          # the Glow button (the viewer's own; off unless asked)
     box = pg.evaluate('''key => { const D = window.__fwdebug, fw = D.REG.firework[key]; D.stop(); D.parts().length = 0;
       D.ctx.previewEffect('firework', fw);
       const L = D.parts()[0], c = D.camera, e = c.domElement || document.querySelector('#fw canvas');

@@ -1233,3 +1233,8 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - tests/ui_cfr.py: the 4 CFRs + chairswing open, no page errors; screenshots checked (full size, on the grid).
   tests/ui_rides.py is blocked by the first-run tour (needs the tour key set, as ui_cfr does) - not fixed.
 - Not checked in the game itself: placing either ride.
+- Next (user request, 2026-10-22): download a varied batch from parkcrafters.com (user signed in there in Chrome;
+  downloads need login) via Claude in Chrome - CTR coasters (+ CTR_Matterhorn), more CFRs, firework packs (PyroForge
+  I/II, Reflections of Earth), Paint the Night parade, Hogwarts Express, Villains Land, Expo 3000 - then Mod Loader
+  install into both game folders and check everything in the viewer. Waiting on the Chrome extension connection
+  (session restart).

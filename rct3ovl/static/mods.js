@@ -162,6 +162,12 @@ function build() {
   function renderList() {
     const mine = S.data.packages.filter(matches), found = S.data.found.filter(matches);
     let h = '';
+    const fx = S.data.ride_fixes || [];
+    if (fx.length) h += `<div class="need" id="md-fixbox"><div class="warn">⚠ ${plural(fx.length, 'custom flat ride')} won't be drawn in the game once placed
+      (only ${fx.length === 1 ? 'its' : 'their'} shadow shows): ${fx.map(f => `<b>${esc(f.set.split('/').pop())}</b>`).join(', ')}.</div>
+      <div style="font-size:12px;color:var(--dim);margin:4px 0">${fx.length === 1 ? 'Its model is' : 'Their models are'} marked as only as tall as the ride; the game needs a much taller box
+      to draw a placed flat ride (as CFH's Kamikaze and Cinipaes' Mega Disko have). The files are copied to the Mod Loader's store first.</div>
+      <button data-fix="1">Fix ${fx.length === 1 ? 'it' : 'them'}</button></div>`;
     if (S.cat !== 'found') h += `<h3 class="sec">Installed with the Mod Loader <small>${mine.length ? '' : 'nothing yet'}</small></h3>` + mine.map(card).join('');
     if (S.cat !== 'installed') h += `<h3 class="sec">Found in the game <small>custom content put there some other way - it can be disabled or removed here too</small></h3>` +
       (found.length ? found.map(card).join('') : '<div class="empty">No other custom content in the game folders.</div>');
@@ -249,11 +255,14 @@ function build() {
       ${n.missing_sets?.length ? `<div class="warn">⚠ uses ${plural(n.missing_sets.length, 'custom set')} that ${n.missing_sets.length === 1 ? "isn't" : "aren't"} installed: ${n.missing_sets.slice(0, 12).map(m => esc(m.set.split('/').pop())).join(', ')}${n.missing_sets.length > 12 ? '…' : ''}</div>` : ''}</div>`).join('');
     const skipped = plan.skipped.length ? `<details><summary>${plural(plan.skipped.length, 'file')} not installed (readmes, pictures, duplicates)</summary>
       <div class="files">${plan.skipped.map(s => `${esc(s.rel)} - ${esc(s.why)}`).join('<br>')}</div></details>` : '';
-    const readme = plan.readme.map(r => `<details><summary>Readme: ${esc(r.file)}</summary><pre class="readme">${esc(r.text)}</pre></details>`).join('');
+    const fixed = (plan.fixed || []).length ? `<div class="need"><span class="ok">✓ ${plural(plan.fixed.length, 'flat ride')} made drawable:</span>
+      ${plan.fixed.map(f => `<b>${esc(f.set)}</b>`).join(', ')} <span style="color:var(--dim)">(the game leaves a placed flat ride undrawn unless its model's box is very tall;
+      the copy installed has that box)</span></div>` : '';
+    const readme = plan.readme.map(r => `<details><summary>Readme:${esc(r.file)}</summary><pre class="readme">${esc(r.text)}</pre></details>`).join('');
     $('#md-plan', root).innerHTML = plan.items.length ? `<table class="sets">${rows}</table>
       ${needs ? `<h4 style="margin:14px 0 6px;font-size:12px;color:var(--accent);text-transform:uppercase">Still needed</h4>
         <div style="font-size:12px;color:var(--dim);margin-bottom:6px">Designs and scenarios in this download use content that isn't in the game. They install anyway; the game leaves out what it can't find. The readme usually says where to get it.</div>${needs}` : ''}
-      ${skipped}${readme}` : `<div class="empty">Nothing in <b>${esc(plan.source)}</b> is content the game uses.</div>${skipped}${readme}`;
+      ${fixed}${skipped}${readme}` : `<div class="empty">Nothing in <b>${esc(plan.source)}</b> is content the game uses.</div>${skipped}${readme}`;
     const upd = () => {
       const on = [...root.querySelectorAll('#md-plan input[data-g]')].filter(c => c.checked).map(c => groups[c.dataset.g]);
       const n = on.reduce((t, g) => t + g.n - (g.st.same || 0), 0);
@@ -298,7 +307,14 @@ function build() {
     try { showPlan(await api('/api/mods/plan', { path: path.trim().replace(/^"|"$/g, '') })); } catch (e) { toast(e.message, true); }
   };
   $('#md-cats', root).onclick = e => { const c = e.target.closest('.cat'); if (!c) return; S.cat = c.dataset.c; renderCats(); renderList(); };
-  $('#md-list', root).onclick = e => {
+  $('#md-list', root).onclick = async e => {
+    const fb = e.target.closest('button[data-fix]');
+    if (fb) {
+      fb.disabled = true;
+      try { const r = await api('/api/mods/fixrides', {}); toast(`Fixed ${plural(r.fixed.length, 'flat ride')}`); ui.changed = true; await refresh(); }
+      catch (err) { toast(err.message, true); fb.disabled = false; }
+      return;
+    }
     const p = e.target.closest('.pkg'); if (!p) return;
     S.sel = p.dataset.id; root.querySelectorAll('.pkg').forEach(x => x.classList.toggle('sel', x === p)); renderDetails();
   };

@@ -2,6 +2,7 @@
 - a set goes where its own Style.ovl names its OVLs (VTR Twister: Style\\Custom\\VTR\\Twister, not Style\\Themed);
 - 'Place the 'SpeedFlip' folder in the 'Zodi' folder' -> Style\\Custom\\Zodi\\SpeedFlip;
 - pictures a park names by path (My Pictures\\RCT3\\Expo 3000\\Floor.jpg) are found in the save;
+- a custom flat ride whose model box is its own size gets the tall box the game needs to draw it placed;
 - unpack paths stay short and long ones get the \\\\?\\ form.
 usage: python tests/mods_rules.py"""
 import os
@@ -46,6 +47,27 @@ check('readme: folder into an author folder', mods._readme_folders("Place the 'S
       {'speedflip': 'Custom/Zodi'})
 check('readme: folder into Style/Custom', mods._readme_folders('Put "CFH-Rides" inside your Style/Custom folder'),
       {'cfh-rides': 'Custom'})
+# a custom flat ride with a model box its own size gets the tall box (the real VTR Twister download, when it is here)
+twz = os.path.join(os.path.expanduser('~'), 'Downloads', 'VTR Twister.zip')
+if os.path.exists(twz):
+    with tempfile.TemporaryDirectory() as t:
+        mods.extract(twz, t)
+        d = next(dp for dp, dn, fn in os.walk(t) if 'Twister.common.ovl' in fn)
+        before = {f: open(os.path.join(d, f), 'rb').read() for f in os.listdir(d)}
+        check('flat ride with a short box', [m['model'] for m in mods.flat_ride_boxes(d)], ['Twister-Twister5a:bsh'])
+        check('fixed', mods.fix_flat_rides(d), ['Twister-Twister5a:bsh'])
+        diff = {}
+        for f, b in before.items():
+            a = open(os.path.join(d, f), 'rb').read()
+            diff[f] = [i for i in range(len(b)) if a[i] != b[i]] if len(a) == len(b) else None
+        changed = {f: x for f, x in diff.items() if x != []}
+        # the box (6 floats) is in the bsh's data: here Twister.unique.ovl; only y min / y max change
+        check('only the box height changed', {f: (len(x), x[-1] - x[0] < 16) for f, x in changed.items()}, {'Twister.unique.ovl': (8, True)})
+        check('nothing left to fix', mods.flat_ride_boxes(d), [])
+        cso = next(dp for dp, dn, fn in os.walk(t) if 'VTRTwister Verkleidung.common.ovl' in fn)
+        check('scenery set without a flat ride left alone', mods.flat_ride_boxes(os.path.dirname(cso)), [])
+else:
+    print('(VTR Twister.zip not in Downloads: flat ride box check skipped)')
 check('long path form', mods._long('C:\\' + 'a' * 250).startswith('\\\\?\\'), os.name == 'nt')
 check('short path left alone', mods._long('C:\\short'), 'C:\\short')
 print('problems:', problems or 'none')

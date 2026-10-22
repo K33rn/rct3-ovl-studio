@@ -228,6 +228,114 @@ def _style_home(d: str) -> str | None:
     return None
 
 
+# ---- custom flat rides the game leaves undrawn ----------------------------------------------------------------------
+# A placed custom flat ride whose model box (bsh bbox) is its real size is not drawn: only its shadow shows, though the
+# ghost before placing is drawn whole (VTR Twister, Zodi's Power Twist; checked in the game 2026-10-22). The CFRs that
+# do draw (CFH Kamikaze, Cinipaes Mega Disko) carry a never-drawn mesh hundreds of metres tall that makes the box
+# that tall. Making the box CFH Kamikaze's height (x / z kept) draws both. Widening x / z too (+-500) crashed the game.
+# The game's own flat rides (Style\Themed\Adventure Phoenix Twister...) have boxes their size and are drawn: what
+# else lets them be drawn is not known, so only custom sets are changed.
+CULL_Y = (-2827.0, 2831.0)
+CULL_MIN_HEIGHT = 100.0
+
+
+def flat_ride_boxes(d: str) -> list:
+    """The models of the flat rides ('ride' sids in the set's Style.ovl) in scenery set folder d whose box is short:
+    [{'ovl': common.ovl path, 'model': bsh name, 'vaddr', 'bbox'}]."""
+    import struct
+    from .anims import load_svd
+    from .structs import load_sid
+    pairs = _pairs_in(d, True)
+    style = next((p for p in pairs if os.path.basename(p).lower() == 'style.common.ovl'), None)
+    if not style:
+        return []
+    try:
+        so = Ovl(style)
+        visuals = {v.lower() for r in so.resources if r.loader.tag == 'sid'
+                   for s in [load_sid(so, r)] if s['type'] == 'ride' for v in s['visuals'] if v}
+    except Exception:
+        return []
+    if not visuals:
+        return []
+    ovls = []
+    for p in pairs:
+        if p != style:
+            try:
+                ovls.append((p, Ovl(p)))
+            except Exception:
+                pass
+    models = set()
+    for p, o in ovls:
+        for r in o.resources:
+            if r.loader.tag == 'svd' and r.name.lower() in visuals:
+                models.update(l.model.lower() for l in load_svd(o, r).lods if l.model.lower().endswith(':bsh'))
+    out = []
+    for p, o in ovls:
+        for r in o.resources:
+            if r.loader.tag == 'bsh' and r.name.lower() in models:
+                bb = struct.unpack('<6f', o.read(r.data, 24))
+                if bb[4] - bb[1] < CULL_MIN_HEIGHT:
+                    out.append({'ovl': p, 'model': r.name, 'vaddr': r.data, 'bbox': bb})
+    return out
+
+
+def fix_flat_rides(d: str) -> list:
+    """Give the short flat-ride models of set folder d the tall box (in place). Returns the model names fixed."""
+    import struct
+    done = []
+    for m in flat_ride_boxes(d):
+        o = Ovl(m['ovl'])
+        f, _b, off = o.locate(m['vaddr'])
+        bb = list(m['bbox'])
+        bb[1], bb[4] = min(bb[1], CULL_Y[0]), max(bb[4], CULL_Y[1])
+        with open(_long(f.path), 'r+b') as fh:
+            fh.seek(off)
+            fh.write(struct.pack('<6f', *bb))
+        done.append(m['model'])
+    return done
+
+
+def _style_sets(root: str) -> list:
+    """Every scenery set folder (one with a Style.ovl) under root\\Style\\Custom and Style\\Themed."""
+    out = []
+    for top in ('Custom', 'Themed'):
+        base = _existing_case(root, f'Style/{top}')
+        for dp, dn, fn in os.walk(os.path.join(root, *base.split('/'))):
+            if any(f.lower() == 'style.common.ovl' for f in fn):
+                out.append(dp)
+    return out
+
+
+def ride_fixes(lib: Library) -> list:
+    """Flat rides in the game that would not be drawn: [{'set': folder from the game folder, 'models': [...]}]."""
+    out, st = [], stock()
+    for d in _style_sets(lib.root):
+        if _norm(os.path.relpath(os.path.join(d, 'Style.common.ovl'), lib.root)) in st:
+            continue            # the game's own flat rides have boxes their size and are drawn
+        ms = flat_ride_boxes(d)
+        if ms:
+            out.append({'set': os.path.relpath(d, lib.root).replace('\\', '/'), 'models': [m['model'] for m in ms]})
+    return out
+
+
+def apply_ride_fixes(lib: Library) -> dict:
+    """Fix every flat ride ride_fixes() lists. The files are copied to the store first (backups/ridefix)."""
+    bdir = os.path.join(_store(lib), 'backups', 'ridefix')
+    fixed = []
+    for it in ride_fixes(lib):
+        d = os.path.join(lib.root, *it['set'].split('/'))
+        for m in flat_ride_boxes(d):
+            for p in (m['ovl'], m['ovl'][:-len('.common.ovl')] + '.unique.ovl'):
+                b = os.path.join(bdir, os.path.relpath(p, lib.root))
+                if os.path.exists(_long(p)) and not os.path.exists(_long(b)):
+                    os.makedirs(_long(os.path.dirname(b)), exist_ok=True)
+                    shutil.copy2(_long(p), _long(b))
+        fixed.append({'set': it['set'], 'models': fix_flat_rides(d)})
+    if fixed:
+        lib.refresh_index()
+    return {'fixed': fixed}
+
+
 def _ovl_facts(pairs: list) -> dict:
     """{'types': {resource type: n}, 'symbols': set of symbol names, 'names': [resource names]} over OVL pairs."""
     types, syms, names = {}, set(), []
@@ -346,7 +454,7 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
     sent = _readme_folders('\n'.join(t for _, t in readmes))
     pics = _picture_refs(src)
 
-    planned = {}
+    planned, fixed = {}, []
 
     def add(path, area, rel, kind, set_):
         rel = rel.replace('\\', '/')
@@ -362,6 +470,8 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
         skipped.append({'rel': os.path.relpath(path, src).replace('\\', '/'), 'why': why})
 
     def whole(d, area, base, kind, set_):     # a folder copied as it is to area/base
+        if kind == 'scenery':                 # the unpacked copy: flat rides the game would leave undrawn
+            fixed.extend({'set': set_, 'model': m} for m in fix_flat_rides(d))
         for dp, dn, fn in os.walk(d):
             for f in fn:
                 p = os.path.join(dp, f)
@@ -473,7 +583,7 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
         dst = os.path.join(ar[it['area']], *it['rel'].split('/'))
         it['state'] = 'new' if not os.path.exists(dst) else 'same' if _same(dst, it['src']) else 'replace'
     plan = {'name': name, 'items': items, 'skipped': skipped, 'readme': [{'file': f, 'text': t} for f, t in readmes],
-            'areas': ar}
+            'areas': ar, 'fixed': fixed}
     plan['needs'] = needs(lib, [it['src'] for it in items if it['kind'] in ('design', 'scenario', 'park')], items)
     return plan
 
@@ -881,7 +991,7 @@ def scan(lib: Library) -> dict:
     pkgs = [summary(r, ar) for r in recs]
     found = [summary(g, ar) for g in _found(lib, owned)]
     return {'areas': ar, 'kinds': {k: {'label': v[0], 'area': v[1], 'tab': v[2]} for k, v in KINDS.items()},
-            'packages': pkgs, 'found': found, 'sevenzip': bool(_seven_zip())}
+            'packages': pkgs, 'found': found, 'sevenzip': bool(_seven_zip()), 'ride_fixes': ride_fixes(lib)}
 
 
 def details(lib: Library, pid: str) -> dict:

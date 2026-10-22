@@ -1278,3 +1278,24 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   Kamikaze 86. Test edits undone (texedit.restore; files identical to the Desktop copies). Circuit breaker: stopped.
 - Ride titles: CTRs without a txt keep their name as a UTF-16 string in the trr OVL ('TheCodeMaster's Second Gen
   Invert', 'Expedition Everest'); the viewer's track sets show the trr name instead.
+
+## 2026-10-22: VTR Twister and Power Twist placed but not drawn - fixed (model box height)
+- Ruled out by data (both rides vs CFH Kamikaze, which draws): bones per mesh / max bone index (Twister 17, SpeedFlip 45,
+  Kamikaze 85); bones listed before their parent (772 of 2324 stock bsh do it); svd LOD layout (identical: one type-3
+  LOD, 4 anims); sid records (type ride, full tile, same box_size); ftx textures (plain 64-1024 px, 1 frame). Twister
+  also has 3 empty bans (End / Haupt / Pause, 0 bones, 0 s); Power Twist's are fine, so not the shared cause.
+- Cause: the bsh bounding box. Stock flat rides' boxes fit their bind-pose vertices; the CFRs that draw carry a
+  never-drawn mesh that makes the box huge (Kamikaze y -2827..2831, Mega Disko -401..401). Setting ONLY y of the
+  Twister / SpeedFlip box to -2827..2831 (x / z kept) made both draw when placed (Steam game, sandbox, screenshots;
+  the earlier +-500 on all axes crashed). The box is 6 floats at the bsh data start; for Twister it sits in
+  Twister.unique.ovl, not .common.
+- Stock themed flat rides (Adventure Phoenix Twister, Space Flying Saucers, Spooky, WildWest...) also have tight
+  boxes and are drawn: what else lets them draw is not known. The fix touches only non-stock sets.
+- Mod Loader (mods.py): flat_ride_boxes(set) finds models of 'ride' sids (Style.ovl -> svd -> LOD bsh) shorter than
+  100 m; fix_flat_rides() writes the tall y range in place. Installs fix the unpacked copy (plan 'fixed' shown in the
+  install dialog); scan() lists custom sets still needing it ('ride_fixes', 0.2 s) and the Mod Loader shows a warning
+  with a "Fix them" button (POST /api/mods/fixrides; originals copied to ~/.rct3ovl/mods/<root>/backups/ridefix/).
+- Applied to the Steam game (through the button, Playwright: warning shown, toast "Fixed 2 flat rides", no page
+  errors) and the Desktop copy. tests/mods_rules.py checks the fix on the real VTR Twister.zip (8 bytes change).
+- The viewer never reads the bsh box, so its framing is unchanged.
+- Not checked: the fixed rides running with riders (only placed / idle checked).

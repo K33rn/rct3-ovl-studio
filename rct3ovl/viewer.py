@@ -371,6 +371,8 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                         return self.js(mods.set_enabled(lib, body['id'], bool(body['on'])))
                     if u.path == '/api/mods/uninstall':
                         return self.js(mods.uninstall(lib, body['id']))
+                    if u.path == '/api/mods/fixrides':
+                        return self.js(mods.apply_ride_fixes(lib))
             if u.path.startswith('/api/tx/'):
                 with lock:
                     if u.path == '/api/tx/write':

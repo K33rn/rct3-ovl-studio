@@ -1176,3 +1176,12 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - tests/ui_mods.py with all 8 downloads: problems none. All 8 left installed (game parts in the Desktop copy; user-
   folder parts in My Documents\RCT3, Pictures\RCT3, Music\RCT3, shared with the Steam game).
 - Not done: in-game check of the installed content; uninstall-all clean-state check was done (game folder identical).
+- 2026-10-22: the same 8 installed into the Steam game (Mod Loader code, root = Steam folder; nothing replaced; store
+  ~/.rct3ovl/mods/<steam root>/): stations 16, paths 288, CTRs 38, DumaansWW 60, stationjimjrGardening 846 files.
+  User-folder parts were already there ('same'). Uninstall from the Mod Loader pointed at that folder.
+- 2026-10-22 checked in the game (Steam, sandbox, not saved): game starts with everything installed; Scenery > Trees
+  lists the "Station Jim's Gardening" group (its own picture, expands to its items) and Babys' Breath ETC placed and
+  drawn; Paths shows 16 path types (10 stock + Spice's Wooden Dirt / Mossy Timber / Timber ...); Rides > Roller
+  coasters lists DasMatze's Wooden Coaster ($9,000); MixMaster picker lists the Liquid Fireworks pack (001 WW LT ...)
+  from My Documents\RCT3\FireworkEffects. Not checked: building a CTR, the station platforms, the Matterhorn scenario
+  (needs CTR_Matterhorn and 54 sets that aren't installed).

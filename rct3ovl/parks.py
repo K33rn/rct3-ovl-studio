@@ -35,6 +35,7 @@ import numpy as np
 from .anims import load_ban, load_svd
 from .container import OvlError
 from .designs import lay_track, piece_chains, track_glb
+from .fireworks import user_dir
 from .gltf import shape_to_glb
 from .library import Library
 from .media import text
@@ -46,6 +47,8 @@ from .trk import Trk
 
 GROUPS = [('Campaigns\\Base', 'scenario', 'RollerCoaster Tycoon 3'), ('Campaigns\\Base\\Soaked', 'aop0_scenario', 'Soaked!'),
           ('Campaigns\\Base\\Wild', 'aop1_scenario', 'Wild!'), ('Campaigns\\Sandbox', None, 'Sandbox')]
+# your own, in the user folder (My Documents\RCT3): (folder, group)
+USER_GROUPS = [('Start New Scenarios', 'Your scenarios'), ('Scenarios', 'Your scenario editor saves'), ('Parks', 'Your saved parks')]
 DIFFICULTY = ['Apprentice', 'Entrepreneur', 'Tycoon']
 # CoasterCondition stat ids (the order of the game's CoasterCondition_* texts), with units
 COASTER_STATS = [('Excitement', ''), ('Intensity', ''), ('Nausea', ''), ('Length', 'm'), ('-G', 'G'), ('+G', 'G'),
@@ -109,7 +112,12 @@ def list_parks(lib: Library) -> list[dict]:
                 (_txt(lib, 'sandboxscenario_title') if group == 'Sandbox' else None) or _spaced(base)
             out.append({'file': os.path.relpath(f, lib.root), 'group': group, 'number': k[1] if key else None,
                         'title': title, 'size': os.path.getsize(f)})
-    order = {g[2]: i for i, g in enumerate(GROUPS)}
+    # yours: the user folder (installed, or made and saved in the game) - file keys 'yours\<folder>\<name>.dat'
+    for folder, group in USER_GROUPS:
+        for f in sorted(glob.glob(os.path.join(user_dir() or '', folder, '*.dat'))):
+            out.append({'file': os.path.join('yours', folder, os.path.basename(f)), 'group': group, 'number': None,
+                        'title': os.path.basename(f)[:-4], 'size': os.path.getsize(f), 'yours': True})
+    order = {g: i for i, g in enumerate([g[2] for g in GROUPS] + [g[1] for g in USER_GROUPS])}
     out.sort(key=lambda p: (order[p['group']], p['number'] is None, p['number'] or 0, p['title'].lower()))
     return out
 
@@ -127,6 +135,8 @@ def park_path(lib: Library, rel: str) -> str | None:
     rel = rel.replace('/', '\\')
     for p in list_parks(lib):
         if p['file'].lower() == rel.lower():
+            if p.get('yours'):
+                return os.path.join(user_dir() or '', *p['file'].split('\\')[1:])
             return os.path.join(lib.root, p['file'])
     return None
 
@@ -228,12 +238,13 @@ def park_info(lib: Library, rel: str) -> dict:
     sym = lambda ref: O.get(ref, ('', {}))[1].get('SYMBOLNAME', '') if isinstance(ref, int) else ''
     park, money, dat, gt = one('Park'), one('Money'), one('GUI2_DatDesc'), one('GameTime')
     base = os.path.basename(rel)[:-4]
-    k = _scenario_keys(lib).get(base.lower())
+    yours = rel.replace('/', '\\').lower().startswith('yours\\')
+    k = None if yours else _scenario_keys(lib).get(base.lower())      # a copy of a campaign park is still yours
     key = k[2] if k else None
     group = next((p['group'] for p in list_parks(lib) if p['file'].lower() == rel.replace('/', '\\').lower()), '')
     info = {
         'file': rel, 'group': group, 'number': k[1] if k else None,
-        'title': (_txt(lib, f'scenario{key}_title') if key else None) or park.get('ScenarioName') or _spaced(base),
+        'title': base if yours else (_txt(lib, f'scenario{key}_title') if key else None) or park.get('ScenarioName') or _spaced(base),
         'description': (_txt(lib, f'scenario{key}_text') if key else None) or
                        (_txt(lib, 'sandboxscenario_description') if group == 'Sandbox' else None) or '',
         'scenario_name': park.get('ScenarioName', ''), 'park_name': _park_name(lib, dat.get('DatParkName') or park.get('Name')),

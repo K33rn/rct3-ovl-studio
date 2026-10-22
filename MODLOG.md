@@ -1185,3 +1185,15 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   coasters lists DasMatze's Wooden Coaster ($9,000); MixMaster picker lists the Liquid Fireworks pack (001 WW LT ...)
   from My Documents\RCT3\FireworkEffects. Not checked: building a CTR, the station platforms, the Matterhorn scenario
   (needs CTR_Matterhorn and 54 sets that aren't installed).
+
+## 2026-10-22: Parks tab shows your own scenarios and saved parks
+- Viewing the 8 downloads (viewer API sweep): 441/441 new scenery items build with textures; 6/6 DasMatze track sets;
+  CTR car models + textures; 114 Old-Spice path pieces + 36 textures; 669 fireworks (640 installed) simulate 10 s
+  without NaN or page errors; Wild Mouse design builds. Not viewable: Matterhorn designs (CTR_Matterhorn missing),
+  structures (.dat SavedSelection, no tab), billboards / music (Mod Loader file list only).
+- parks.USER_GROUPS: My Documents\RCT3\Start New Scenarios / Scenarios / Parks listed as 'Your scenarios' / 'Your
+  scenario editor saves' / 'Your saved parks' (file key 'yours\<folder>\<name>.dat'; park_path maps to the user
+  folder; no campaign texts for them, title = file name). Matterhorn DLC scenario opens: 128 x 128, 6,704 items,
+  267 guests; its 54 custom sets and 4 CTR_Matterhorn tracks are left out.
+- A park's / design's coaster of a missing custom ride: OvlError -> 404 with a readable message (do_GET handler), was 500.
+- ui_parks_all: 43 parks (42 game + the scenario), only problems listed are the scenario's missing custom content.

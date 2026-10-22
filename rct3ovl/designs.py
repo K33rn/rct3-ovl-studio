@@ -193,7 +193,7 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
     ride = ride_symbol.lower()
     ts = next((s for s in track_sets(lib) if s['ride'] == ride), None)
     if not ts:
-        raise OvlError(f'this design is for the ride type {ride_symbol.rsplit(":", 1)[0]}, which is not in the game (a custom '
+        raise OvlError(f'this track is the ride type {ride_symbol.rsplit(":", 1)[0]}, which is not in the game (a custom '
                        'ride: install it, e.g. with the Mod Loader)')
     where = {n.lower(): (o, n) for o, n in ts['pieces']}
     merged = Shape(name, 'shs', ((0, 0, 0), (0, 0, 0)))

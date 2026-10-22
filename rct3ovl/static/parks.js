@@ -1100,7 +1100,7 @@ vec4 groundTex(float l, vec3 w) {
     let html = '', grp = '';
     for (const p of parks) {
       if (f && !(p.title + ' ' + p.group + ' ' + p.file).toLowerCase().includes(f)) continue;
-      if (p.group !== grp) { grp = p.group; html += `<div class="grp">${esc(grp === 'RollerCoaster Tycoon 3' ? 'Campaign' : grp + (grp === 'Sandbox' ? '' : ' campaign'))}</div>`; }
+      if (p.group !== grp) { grp = p.group; html += `<div class="grp">${esc(grp === 'RollerCoaster Tycoon 3' ? 'Campaign' : grp + (grp === 'Sandbox' || p.yours ? '' : ' campaign'))}</div>`; }
       html += `<div class="pk${p.file === current ? ' sel' : ''}" data-f="${esc(p.file)}" title="${esc(p.file)}"><span class="n">${p.number ?? ''}</span><span>${esc(p.title.trim())}</span></div>`;
     }
     list.innerHTML = html || '<div class="muted" style="padding:12px">No park matches</div>';
@@ -1225,7 +1225,7 @@ vec4 groundTex(float l, vec3 w) {
     let h = '';
     if (tab === 'overview') {
       const g = I.park_graphs, rating = g.ParkRating?.filter(x => x).at(-1);
-      h += `<h3>${esc(I.group === 'Sandbox' ? 'Sandbox' : `${I.group === 'RollerCoaster Tycoon 3' ? 'Campaign' : I.group} · scenario ${I.number ?? '–'}`)}</h3>
+      h += `<h3>${esc(I.group === 'Sandbox' || I.group.startsWith('Your ') ? I.group : `${I.group === 'RollerCoaster Tycoon 3' ? 'Campaign' : I.group} · scenario ${I.number ?? '–'}`)}</h3>
         <p style="font-size:15px"><b>${esc(I.title)}</b></p>${I.description ? `<p>${esc(I.description)}</p>` : ''}
         <div class="stat"><div><b>${(I.guests ?? I.people.guests).toLocaleString()}</b><small>guests</small></div>
           <div><b>${rating != null ? Math.round(rating) : '–'}</b><small>park rating</small></div>

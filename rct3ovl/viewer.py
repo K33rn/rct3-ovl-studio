@@ -288,10 +288,7 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 if u.path == '/api/design':
                     path = design_path(lib, q['file'])
                     with lock:
-                        try:
-                            glb, info = build_design(lib, path)
-                        except OvlError as e:            # a design for a custom ride that isn't installed
-                            return self.js({'error': str(e)}, 404)
+                        glb, info = build_design(lib, path)
                     return self.send(200, glb, 'model/gltf-binary', {'X-Info': json.dumps(info, default=str)[:60000]})
                 if u.path == '/api/scenery':
                     with lock:
@@ -342,6 +339,8 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                 return self.js({'error': 'not found'}, 404)
             except StopIteration:
                 return self.js({'error': 'resource not found'}, 404)
+            except OvlError as e:      # e.g. a coaster of a custom ride that isn't installed (lay_track)
+                return self.js({'error': str(e)}, 404)
             except Exception as e:
                 traceback.print_exc()
                 return self.js({'error': repr(e)}, 500)

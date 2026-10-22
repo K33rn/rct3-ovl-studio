@@ -1211,3 +1211,25 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Verified from the rebuilt Desktop zip, unpacked fresh, clean profile, ALL non-localhost requests aborted: Firefox and
   Chrome show 8108 OVL pairs in ~1 s; Fireworks / Mod Loader / Parks tabs start; no external requests, no errors.
   Blocking /vendor/three/three.module.js shows the new error message.
+
+## 2026-10-22: custom flat rides (Kamikaze, Mega Disko) tiny and floating in the viewer
+- Downloads installed (Mod Loader code, into the Desktop copy and the Steam game; all files new, nothing replaced):
+  Kamikaze.rar (CFH: Kamikaze + KamikazeClassic CFRs, CFHKamikaze CSO) and Cinipaes Mega DiskO CFR.rar (MegaDisko,
+  MegaDiskoRec, MegaDiskoRec2 CFRs, Cinipaes Disk'O CSO). Uninstall from the Mod Loader tab.
+- Mod Loader: the Kamikaze readme says 'Put "CFH-Rides" inside your Style/Custom folder ... "CFHKamikaze CSO" inside
+  your Style/Themed folder', and Mega Disko ships 'Style-Custom' / 'Style-Themed' folders; the planner flattened all
+  of it into Style/Themed/<set>. Now: _readme_folders() maps folders a readme names to Style/Custom|Themed, and
+  'Style-Custom' / 'Style Themed' folders count as Custom / Themed. Installed as Style/Custom/CFH-Rides/Kamikaze/...,
+  Style/Custom/Cinipaes/MegaDisko/..., Style/Themed/CFHKamikaze CSO/..., Style/Themed/Cinipaes Disk'O CSO/...
+- Cause of tiny + floating: each CFR model carries an 8-vertex anti-culling mesh hundreds of metres tall
+  (CFHtransparente:ftx, y -2826..2830; CinipaesInvisible:ftx, y -400..400), SIAlphaMask / SIAlphaMaskLow with a
+  texture whose alpha is 0 everywhere - the game never draws a pixel of it. The viewer's frame() fits the camera to
+  every mesh (8 km away -> a speck) and puts the grid at box.min.y (2.8 km below -> floating). Fix (gltf.py): a
+  masked / blended mesh whose texture is clear everywhere is left out of the GLB, like SIFillZ. Drawn bounds now:
+  Kamikaze y 0.7..23.5, MegaDisko -0.1..14.1 (chairswing 0..13.1).
+- Rides tab: Style\Custom\<author> rides grouped 'Custom: <author>' (were 'Standard'). Each step anr -> sid -> svd ->
+  bsh -> ban is looked up with find_near: Kamikaze and KamikazeClassic both hold CFHkamikaze:bsh (the two model OVLs
+  differ by 7 bytes, the word 'Classic' in names; all 26 textures identical - they are the same model).
+- tests/ui_cfr.py: the 4 CFRs + chairswing open, no page errors; screenshots checked (full size, on the grid).
+  tests/ui_rides.py is blocked by the first-run tour (needs the tour key set, as ui_cfr does) - not fixed.
+- Not checked in the game itself: placing either ride.

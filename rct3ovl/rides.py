@@ -24,42 +24,49 @@ def _imports(o, r) -> list[str]:
 
 def _group(rel: str) -> str:
     parts = rel.replace('/', '\\').lower().split('\\')
-    if len(parts) > 2 and parts[1] == 'themed':
-        return 'Themed: ' + rel.replace('/', '\\').split('\\')[2]
+    if len(parts) > 2 and parts[1] in ('themed', 'custom'):     # Style\Custom\<author>: custom flat rides
+        return parts[1].capitalize() + ': ' + rel.replace('/', '\\').split('\\')[2]
     if len(parts) > 2 and parts[1] == 'vanilla' and parts[2] in _THEMES:
         return _THEMES[parts[2]]
     return 'Standard'
 
 
-def _resolve(lib: Library, anr: str) -> dict | None:
+def _chain(lib: Library, anr: str):
+    """anr -> (record, model handle). Each step is looked up next to the one before (find_near): custom rides reuse
+    names - CFH's Kamikaze and KamikazeClassic both hold a CFHkamikaze:bsh, each in its own folder."""
     h = lib.find(anr)
     if not h:
-        return None
+        return None, None
     imps = _imports(h[0], h[1])
     sid = next((i for i in imps if i.lower().endswith(':sid')), None)
     txt = next((i for i in imps if i.lower().endswith(':txt')), None)
-    ht = lib.find(txt) if txt else None
+    ht = (lib.find_near(txt, h[0]) or lib.find(txt)) if txt else None
     try:
         title = text(ht[0], ht[1]) if ht else ''
     except OvlError:
         title = ''
-    model, anims = None, []
-    hs = lib.find(sid) if sid else None
+    model, anims, hm = None, [], None
+    hs = (lib.find_near(sid, h[0]) or lib.find(sid)) if sid else None
     if hs:
         visuals = load_sid(hs[0], hs[1])['visuals']
         # the standard rides' scenery items (Style\Vanilla\Scenery) list no visuals; the visual has the same name
         # and sits in the ride's own folder (chairswing:sid -> Style\Vanilla\Rides\ChairSwing\chairswing:svd)
         visuals = [v for v in visuals if v] or [sid.split(':')[0] + ':svd']
         for vis in visuals:
-            hv = lib.find(vis) if vis else None
+            hv = (lib.find_near(vis, hs[0]) or lib.find(vis)) if vis else None
             if not hv:
                 continue
             lods = [l for l in load_svd(hv[0], hv[1]).lods if l.model.lower().endswith((':bsh', ':shs'))]
             if lods:
                 model, anims = lods[0].model, list(lods[0].animations)
+                hm = lib.find_near(model, hv[0]) or lib.find(model)
                 break
     return {'name': anr, 'title': title or anr.split(':')[0], 'group': _group(lib.index['names'].get(anr.lower(), '')),
-            'scenery_item': sid or '', 'model': model or '', 'animations': anims}
+            'scenery_item': sid or '', 'model': model or '', 'animations': anims}, hm
+
+
+def _resolve(lib: Library, anr: str) -> dict | None:
+    return _chain(lib, anr)[0]
 
 
 def list_rides(lib: Library) -> list[dict]:
@@ -166,16 +173,13 @@ def _short(names: list[str]) -> list[str]:
 
 
 def build_ride(lib: Library, name: str) -> tuple[bytes, dict] | None:
-    d = next((r for r in list_rides(lib) if r['name'].lower() == name.lower()), None) or _resolve(lib, name)
-    if not d or not d['model']:
-        return None
-    hm = lib.find(d['model'])
-    if not hm:
+    d, hm = _chain(lib, name)
+    if not d or not d['model'] or not hm:
         return None
     shape = load_shape(hm[0], hm[1])
     anims = []
     for an in d['animations']:
-        ha = lib.find(an)
+        ha = lib.find_near(an, hm[0]) or lib.find(an)
         if ha:
             try:
                 anims.append(load_ban(ha[0], ha[1]))

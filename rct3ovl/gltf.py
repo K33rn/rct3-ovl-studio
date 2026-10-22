@@ -156,7 +156,20 @@ def _add_animations(b: '_Builder', animations, joint_nodes: dict, bind: dict):
 def shape_to_glb(shape: Shape, texture_lookup, animations=None) -> bytes:
     """texture_lookup(name) -> PIL image or None. animations: BoneAnimation list for bone shapes."""
     b = _Builder(); g = b.g
-    materials, mat_index, tex_cache = [], {}, {}
+    materials, mat_index, tex_cache, images = [], {}, {}, {}
+
+    def image(name):
+        if name.lower() not in images:
+            images[name.lower()] = texture_lookup(name)
+        return images[name.lower()]
+
+    def never_drawn(sm) -> bool:
+        # an alpha-masked / blended mesh whose texture is clear everywhere: custom flat rides add one, hundreds of
+        # metres tall, so the game doesn't cull the ride (Kamikaze's CFHtransparente, Mega Disko's CinipaesInvisible)
+        if not sm.transparency or not sm.texture:
+            return False
+        img = image(sm.texture)
+        return img is not None and 'A' in img.getbands() and img.getchannel('A').getextrema()[1] == 0
 
     def material(sm) -> int:
         key = (sm.texture.lower(), sm.style.lower(), sm.transparency, sm.sides)
@@ -166,7 +179,7 @@ def shape_to_glb(shape: Shape, texture_lookup, animations=None) -> bytes:
              'doubleSided': sm.sides == 1}
         if sm.texture:
             if sm.texture.lower() not in tex_cache:
-                img = texture_lookup(sm.texture)
+                img = image(sm.texture)
                 if img is not None:
                     g.setdefault('images', []).append({'bufferView': b.view(_png(img)), 'mimeType': 'image/png',
                                                        'name': sm.texture})
@@ -204,7 +217,7 @@ def shape_to_glb(shape: Shape, texture_lookup, animations=None) -> bytes:
 
     prims = []
     for sm in shape.meshes:
-        if not len(sm.indices) or 'fillz' in sm.style.lower():     # SIFillZ = invisible depth-only occluder
+        if not len(sm.indices) or 'fillz' in sm.style.lower() or never_drawn(sm):   # SIFillZ = invisible depth-only occluder
             continue
         pos = sm.positions * np.array([1, 1, -1], np.float32)
         nrm = sm.normals * np.array([1, 1, -1], np.float32)

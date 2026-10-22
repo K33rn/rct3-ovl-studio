@@ -250,6 +250,15 @@ def _readme_style(text: str) -> str:
     return 'Themed'
 
 
+def _readme_folders(text: str) -> dict:
+    """Folders a readme sends to a Style folder by name: 'Put "CFH-Rides" inside your Style/Custom folder' ->
+    {'cfh-rides': 'Custom'}."""
+    out = {}
+    for m in re.finditer(r'''["'“]([^"'”\r\n]{1,80})["'”][^\r\n]{0,40}?style[\\/ ](custom|themed)''', text, re.IGNORECASE):
+        out[m.group(1).strip().lower()] = m.group(2).capitalize()
+    return out
+
+
 # ---- install plan -----------------------------------------------------------------------------------------------------
 GAME_TOPS = None
 
@@ -273,6 +282,7 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
                 except OSError:
                     pass
     style = _readme_style('\n'.join(t for _, t in readmes))
+    sent = _readme_folders('\n'.join(t for _, t in readmes))
 
     planned = {}
 
@@ -332,13 +342,19 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
                     kind, set_ = _group_game(rel)
                     add(p, 'game', rel, kind, set_.split('/')[-1])
             return
-        if depth and low in ('themed', 'custom'):
+        # 'Style-Custom' / 'Style Themed' (how downloads often name them) as 'Custom' / 'Themed'
+        low_style = re.sub(r'^style[\s_-]*', '', low)
+        if depth and low_style in ('themed', 'custom'):
             for sub in sorted(os.listdir(d)):
                 sp = os.path.join(d, sub)
                 if os.path.isdir(sp):
-                    whole(sp, 'game', _existing_case(lib.root, f'Style/{"Themed" if low == "themed" else "Custom"}/{sub}'), 'scenery', sub)
+                    whole(sp, 'game', _existing_case(lib.root, f'Style/{low_style.capitalize()}/{sub}'), 'scenery', sub)
                 else:
                     loose(sp, d)
+            return
+        if depth and low in sent and _pairs_in(d, True):
+            # the readme names this folder and where it goes: copied there as it is
+            whole(d, 'game', _existing_case(lib.root, f'Style/{sent[low]}/{os.path.basename(d)}'), 'scenery', os.path.basename(d))
             return
         if depth and low in USER_NAMES:
             k = USER_NAMES[low]

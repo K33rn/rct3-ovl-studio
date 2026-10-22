@@ -26,13 +26,25 @@ from .trk import Trk, TrkError
 
 
 def design_files(lib: Library) -> list[dict]:
-    """[{file, ride_type, name}] for every .trk in the game's 'Coaster Designs' folder."""
+    """[{file, ride_type, name, yours}] for every .trk in the game's 'Coaster Designs' folder and in the user folder's
+    Coasters (designs you saved or installed: yours True)."""
+    from .fireworks import user_dir
     out = []
-    for f in sorted(glob.glob(os.path.join(lib.root, 'Coaster Designs', '*.trk'))):
-        base = os.path.basename(f)[:-4]
-        m = re.match(r'\[(.*?)\](.*)', base)
-        out.append({'file': f, 'ride_type': m.group(1) if m else '', 'name': (m.group(2) if m else base).strip()})
+    user = os.path.join(user_dir() or '', 'Coasters')
+    for folder, yours in ((os.path.join(lib.root, 'Coaster Designs'), False), (user, True)):
+        for f in sorted(glob.glob(os.path.join(folder, '*.trk'))):
+            base = os.path.basename(f)[:-4]
+            m = re.match(r'\[(.*?)\](.*)', base)
+            out.append({'file': f, 'ride_type': m.group(1) if m else '', 'name': (m.group(2) if m else base).strip(), 'yours': yours})
     return out
+
+
+def design_path(lib: Library, key: str) -> str:
+    """The .trk for a designs-list key: 'yours/<file>' in the user folder's Coasters, else the game's Coaster Designs."""
+    from .fireworks import user_dir
+    if key.startswith('yours/'):
+        return os.path.join(user_dir() or '', 'Coasters', os.path.basename(key[6:]))
+    return os.path.join(lib.root, 'Coaster Designs', os.path.basename(key))
 
 
 def _rail_splines(o, r) -> list:
@@ -181,7 +193,8 @@ def lay_track(lib: Library, ride_symbol: str, chains: list, name: str):
     ride = ride_symbol.lower()
     ts = next((s for s in track_sets(lib) if s['ride'] == ride), None)
     if not ts:
-        raise OvlError(f'no track pieces found for {ride_symbol}')
+        raise OvlError(f'this design is for the ride type {ride_symbol.rsplit(":", 1)[0]}, which is not in the game (a custom '
+                       'ride: install it, e.g. with the Mod Loader)')
     where = {n.lower(): (o, n) for o, n in ts['pieces']}
     merged = Shape(name, 'shs', ((0, 0, 0), (0, 0, 0)))
     merged.path = []                                  # the centreline, piece by piece: [(points, across)]

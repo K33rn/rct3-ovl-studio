@@ -12,7 +12,7 @@ from rct3ovl.library import Library  # noqa: E402
 lib = Library(sys.argv[1])
 only = sys.argv[2] if len(sys.argv) > 2 else None
 rows = []
-for f in D.design_files(lib):
+for f in [x for x in D.design_files(lib) if not x["yours"]]:   # the game's own designs
     if only and f['name'] != only:
         continue
     try:

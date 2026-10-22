@@ -9,7 +9,7 @@ from rct3ovl.library import Library  # noqa: E402
 
 lib = Library(sys.argv[1])
 res = []
-for f in design_files(lib):
+for f in [x for x in design_files(lib) if not x["yours"]]:   # the game's own designs
     glb, info = build_design(lib, f['file'])
     res.append((f['ride_type'], f['name'], info))
 closed = [r for r in res if r[2]['closure_gap'] is not None]

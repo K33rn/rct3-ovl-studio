@@ -225,7 +225,8 @@ The buttons at the top:
     version of the program is refused untouched). `examples/neon_nights/apply.py` applies the theme from a script.
 - **Walkthrough:** a guided tour starts the first time you open the viewer. It highlights each part of the screen, explains it and opens examples on every tab. The MixMaster has its own tour the first time it opens, and it opens and walks through the Advanced Firework Editor, the laser designer and the water jet designer on the way. **? Tour** (top left in the viewer, next to MixMaster in the MixMaster) replays it; pressed while the firework editor or a designer is open, it explains that editor. ← → or Enter move, Esc stops.
 - **File types** opens the guide to every file type: the OVL resource types and the loose firework files (`.frw`, `.fwd`, `.las`, `.wjt`, `.lwr`, `.wma`). A firework file's summary has a **?** that jumps to its entry.
-- The eight tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks, Parks, Textures & GUI) sit under the title; the one in use is highlighted.
+- **Mod Loader** lists all the custom content in the game (scenery sets, paths, custom rides and cars, station platforms, fireworks, designs, scenarios, structures, billboards, music) and installs downloads: press **＋ Install content…** or drop a `.zip` / `.rar` / `.7z` (7-Zip needed for .rar / .7z) or loose files on it. It shows where every file will go first, says which custom sets a design or scenario still needs, and can disable, enable and uninstall each package (replaced files are put back).
+- The nine tabs (File types, Peeps, Thrill Rides, Ride Designs, Scenery, Fireworks, Parks, Textures & GUI, Mod Loader) sit under the title; the one in use is highlighted.
 - Drag the thin divider on the right edge of either list column to make it wider or narrower (double-click a divider to reset it). Widths are remembered.
 - **Download** saves what you're looking at: `.glb`, `.png`, `.wav` or `.json`.
 

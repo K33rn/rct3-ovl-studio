@@ -1160,3 +1160,19 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   rendered at 800 px and scaled down 16.6 ... 10.9 - the game's fade is partly its 224 px preview dropping sub-pixel
   trail sparks. RMS spread 2.3 / 5.3 / 8.7 / 12.0 / 15.0 m (game 2.9 / 5.7 / 8.9 / 12.2 / 13.7). Flash centre ~235.
 - Test file ZZPeonyOne.frw removed again from the Desktop copy's Fireworks. fw_fan, fw_game_made pass.
+
+## 2026-10-21: Mod Loader tab (in progress)
+- Test downloads (Downloads, 2026-10-21 21:01-21:02): FlatStations.zip, Old-Spice's Custom Paths Vol 1.rar, DasMatzes CTRs 2.zip,
+  [SpinningSteel]Wild Mouse.trk, Dumaan's Water Effects Pack V2 1.1.zip, v2.7 Liquid Firewrokss Pack.zip,
+  stationjimjrGardening.rar, Matterhorn Bobsleds.zip. Installed into the viewer's game folder (Desktop copy) and the
+  user folders; backup of My Documents\RCT3 before: ~\.universal-modder\backups\rct3-userdir\ (latest).
+- Built: rct3ovl/mods.py (plan / install / disable / enable / uninstall, stock-file list data/stock_files.txt.gz from the
+  Steam install, archives via zipfile or 7-Zip, content told by OVL resources: Style.ovl / ptd / trr / rit-ric /
+  PlatformHeight; .dat by Park object; needs() = custom OVLs a design / park uses that the game lacks), static/mods.js
+  (9th tab), /api/mods*. Store: ~/.rct3ovl/mods/<root>/ (packages.json, backups, disabled, removed).
+- Ride Designs tab also lists My Documents\RCT3\Coasters ('yours/' keys); missing custom ride -> clear 404 message.
+- Bug found and fixed: uninstall pruned empty game user folders (Coasters, FireworkEffects, Structures) - recreated;
+  now only folders an install created are removed.
+- tests/ui_mods.py with all 8 downloads: problems none. All 8 left installed (game parts in the Desktop copy; user-
+  folder parts in My Documents\RCT3, Pictures\RCT3, Music\RCT3, shared with the Steam game).
+- Not done: in-game check of the installed content; uninstall-all clean-state check was done (game folder identical).

@@ -134,6 +134,7 @@
         <button id="b-fireworks" title="Fireworks show editor: the game's firework displays and fireworks, simulated in 3D (opens full window)">Fireworks</button>
         <button id="b-parks" title="Every campaign and sandbox park in full 3D, with everything about it: goals for each difficulty, rides, shops, guests, money (opens full window)">Parks</button>
         <button id="b-texgui" title="Texture Editor for every texture in the game, and GUI Editor for the menus, icons, button states, icon animations and menu texts - saved back into the game (opens full window)">Textures &amp; GUI</button>
+        <button id="b-mods" title="Mod Loader: all the custom content in the game in one place, and installing downloads (.zip / .rar / .7z) into the right folders (opens full window)">Mod Loader</button>
       </nav>
       <div class="sub" id="rootinfo">loading…</div>
       <div style="display:flex;gap:6px;margin-top:8px"><input id="treefilter" type="search" placeholder="Filter OVLs (e.g. coaster, chess)" style="flex:1;min-width:0"><button id="treerefresh" title="Look for new folders and files in the game folder (also checked when you come back to this window)">⟳ Refresh</button></div></div>
@@ -443,14 +444,15 @@ $('b-rides').onclick = async () => {
       `<div class="res" data-ride="${esc(r.name)}" title="${esc(r.name)}">${esc(r.title)}</div>`).join('')).join('');
 };
 
-// ride designs: the game's premade coasters & tracked rides (Coaster Designs\[Ride]Name.trk), grouped by ride type
+// ride designs: the game's premade coasters & tracked rides (Coaster Designs\[Ride]Name.trk), grouped by ride type,
+// then yours (My Documents\RCT3\Coasters: saved in the game or installed with the Mod Loader)
 $('b-designs').onclick = async () => {
   selOvl = null; document.querySelectorAll('.ovl.sel').forEach(d => d.classList.remove('sel'));
   $('ovltitle').textContent = 'Ride Designs'; $('ovlsub').textContent = 'premade coasters and tracked rides, assembled from their track pieces';
   $('res').innerHTML = '<div class="res dim">loading…</div>';
   const ds = await (await fetch('/api/designs')).json(); resources = [];
-  const by = {}; for (const d of ds) (by[d.ride_title] ??= []).push(d);
-  $('res').innerHTML = Object.keys(by).sort((a, b) => a.localeCompare(b)).map(g =>
+  const by = {}; for (const d of ds) (by[(d.yours ? 'Yours · ' : '') + d.ride_title] ??= []).push(d);
+  $('res').innerHTML = Object.keys(by).sort((a, b) => (a.startsWith('Yours · ') - b.startsWith('Yours · ')) || a.localeCompare(b)).map(g =>
     `<div class="group">${esc(g)} <small>${by[g].length}</small></div>` +
     by[g].sort((a, b) => a.name.localeCompare(b.name)).map(d =>
       `<div class="res" data-design="${esc(d.file)}" title="${esc(d.file)}">${esc(d.name)}</div>`).join('')).join('');
@@ -838,9 +840,9 @@ async function showTypes(tag) {
 $('b-types').onclick = () => showTypes();
 
 // tabs: highlight the one in use; opening an OVL from the tree clears it
-const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs', 'b-scenery', 'b-fireworks', 'b-parks', 'b-texgui'];
+const TABS = ['b-types', 'b-people', 'b-rides', 'b-designs', 'b-scenery', 'b-fireworks', 'b-parks', 'b-texgui', 'b-mods'];
 function setTab(id) { TABS.forEach(t => $(t).classList.toggle('active', t === id)); }
-TABS.forEach(id => id !== 'b-fireworks' && id !== 'b-parks' && id !== 'b-texgui' && $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
+TABS.forEach(id => !['b-fireworks', 'b-parks', 'b-texgui', 'b-mods'].includes(id) && $(id).addEventListener('click', () => { if (id !== 'b-types') $('resfilter').value = ''; setTab(id); }));
 
 // Parks: full-window park viewer (static/parks.js); Back returns to what was open
 $('b-parks').onclick = () => openParksTab();
@@ -876,6 +878,35 @@ async function openTexGuiTab(open) {   // open: { path, name } of a texture to e
     } });
   } catch (e) { msg('Could not open the texture editor: ' + e, true); document.getElementById('app').style.display = ''; renderer.setAnimationLoop(viewerLoop); }
   $('b-texgui').textContent = 'Textures & GUI';
+}
+
+// Mod Loader: full-window list of the custom content in the game and installer (static/mods.js); Back returns to what
+// was open (its folder tree refreshed when content changed); "Show in…" opens the tab that shows a package
+$('b-mods').onclick = () => openModsTab();
+async function openModsTab() {
+  const before = TABS.find(t => $(t).classList.contains('active')) || null, hash = location.hash;
+  $('b-mods').textContent = 'Loading…';
+  try {
+    const { openMods } = await import('/mods.js');
+    renderer.setAnimationLoop(null);
+    document.getElementById('app').style.display = 'none';
+    history.replaceState(null, '', '#mods');
+    await openMods({
+      onBack: changed => {
+        document.getElementById('app').style.display = '';
+        renderer.setAnimationLoop(viewerLoop); clock.getDelta(); resize();
+        setTab(before); history.replaceState(null, '', hash === '#mods' ? '#' : hash || '#');
+        if (changed) { lastCheck = Date.now(); loadTree(true); }
+      },
+      openTab: async (tab, filter) => {
+        if (tab === 'fireworks') return openFw();
+        const id = tab === 'scenery' ? 'b-scenery' : 'b-designs';
+        setTab(id); await $(id).onclick();
+        if (filter) { $('resfilter').value = filter.replace(/^\[.*?\]/, '').replace(/\.trk$/i, ''); $('resfilter').oninput(); }
+      },
+    });
+  } catch (e) { msg('Could not open the Mod Loader: ' + e, true); document.getElementById('app').style.display = ''; renderer.setAnimationLoop(viewerLoop); }
+  $('b-mods').textContent = 'Mod Loader';
 }
 
 // Fireworks: a full-window editor (static/fireworks.js) over the three columns; Back returns to what was open
@@ -925,6 +956,7 @@ async function fromHash() {
   if (h.get('ride')) { setTab('b-rides'); await $('b-rides').onclick(); return showRide(h.get('ride'), h.get('anim')); }
   if (location.hash === '#fireworks') return $('b-fireworks').onclick();
   if (location.hash.startsWith('#textures')) return openTexGuiTab();
+  if (location.hash === '#mods') return openModsTab();
   if (h.get('scenery')) { setTab('b-scenery'); await $('b-scenery').onclick(); return showScenery(h.get('scenery'), h.get('anim')); }
   if (h.get('design')) { setTab('b-designs'); await $('b-designs').onclick(); return showDesign(h.get('design')); }
   if (h.get('file')) return openGameFile(h.get('file'));
@@ -1023,13 +1055,19 @@ const TOUR = [
       icon sheets and each icon's place on them, button states, icon animations, window frames, menu screens, fonts and every menu text.</p>
       <p>Changes are saved back into the game's own files, which are copied first so you can restore them.</p>`,
     action: { label: 'Open Textures & GUI', run: () => document.getElementById('b-texgui').click() } },
+  { target: '#b-mods', title: 'Mod Loader',
+    html: `<p>The <b>Mod Loader</b> lists all the custom content in the game: scenery sets, paths, custom rides, fireworks, coaster designs,
+      scenarios, structures, billboards and music, wherever it is.</p>
+      <p>Drop a download on it (.zip, .rar, .7z or loose files) and it puts every file where the game looks for it, after showing you where.
+      Packages can be disabled, enabled again and uninstalled, and it says which custom sets a design or scenario still needs.</p>`,
+    action: { label: 'Open the Mod Loader', run: () => document.getElementById('b-mods').click() } },
   { title: 'That\'s everything',
     html: `<p>Pick an OVL on the left or a tab to start. Replay this tour with <b>? Tour</b> at the top left any time.</p>` },
 ];
 document.getElementById('b-tour').onclick = () => import('/tour.js').then(m => m.runTour('main', TOUR, { force: true }));
 
 loadTree().then(fromHash).then(() => {
-  if (location.hash !== '#fireworks' && !location.hash.startsWith('#park') && !location.hash.startsWith('#textures')) import('/tour.js').then(m => m.runTour('main', TOUR)).catch(() => {});
+  if (location.hash !== '#fireworks' && !location.hash.startsWith('#park') && !location.hash.startsWith('#textures') && location.hash !== '#mods') import('/tour.js').then(m => m.runTour('main', TOUR)).catch(() => {});
 }).catch(e => msg('Could not load index: ' + e, true));
 </script>
 </body>

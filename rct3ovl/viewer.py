@@ -12,19 +12,19 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from .characters import build_person, carried_items, describe_variant, variants
-from .designs import build_design, design_files
-from .rides import build_ride, list_rides, track_sets
-from .scenery import build_scenery, list_scenery
 from . import fireworks as fw
-from . import parks
+from . import frontscreen, mods, parks
 from . import texedit as tx
-from . import frontscreen
+from .characters import build_person, carried_items, describe_variant, variants
+from .container import OvlError
+from .designs import build_design, design_files, design_path
 from .export import export_resource
 from .gltf import shape_to_glb
 from .library import Library
 from .media import text
 from .meshes import load_shape
+from .rides import build_ride, list_rides, track_sets
+from .scenery import build_scenery, list_scenery
 
 STATIC = os.path.join(os.path.dirname(__file__), 'static')
 
@@ -67,9 +67,16 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
             try:
                 if u.path in ('/', '/index.html'):
                     return self.send(200, open(os.path.join(STATIC, 'index.html'), 'rb').read(), 'text/html; charset=utf-8')
-                if u.path in ('/fireworks.js', '/tour.js', '/parks.js', '/texgui.js') or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
+                if u.path in ('/fireworks.js', '/tour.js', '/parks.js', '/texgui.js', '/mods.js') or (u.path.startswith('/fw_') and u.path.endswith('.js') and '/' not in u.path[1:]
                                                  and os.path.exists(os.path.join(STATIC, u.path[1:]))):
                     return self.send(200, open(os.path.join(STATIC, u.path[1:]), 'rb').read(), 'text/javascript; charset=utf-8')
+                # Mod Loader (static/mods.js, mods.py): custom content in the game
+                if u.path == '/api/mods':
+                    with lock:
+                        return self.js(mods.scan(lib))
+                if u.path == '/api/mods/package':
+                    with lock:
+                        return self.js(mods.details(lib, q['id']))
                 if u.path == '/api/fw/data':
                     with lock:
                         return self.js({'fireworks': fw.list_fireworks(lib), 'displays': fw.list_displays(lib),
@@ -277,11 +284,14 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                     with lock:
                         titles = {s['ride']: s['title'] for s in track_sets(lib)}
                         return self.js([dict(d, ride_title=titles.get(d['ride_type'].lower() + ':trr', d['ride_type']),
-                                             file=os.path.basename(d['file'])) for d in design_files(lib)])
+                                             file=('yours/' if d['yours'] else '') + os.path.basename(d['file'])) for d in design_files(lib)])
                 if u.path == '/api/design':
-                    path = os.path.join(lib.root, 'Coaster Designs', os.path.basename(q['file']))
+                    path = design_path(lib, q['file'])
                     with lock:
-                        glb, info = build_design(lib, path)
+                        try:
+                            glb, info = build_design(lib, path)
+                        except OvlError as e:            # a design for a custom ride that isn't installed
+                            return self.js({'error': str(e)}, 404)
                     return self.send(200, glb, 'model/gltf-binary', {'X-Info': json.dumps(info, default=str)[:60000]})
                 if u.path == '/api/scenery':
                     with lock:
@@ -340,7 +350,24 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
         # fireworks editor: build a game file from edited data (download) or save it into the game folder
         u = urlparse(self.path)
         try:
-            body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
+            raw = self.rfile.read(int(self.headers.get('Content-Length') or 0))
+            if u.path == '/api/mods/upload':     # a download added in the Mod Loader: the file's own bytes
+                q = {k: v[0] for k, v in parse_qs(u.query).items()}
+                with lock:
+                    return self.js(mods.plan_upload(lib, q.get('name', 'download'), raw))
+            body = json.loads(raw or b'{}')
+            if u.path.startswith('/api/mods/'):
+                with lock:
+                    if u.path == '/api/mods/plan':        # a download already on this computer: archive, folder or file
+                        return self.js(mods.plan_path(lib, body['path']))
+                    if u.path == '/api/mods/install':
+                        return self.js(mods.install(lib, body['token'], body.get('name'), body.get('leave_out')))
+                    if u.path == '/api/mods/cancel':
+                        mods.cancel(lib, body['token']); return self.js({'ok': True})
+                    if u.path == '/api/mods/enable':
+                        return self.js(mods.set_enabled(lib, body['id'], bool(body['on'])))
+                    if u.path == '/api/mods/uninstall':
+                        return self.js(mods.uninstall(lib, body['id']))
             if u.path.startswith('/api/tx/'):
                 with lock:
                     if u.path == '/api/tx/write':

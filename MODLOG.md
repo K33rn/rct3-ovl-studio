@@ -1107,3 +1107,39 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   TOOL_RIGHT per tool. tests/ui_hud_sim.py checks track import / animals list tops and the MixMaster panel width.
 - Session cleanup: ZZ copies removed from My Documents\RCT3\Parks and \Scenarios; game closed from its menu.
 - Still open: fireworks frame by frame vs the game (needs recording the game's editor preview and the viewer).
+
+## 2026-10-21: fireworks vs the game, frame by frame (MixMaster picker preview, recorded)
+- Route (scripted, ~/rct3-work/tmp/topicker21.sh): RIDE badge 492,97 > Sandbox 455,310 > Start game 492,97 (~50 s) >
+  Scenery 28,473 > MixMaster 68,454 > Add display 185,683 > a track 400,640 > Fireworks + 79,328 (wheel scrolls the
+  list). Preview pane 503-726 x 319-542 (crop x 503 y 319, 224 px; the pane's own border is the crop's first column).
+  um win record --exe RCT3plus.exe --seconds N --fps 30 --no-audio; tmp/fwrec/frames.py crops the pane (imageio-ffmpeg).
+- The preview loops the effect about every 2.3 s, cycles overlapping. Green Peony (2 shells): launches 0.47-0.50 s
+  apart (base life 1 s, N 2 -> 0 and 0.5), bursts 1.16-1.20 s after launch (shell life 1.2 x StartTime 0.99) - the
+  viewer gives 0.50 and 1.19. Test file ZZPeonyOne.frw (Green Peony with 1 shell, built by build_frw) copied into
+  both game folders' Fireworks\ for this, removed after; a new .frw needs a game restart to be listed.
+- The preview camera (no zoom: the horizon stays at y 142 all cycle): fitted to the shell's climb (38.55 m/s; on
+  screen it seems to slow - a wide lens close by), the horizon and the mortar (y 157): 117 deg vertical lens, 12.1 m
+  back, 2 m up, tilted up 23.8 deg, 1.6 px rms. Checked against the scatter of 15 bursts (rows 10/50/90 % 8/59/80,
+  model 16/57/73; ~40 % leave the pane, model 38 %); a far 45 deg camera puts them all at rows 84-100. Scale can't be
+  told from the video (camera distance and speeds scale together), so everything is in units of the shell's rise.
+- Found and fixed, both from RCT3plus.exe:
+  1. Sprite size: 0x9cf3b7 puts the corners at (cos - sin) x size along the camera's unit axes (normalised just
+     before, 0x9cf13b / 0x9cf198): the sprite is 2 x size across. The viewer drew it size across. Firework particles
+     now drawn at 2 x size (the viewer's own water-jet drops keep theirs). Burst flash (glow off) went from half
+     brightness at ~10 px to ~18 px (game ~22-24 px); the rising shell is now plainly visible, as in the game.
+  2. Emitter randomness (0x9cc5c4-0x9cc8f9; offsets from the field registration 0x9ccec3...: 0x6c PositionRandom,
+     0x70 PositionRandomCircle, 0x74 ParticleSpeed, 0x78 SpeedRandom, 0x7c SpeedRandomCircle): velocity +=
+     SpeedRandom x a normalised point of the cube [-0.5, 0.5]^3 (full length; the viewer used 0.85-1.0 x on a sphere),
+     + SpeedRandomCircle x a ring direction; position += PositionRandom x a point inside a ball of radius 1/2
+     (rejection, |p|^2 <= 0.25) and PositionRandomCircle x a point inside a disk of radius 1/2 (the viewer used up to
+     the full value / exactly the full value). Random numbers: 0x475180, 23-bit LCG.
+- Measured with the fitted camera through one pipeline (tests/fw_frames.py renders the viewer from that camera,
+  stepping 1/120 s by hand; tmp/fwrec/rmsm.py): light-weighted RMS radius of the green light round the burst, in
+  metres, at 0.2 / 0.4 / 0.6 / 0.8 / 1.0 s - game (11 bursts) 2.9 / 5.7 / 8.9 / 12.2 / 13.7 (sd 0.4-2.4); viewer
+  before 2.0 / 4.5 / 6.9 / 9.5 / 12.5, after both fixes 2.2 / 5.0 / 7.7 / 10.5 / 13.7 (glow off, 5 runs).
+- Still open: brightness - the game's green light per m2 is ~3x the viewer's at 0.2 s and fades over the second
+  (13.7 -> 4.0), the viewer's stays ~2; the flash's centre is 245 in the game (texture max 229). The colour is packed
+  in the update, not scaled in the sprite builder - perhaps a MODULATE2X-like render state. The viewer's Glow (bloom,
+  on by default) adds a haze over the whole pane at each burst flash (corners 20-60; game 0.1) - not in the game.
+- All 30 fireworks run 6 s without NaN (sweep in the page), fw_fan and fw_game_made pass.
+- __fwdebug gained stop / drawNow / scene / labels for frame-by-frame captures.

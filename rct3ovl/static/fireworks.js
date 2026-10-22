@@ -490,6 +490,9 @@ async function build() {
     return v[Math.min(t.length, v.length) - 1];
   };
   function randUnit() { const z = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, r = Math.sqrt(1 - z * z); return [r * Math.cos(a), z, r * Math.sin(a)]; }
+  function randCubeDir() {   // the game's random direction: a point of the cube [-0.5, 0.5]^3, normalised (corners favoured)
+    for (;;) { const x = Math.random() - 0.5, y = Math.random() - 0.5, z = Math.random() - 0.5, l = Math.hypot(x, y, z); if (l > 1e-6) return [x / l, y / l, z / l]; }
+  }
   function randPerp(h) {   // unit vector at a random angle around h
     let ax = Math.abs(h[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
     let u = [h[1] * ax[2] - h[2] * ax[1], h[2] * ax[0] - h[0] * ax[2], h[0] * ax[1] - h[1] * ax[0]];
@@ -573,8 +576,12 @@ async function build() {
         let h = h0, u = u0;
         if (e.rel && p.d.pspin) { h = rotXYZ(h, p.d.pspin[0] * ta, p.d.pspin[1] * ta, 0); u = rotXYZ(u, p.d.pspin[0] * ta, p.d.pspin[1] * ta, 0); }
         if (spun) { const a = [e.spin0[0] + e.spin[0] * ta, e.spin0[1] + e.spin[1] * ta, e.spin0[2] + e.spin[2] * ta]; h = rotXYZ(h, ...a); u = rotXYZ(u, ...a); }
-        const s = randUnit(), c = randPerp(h), ps = randUnit(), pc = e.prc ? randPerp(h) : null;
-        const sr = e.sr * (0.85 + 0.15 * Math.random()), pr = e.pr * Math.random();
+        // as RCT3plus.exe 0x9cc5c4-0x9cc8f9 draws them: SpeedRandom x a direction (a point of the unit cube, normalised),
+        // SpeedRandomCircle x a direction in the frame's ring; PositionRandom a point inside a ball of radius 1/2
+        // (a cube point kept when |p| <= 0.5), PositionRandomCircle one inside a disk of radius 1/2
+        const s = randCubeDir(), c = randPerp(h), ps = randUnit(), pc = e.prc ? randPerp(h) : null;
+        const sr = e.sr, pr = e.pr * 0.5 * Math.cbrt(Math.random());
+        if (pc) { const k = 0.5 * Math.sqrt(Math.random()); pc[0] *= k; pc[1] *= k; pc[2] *= k; }
         const vx = h[0] * e.speed + s[0] * sr + c[0] * e.src + p.vx * e.psf;
         const vy = h[1] * e.speed + s[1] * sr + c[1] * e.src + p.vy * e.psf;
         const vz = h[2] * e.speed + s[2] * sr + c[2] * e.src + p.vz * e.psf;
@@ -654,7 +661,10 @@ async function build() {
       if (l.n >= MAX_PARTICLES) continue;
       const i = l.n++;
       const f = Math.min(1, p.age / p.life);
-      const size = (d.s0 + (d.s1 - d.s0) * f) * (1 + d.sR * (p.r0 - 0.5) * 2);
+      // the game's sprite reaches +-size from the particle (RCT3plus.exe 0x9cf3b7: corners (cos - sin) x size along the
+      // camera's unit axes), a square 2 x size across - the quad here is 1 x 1, so firework particles are drawn at twice
+      // their size (water jet drops are the viewer's own, sized for the 1 x 1 quad)
+      const size = (d.s0 + (d.s1 - d.s0) * f) * (1 + d.sR * (p.r0 - 0.5) * 2) * (d.fw ? 2 : 1);
       const [r, g, b] = colourOf(p, f);
       const k = d.stretch;
       l.at.pos.array.set([p.x, p.y, p.z], i * 3);
@@ -2548,7 +2558,10 @@ async function build() {
 
   window.__fwdebug = {   // for tests
     count: () => parts.length, parts: () => parts, step, launch, FW, REG, descInfo, S, ribbons, terrain, openEditor, ctx, seek, applyAims, renderAll,
-    sceneryObjs: () => sceneryObjs, music: () => musicEl, launcherObjs: () => launcherObjs, tubeWorld, camera, controls, kick, applyScene };
+    sceneryObjs: () => sceneryObjs, music: () => musicEl, launcherObjs: () => launcherObjs, tubeWorld, camera, controls, kick, applyScene,
+    // frame-by-frame captures: stop the loop, step the particles by hand, draw one frame
+    stop: () => renderer.setAnimationLoop(null), scene, labels,
+    drawNow: () => { ribbons.setPixel(camera, view.clientHeight); drawEffects(); draw(); if (useBloom) composer.render(); else renderer.render(scene, camera); } };
   return { root, resize, start, stop, tour, openFile, onBack: null };
 }
 

@@ -1405,3 +1405,18 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
     of Main + English + the original exe); ui_front_sim, ui_hud_sim, ui_hud_anims still pass; fg22 md5s unchanged.
 - Not done: the kids' picture can't move (no number in the code); clicking the console handle without dragging does
   nothing here (not checked in the game); the icons of non-guest messages were not seen in the game.
+
+## 2026-10-22: MixMaster palette - water effects with the water jets (user: "custom water files should go into the water part")
+- 640 of the 895 .frw in the game folder + My Documents\RCT3\FireworkEffects are water effects made as fireworks:
+  "Dumaan's Water Effects Pack V2" (124, AQUA ...: its readme calls them "water jets") and "v2.7 Liquid Firewrokss
+  Pack" (516, "001 / 003 WW ..." = Waltzing Waters: curtains, vases, cakes, jets, lights). Nothing in the files says so:
+  base fields identical in kind (IdentifyingIcon 0 everywhere), same flare textures as fireworks. The game lists them
+  all with the fireworks and fires them from mortars.
+- fireworks.is_water: installed from a Mod Loader pack named like water / liquid / aqua, or the packs' name marks
+  (AQUA, ^NNN WW, waltz, water). Not 'fountain': the game's Fountain / FairyFountain / GlitterFountain /
+  GroundFountainArc are pyrotechnic fountains and stay fireworks. /api/fw/data fireworks get 'water'.
+- fireworks.js: the Fireworks tab leaves them out; the Water Jets tab lists them under "Water effects - firework files"
+  after the game's water jets; rows carry their kind (data-k) so preview, edit (AFE), drag and timeline double-click
+  treat them as the .frw they are. tests/ui_fw_water_list.py (Fireworks 256 incl. the 4 fountains, Water Jets 2 + 640,
+  AQUA previews, double-click adds it); ui_mixmaster passes.
+- The game's own effect picker is unchanged (it reads FireworkEffects as fireworks).

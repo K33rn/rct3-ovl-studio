@@ -1268,14 +1268,18 @@ async function build() {
     $('#fw-create', root).innerHTML = kind === 'firework'
       ? `<button data-c="afe" title="Advanced firework editor">${afeUnlocked() ? '✎' : '🔒'} Advanced firework editor</button>`
       : `<button data-c="${kind}" title="Advanced ${KINDS[kind].one} editor">✎ Advanced ${kind === 'laser' ? 'laser' : 'water jet'} designer</button>`;
-    const all = Object.values(REG[kind]).filter(x => !f || x.title.toLowerCase().includes(f)).sort((a, b) => a.title.localeCompare(b.title));
-    const row = x => `<div class="fwk" draggable="true" data-f="${esc(x.key)}" title="${esc(x.title)}${x.cost != null && prices ? ` · $${(x.cost / 100).toFixed(2)}` : ''} · ${x.duration.toFixed(1)} s">
+    // water effects made as fireworks (.frw, fired from mortars) are listed with the water jets, not the fireworks
+    const match = x => !f || x.title.toLowerCase().includes(f), byTitle = (a, b) => a.title.localeCompare(b.title);
+    const all = Object.values(REG[kind]).filter(x => match(x) && !(kind === 'firework' && x.water)).sort(byTitle);
+    const wfx = kind === 'jet' ? Object.values(REG.firework).filter(x => x.water && match(x)).sort(byTitle) : [];
+    const row = x => `<div class="fwk" draggable="true" data-f="${esc(x.key)}" data-k="${x.kind}" title="${esc(x.title)}${x.cost != null && prices ? ` · $${(x.cost / 100).toFixed(2)}` : ''} · ${x.duration.toFixed(1)} s">
         <span class="sw" style="background:${hex(swatch(x))};color:${hex(swatch(x))}"></span><span class="nm">${esc(x.title)}</span>${x.ingame ? '<span class="tag" title="made in the game’s own designer (My Documents, RCT3)">made in game</span>' : ''}
         ${x.cost != null ? `<span class="cost price">$${(x.cost / 100).toFixed(2)}</span>` : `<span class="cost">${x.duration.toFixed(0)} s</span>`}
-        <button class="ed" title="Edit (makes your own copy of a game ${KINDS[kind].one})">✎</button><button class="pv" title="Preview">▶</button></div>`;
+        <button class="ed" title="Edit (makes your own copy of a game ${KINDS[x.kind].one})">✎</button><button class="pv" title="Preview">▶</button></div>`;
     const yours = all.filter(x => x.key.startsWith('my:')), game = all.filter(x => !x.key.startsWith('my:'));
     lib.innerHTML = (yours.length ? `<div class="libgrp">Yours (${yours.length})</div>` + yours.map(row).join('') : '') +
-      `<div class="libgrp">Game ${KINDS[kind].tab.toLowerCase()} (${game.length})</div>` + game.map(row).join('');
+      `<div class="libgrp">Game ${KINDS[kind].tab.toLowerCase()} (${game.length})</div>` + game.map(row).join('') +
+      (wfx.length ? `<div class="libgrp" title="Water effects made as fireworks (.frw, from water effects packs): the game lists them with the fireworks and fires them from mortars">Water effects · firework files (${wfx.length})</div>` + wfx.map(row).join('') : '');
   }
   $('#fw-search', root).oninput = renderLib;
   $('#fw-ptabs', root).onclick = e => { const b = e.target.closest('button'); if (b) { S.tab = b.dataset.k; renderLib(); } };
@@ -1284,8 +1288,9 @@ async function build() {
     const row = e.target.closest('.fwk'); if (!row) return;
     lib.querySelectorAll('.fwk.sel').forEach(x => x.classList.remove('sel')); row.classList.add('sel');
     if (row.dataset.scn) return;
-    if (e.target.closest('.ed')) return openEditor(S.tab, row.dataset.f);
-    if (e.target.closest('.pv') || e.detail === 2) preview(S.tab, row.dataset.f);
+    const k = row.dataset.k || S.tab;
+    if (e.target.closest('.ed')) return openEditor(k, row.dataset.f);
+    if (e.target.closest('.pv') || e.detail === 2) preview(k, row.dataset.f);
   });
   lib.addEventListener('dragstart', e => {
     const scn = e.target.closest('[data-scn]');
@@ -1293,7 +1298,7 @@ async function build() {
     const base = e.target.closest('.base');
     if (base) { dragState = { base: base.dataset.base }; e.dataTransfer.setData('text/x-base', base.dataset.base); e.dataTransfer.effectAllowed = 'copy'; dragImage(e); return; }
     const row = e.target.closest('.fwk');
-    if (row) { dragState = { kind: S.tab, key: row.dataset.f }; e.dataTransfer.setData('text/x-firework', S.tab + '|' + row.dataset.f); e.dataTransfer.effectAllowed = 'copy'; dragImage(e); }
+    if (row) { const k = row.dataset.k || S.tab; dragState = { kind: k, key: row.dataset.f }; e.dataTransfer.setData('text/x-firework', k + '|' + row.dataset.f); e.dataTransfer.effectAllowed = 'copy'; dragImage(e); }
   });
   lib.addEventListener('dragend', () => endDrag3d());
   // the browser's drag picture: a small card with the item's colour / picture and name
@@ -1812,8 +1817,9 @@ async function build() {
       const now = performance.now(), last = lastDown; lastDown = { t: now, x: e.clientX, y: e.clientY };
       if (last && now - last.t < 450 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 6) {
         lastDown = null;
-        const f = lib.querySelector('.fwk.sel')?.dataset.f || (S.sel?.kind === S.tab ? S.sel.firework : null) || Object.keys(REG[S.tab])[0];
-        addEntry(S.tab, f, snap(timeAt(e.clientX)), trackAt(e.clientY)); return;
+        const pick = lib.querySelector('.fwk.sel'), k = pick?.dataset.k || S.tab;
+        const f = pick?.dataset.f || (S.sel?.kind === S.tab ? S.sel.firework : null) || Object.keys(REG[S.tab])[0];
+        addEntry(k, f, snap(timeAt(e.clientX)), trackAt(e.clientY)); return;
       }
       const [x0, y0] = contentXY(e), before = add ? selList() : [];
       let banding = false, bandEls = null, lastHit = '';

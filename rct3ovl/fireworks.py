@@ -20,6 +20,7 @@ from __future__ import annotations
 import glob
 import io
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -130,15 +131,40 @@ def load_firework(lib: Library, path: str, blob: bytes | None = None) -> dict:
             'root': root, 'nodes': nodes}
 
 
+# Water effects made as fireworks (.frw particle effects fired from mortars, kept with the fireworks in FireworkEffects):
+# the game lists them with the fireworks, nothing in the file says water. Known by the pack the Mod Loader installed
+# them from ("Dumaan's Water Effects Pack", "v2.7 Liquid Firewrokss Pack") or by the packs' own name marks (AQUA; WW =
+# Waltzing Waters). Not by words like 'fountain': the game's own Fountain / FairyFountain are pyrotechnic fountains.
+WATER_PACK = re.compile(r'water|liquid|aqua', re.I)
+WATER_NAME = re.compile(r'\bAQUA\b|^\d{3} WW\b|\bwaltz|\bwater\b', re.I)
+
+
+def _water_files(lib: Library) -> set:
+    """Lower-case file names of the fireworks installed from a water effects pack."""
+    try:
+        from . import mods
+        recs = mods._records(lib)
+    except Exception:
+        return set()
+    return {os.path.basename(f.get('rel', '').replace('\\', '/')).lower() for r in recs if WATER_PACK.search(r.get('name', ''))
+            for f in r.get('files', []) if f.get('rel', '').lower().endswith('.frw')}
+
+
+def is_water(name: str, title: str = '', pack_files: set = frozenset()) -> bool:
+    return name.lower() in pack_files or bool(WATER_NAME.search(name[:-4] if name.lower().endswith('.frw') else name)) or bool(WATER_NAME.search(title))
+
+
 def list_fireworks(lib: Library) -> list[dict]:
     cache = getattr(lib, '_fireworks', None)
     if cache is None:
         cache = []
+        water = _water_files(lib)
         for f in game_files(lib, 'Fireworks', 'frw'):
             try:
                 d = load_firework(lib, f)
                 d['custom'] = _is_created(lib, f)
                 d['ingame'] = _in_user_dir(f)
+                d['water'] = is_water(d['file'], d['title'], water)
                 cache.append(d)
             except Exception:
                 pass

@@ -1101,7 +1101,84 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   ];
   const HUD_VIEWS = { all: [0, 0, HUD_W, HUD_H], top: [290, 0, 700, 40], left: [0, 145, 120, 480] };
   const HS = { view: 'all', speed: 1, weather: 'IconSun', hat: 'Difficulty_Hat_Apprentice', dn: 'GUI2_DayNightCycle_DayNight', career: false, fireworks: false, animals: false, sel: null, hover: null, cv: null, icons: new Map(), xf: null,
-    sim: false, fly: null, item: null, win: null, dnOpen: false, toggles: new Set(), hits: [], texts: null };
+    sim: false, fly: null, item: null, win: null, dnOpen: false, toggles: new Set(), hits: [], texts: null,
+    con: { bottom: 0, msgs: [], scroll: 0, view: 'closed' }, conEls: [], drag: null, dragged: false };
+  // ---- the message console (the notification bar), as seen in the game (Steam, sandbox, 1280 x 800) --------------------
+  // It hangs from the top bar's notch: drag its handle ("Click and drag open") down and it opens to wherever it is let
+  // go, up to MessageConsole_Left's height + 315 (RCT3plus.exe 0x61c1a0). 472 wide at x 385; striped rows (white /
+  // #e5e5e5, 18 px, 0x61f353) above a strip with the handle and the Next / Previous arrows; the newest message is the
+  // bottom row (a 16 px icon, then the text). Closed, nothing shows: messages wait in it. Drawn from its pieces:
+  // MessageConsole_Top stacked down the panel, _Left and _Right side by side along its bottom (0x61f220).
+  const CON = { x: 385, w: 472, top: 22, strip: 25, row: 18, max: 22 + 39 + 315 };
+  const CON_ICONS = ['MessageConsole_Top', 'MessageConsole_Left', 'MessageConsole_Right', 'MessageConsole_ParkInspector', 'SquareArrowUp', 'SquareArrowDown',
+    'SquareArrowUpDisabled', 'SquareArrowDownDisabled', 'Guest_Group', 'Obj_Rides', 'Man_Staff', 'Man_Objectives', 'Man_Research', 'Man_Park'];
+  // test messages: the game's own message texts with made-up names, each with the icon of what it is about (the icons
+  // are stand-ins except the guest's, seen in the game)
+  const TEST_MSGS = [
+    ['Guest_Group', () => 'Sheryl H: ' + ['Hey!', 'This park is really tidy!', 'You blinked!', "You've got your thumb over the lens!"][Math.floor(Math.random() * 4)]],
+    ['Obj_Rides', t => (t('RideBrokenMessageBrakesFail') || 'The brakes on %NAME% have failed.').replace('%NAME%', 'Air Powered Coaster 1')],
+    ['Obj_Rides', t => (t('RideFixedMessage') || '%NAME% has been fixed.').replace('%NAME%', 'Air Powered Coaster 1')],
+    ['Man_Staff', t => (t('StaffMessage_WantsToResign') || '%NAME% is thinking about quitting').replace('%NAME%', 'Handyman 3')],
+    ['Man_Objectives', t => (t('ObjectiveMessage_MetCondition') || 'You have met the %NAME% condition').replace('%NAME%', 'Park Rating')],
+    ['Man_Park', t => (t('Award_Award') || 'You have won an award: %NAME%').replace('%NAME%', t('Award_Tidiest') || 'Tidiest Park')],
+    ['Guest_Group', t => (t('MessageConsole_PersonState') || "%NAME%'s state has changed to: %STATE%").replace('%NAME%', 'Sheryl H').replace('%STATE%', t('PersonState_Lost') || 'Lost')],
+    ['MessageConsole_ParkInspector', () => 'The park inspector has visited the park'],
+  ];
+  function conMessage(n = 1) {
+    const t = k => HS.texts?.get(k);
+    for (let i = 0; i < n; i++) { const [icon, f] = TEST_MSGS[(HS.con.msgs.length + i) % TEST_MSGS.length]; HS.con.msgs.push({ icon, text: f(t) }); }
+    HS.con.scroll = 0;
+  }
+  const conRows = () => Math.max(0, Math.floor((HS.con.bottom - CON.strip - CON.top) / CON.row));
+  const conMaxScroll = () => Math.max(0, HS.con.msgs.length - conRows());
+  // draws the console (open or closed); its pieces go into els (to select and edit them) and its handles into hits
+  function drawConsole(x, hits, els) {
+    const c = HS.con, b = c.bottom, X = CON.x, Wd = CON.w;
+    const piece = (n, dx, dy, dw, dh, label) => {
+      const g = iconByName(n), src = HS.icons.get(n);
+      if (g && src) { if (g.xs) drawStretched(x, src, g, dx, dy, dw, dh); else x.drawImage(src, dx, dy, dw, dh); }
+      els?.push({ id: 'con_' + n, label, widget: 'MessageConsole', icons: [n], box: [dx, dy, dw, dh].map(Math.round), sliced: !!g?.xs });
+    };
+    if (b <= CON.top + 6) {            // closed: only its handle in the notch
+      x.fillStyle = '#000'; for (let k = 0; k < 3; k++) x.fillRect(616, 14 + 2 * k, 9, 1);
+      hits?.push({ id: 'barM', key: 'conHandle', box: [600, 0, 38, 23], label: 'Message console', drag: 'con' });
+      return;
+    }
+    const lh = iconByName('MessageConsole_Left') ? Math.abs(iconByName('MessageConsole_Left').rect[3] - iconByName('MessageConsole_Left').rect[1]) : 39;
+    const th = iconByName('MessageConsole_Top') ? Math.abs(iconByName('MessageConsole_Top').rect[3] - iconByName('MessageConsole_Top').rect[1]) : 36;
+    x.save(); x.beginPath(); x.rect(X - 6, CON.top, Wd + 12, b - CON.top + 8); x.clip();
+    x.fillStyle = '#0003'; x.fillRect(X + 3, CON.top, Wd, b - CON.top + 3);
+    let ty = b - lh, first = true;
+    while (ty > CON.top - th) { ty -= th; piece('MessageConsole_Top', X, ty, Wd, th, first ? 'Message console (side pieces)' : null); first = false; }
+    if (els) els.splice(1, els.length - 1, ...els.slice(1).filter(e => e.label));
+    piece('MessageConsole_Left', X, b - lh, Math.round(Wd / 2), lh, 'Message console (bottom left)');
+    piece('MessageConsole_Right', X + Math.round(Wd / 2), b - lh, Wd - Math.round(Wd / 2), lh, 'Message console (bottom right)');
+    // the rows, from the bottom up: the newest message at the bottom
+    const rx = X + 10, rw = Wd - 20, rb = b - CON.strip, n = conRows(), msgs = c.msgs, last = msgs.length - 1 - c.scroll;
+    for (let k = 0; k < n + 1; k++) {
+      const y = rb - CON.row * (k + 1); if (y + CON.row <= CON.top) break;
+      x.fillStyle = k % 2 ? '#e5e5e5' : '#ffffff'; x.fillRect(rx, Math.max(CON.top, y), rw, CON.row - Math.max(0, CON.top - y));
+      const m = msgs[last - k];
+      if (m && y >= CON.top) {
+        const ic = HS.icons.get(m.icon); if (ic) x.drawImage(ic, rx + 1, y + 1, 16, 16);
+        x.fillStyle = '#000'; x.font = '12px Verdana, Tahoma, sans-serif'; x.textAlign = 'left'; x.textBaseline = 'middle';
+        x.fillText(m.text, rx + 32, y + CON.row / 2 + 0.5, rw - 40);
+      }
+    }
+    x.fillStyle = '#c9c9d0'; x.fillRect(rx + rw - 1, CON.top, 1, rb - CON.top);
+    // the bottom strip: the handle in the middle, Next (down) and Previous (up) messages
+    x.fillStyle = '#000'; for (let k = 0; k < 3; k++) x.fillRect(616, b - 8 + 2 * k, 9, 1);
+    const canUp = c.scroll < conMaxScroll(), canDown = c.scroll > 0;
+    for (const [n2, ax, ok, tip, act] of [['SquareArrowDown', 717, canDown, 'TT_GUI2_MessageConsoleNextMessages', () => { c.scroll = Math.max(0, c.scroll - 1); }],
+      ['SquareArrowUp', 736, canUp, 'TT_GUI2_MessageConsolePrevoiusMessages', () => { c.scroll = Math.min(conMaxScroll(), c.scroll + 1); }]]) {
+      const nm = ok ? n2 : n2 + 'Disabled', ic = HS.icons.get(nm), box = [ax, b - 19, 14, 14];
+      if (ic) x.drawImage(ic, ...box);
+      els?.push({ id: 'con_' + n2, label: 'Message console: ' + (HS.texts?.get(tip) || tip), widget: 'MessageConsole', icons: [n2, n2 + 'Disabled'], box });
+      hits?.push({ id: 'con_' + n2, key: 'con_' + n2, box, label: HS.texts?.get(tip) || tip, widget: nm, icons: [nm], tipKey: tip, act: ok ? act : null });
+    }
+    x.restore();
+    hits?.push({ id: 'barM', key: 'conHandle', box: [X, b - CON.strip, Wd, CON.strip], label: 'Message console', drag: 'con' });
+  }
   // ---- simulating the in-park screen: what each button opens, as seen in the game (Steam, sandbox, 1280 x 800) ------
   // A left button opens a column of discs (x 68, 40 apart) ending just above it, pushed down to start at y 24 when it
   // would go off the top; the button being used and the one under the pointer are drawn larger. Its tooltip is the
@@ -1152,7 +1229,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   const iconByName = n => G.icons.find(g => g.name === n);
   const hudScaled = h => { const g = h.icons && iconByName(hudIcon(h)), r = g && rectOf(g); return h.disc || !!(r && (r[2] - r[0] !== h.box[2] || r[3] - r[1] !== h.box[3])); };
   async function hudPrepare() {
-    const names = new Set([...HUD.flatMap(el => el.icons || []), ...Object.values(FLY).flat().flatMap(([a, , b]) => b ? [a, b] : [a]), ...WIN_ICONS]);
+    const names = new Set([...HUD.flatMap(el => el.icons || []), ...Object.values(FLY).flat().flatMap(([a, , b]) => b ? [a, b] : [a]), ...WIN_ICONS, ...CON_ICONS]);
     if (!HS.texts) {
       const lang = S.gui?.texts.find(o => /english\.common\.ovl$/i.test(o.path))?.path || S.gui?.texts.find(o => /^gui\\/i.test(o.path))?.path;
       HS.texts = new Map();
@@ -1185,6 +1262,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
         <label title="A career game shows the Career map button where sandbox shows Quit"><input type="checkbox" id="hud-career"> Career</label>
         <label title="The firework button is greyed unless a display is running"><input type="checkbox" id="hud-fw"> Firework display on</label>
         <label title="The dart cam button is greyed unless animals have escaped"><input type="checkbox" id="hud-animals"> Animals escaped</label>
+        <label title="The message console hangs from the top bar's notch; open, its pieces can be picked and edited">Messages <select id="hud-con"><option value="closed">Closed</option><option value="open">Open</option></select></label>
         <span style="flex:1"></span><button id="hud-sim" title="Click the buttons as in the game: the left buttons open their menus, the top bar works">▶ Simulate</button>
       </div>
       <div style="position:relative;flex:1;min-height:0"><canvas id="hud-cv" style="position:absolute;inset:0;width:100%;height:100%;cursor:default"></canvas></div>
@@ -1193,20 +1271,40 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     HS.cv = $('#hud-cv', el);
     const bind = (id, key, conv = v => v) => { const s = $('#' + id, el); s.value = String(HS[key]); s.onchange = () => { HS[key] = conv(s.value); drawHud(); }; };
     bind('hud-view', 'view'); bind('hud-speed', 'speed', Number); bind('hud-weather', 'weather'); bind('hud-hat', 'hat'); bind('hud-dn', 'dn');
+    const cs = $('#hud-con', el); cs.value = HS.con.view;
+    cs.onchange = () => { HS.con.view = cs.value; if (cs.value === 'open') { if (HS.con.msgs.length < 4) conMessage(4); HS.con.bottom = Math.max(HS.con.bottom, 200); } else HS.con.bottom = 0; drawHud(); };
     for (const [id, key] of [['hud-career', 'career'], ['hud-fw', 'fireworks'], ['hud-animals', 'animals']]) { const c = $('#' + id, el); c.checked = HS[key]; c.onchange = () => { HS[key] = c.checked; drawHud(); renderRight(); }; }
     const at = e => { const b = HS.cv.getBoundingClientRect(), t = HS.xf; if (!t) return null; const x = (e.clientX - b.left - t.ox) / t.s, y = (e.clientY - b.top - t.oy) / t.s;
-      return [...HUD].reverse().find(h => !h.sliced && x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) ||
+      return [...HS.conEls].reverse().find(h => x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) ||
+        [...HUD].reverse().find(h => !h.sliced && x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) ||
         HUD.find(h => h.sliced && x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) || null; };
     const simAt = e => { const b = HS.cv.getBoundingClientRect(), t = HS.xf; if (!t) return null; const x = (e.clientX - b.left - t.ox) / t.s, y = (e.clientY - b.top - t.oy) / t.s;
       return [...HS.hits].reverse().find(h => x >= h.box[0] && x < h.box[0] + h.box[2] && y >= h.box[1] && y < h.box[1] + h.box[3]) || null; };
+    const layoutXY = e => { const b = HS.cv.getBoundingClientRect(), t = HS.xf; return [(e.clientX - b.left - t.ox) / t.s, (e.clientY - b.top - t.oy) / t.s]; };
+    HS.cv.onpointerdown = e => {
+      if (!HS.sim || !HS.xf) return;
+      const h = simAt(e); if (!h?.drag) return;
+      const [x, y] = layoutXY(e);
+      HS.drag = { kind: h.drag, x, y, dx: HS.win?.dx || 0, dy: HS.win?.dy || 0, bottom: HS.con.bottom, moved: false };
+      HS.cv.setPointerCapture(e.pointerId);
+    };
+    HS.cv.onpointerup = () => { if (HS.drag) { HS.dragged = HS.drag.moved; HS.drag = null; drawHud(); } };
     HS.cv.onpointermove = e => {
+      if (HS.drag) {
+        const [x, y] = layoutXY(e), d = HS.drag, mx = x - d.x, my = y - d.y;
+        if (Math.abs(mx) + Math.abs(my) > 2) d.moved = true;
+        if (d.kind === 'con') HS.con.bottom = Math.max(0, Math.min(CON.max, (d.bottom > CON.top + 6 ? d.bottom : 22) + my));
+        else if (HS.win) { HS.win.dx = Math.round(d.dx + mx); HS.win.dy = Math.round(d.dy + my); }
+        HS.cv.style.cursor = 'grabbing'; drawHud(); return;
+      }
       const h = HS.sim ? simAt(e) : at(e);
       const same = HS.sim ? !!h === !!HS.hover && h?.key === HS.hover?.key : h === HS.hover;
-      if (!same) { HS.hover = h; HS.cv.style.cursor = h && (!HS.sim || h.act) ? 'pointer' : 'default'; HS.cv.title = h && !HS.sim ? h.label : ''; drawHud(); }
+      if (!same) { HS.hover = h; HS.cv.style.cursor = h?.drag ? 'grab' : h && (!HS.sim || h.act) ? 'pointer' : 'default'; HS.cv.title = h && !HS.sim ? h.label : ''; drawHud(); }
     };
     HS.cv.onpointerleave = () => { HS.hover = null; drawHud(); };
     HS.cv.onclick = e => {
       if (!HS.sim) { selectHud(at(e)); return; }
+      if (HS.dragged) { HS.dragged = false; return; }        // the end of a drag, not a click
       const h = simAt(e);
       if (!h) { HS.dnOpen = false; drawHud(); return; }
       if (h.act) h.act();
@@ -1248,6 +1346,8 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       const ic = HS.icons.get(hudIcon(h)); if (!ic) continue;
       x.globalAlpha = h.dim && !HS[h.dim] ? 0.3 : 1; x.drawImage(ic, bx, by, bw, bh); x.globalAlpha = 1;
     }
+    HS.conEls = [];
+    if (!HS.sim && HS.con.view === 'open') drawConsole(x, null, HS.conEls);
     if (HS.sim) drawHudSim(x, s);
     else for (const [h, col] of [[HS.hover, '#ffffffb0'], [HS.sel, '#f2a93b']]) if (h) { x.strokeStyle = col; x.lineWidth = 1.5 / s; x.strokeRect(h.box[0] - 1, h.box[1] - 1, h.box[2] + 2, h.box[3] + 2); }
     x.restore();
@@ -1257,7 +1357,8 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     b.textContent = HS.sim ? '■ Stop simulating' : '▶ Simulate'; b.style.cssText = HS.sim ? 'border-color:var(--accent);color:var(--accent)' : '';
   }
   function hudSimulate(on) {
-    Object.assign(HS, { sim: on, fly: null, item: null, win: null, dnOpen: false, hover: null, hits: [] });
+    Object.assign(HS, { sim: on, fly: null, item: null, win: null, dnOpen: false, hover: null, hits: [], drag: null });
+    HS.con.bottom = on || HS.con.view !== 'open' ? 0 : Math.max(HS.con.bottom, 200); HS.con.scroll = 0;
     if (on && HS.view !== 'all') { HS.view = 'all'; const v = $('#hud-view'); if (v) v.value = 'all'; }
     hudSimMark(); drawHud(); renderRight();
   }
@@ -1332,11 +1433,17 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       if (ic) x.drawImage(ic, ...box);
       hits.push({ box, label: spaced(n.split('_').pop()), widget: n, icons: [n], act: () => { HS.dn = n; HS.dnOpen = false; const v = $('#hud-dn'); if (v) v.value = n; } });
     });
-    // the window it opened
-    const w = HS.win;
+    // the message console (under the windows)
+    drawConsole(x, hits, null);
+    // the window it opened, where it was dragged to (windows, the quit dialog and the build lists move by their blue
+    // title strip in the game; the round tool panels stay put)
+    const w = HS.win, wdx = w?.dx || 0, wdy = w?.dy || 0, h0 = hits.length;
+    const strip = (box, label) => hits.push({ key: 'winDrag', box, label: label || 'Drag to move', drag: 'win' });
+    x.save(); x.translate(wdx, wdy);
     if (w?.kind === 'picker') {
       // centred on its button, kept on screen (Track import 185-500 for its button at 344, Animals 265-582 at 424)
       const oy = w.at == null ? 0 : Math.max(0, Math.min(800 - 318, Math.round(w.at - 159)));
+      strip([84, oy, 260, 44]);
       x.save(); x.translate(0, oy);
       x.fillStyle = '#0004'; x.beginPath(); x.roundRect(88, 4, 288, 318, 10); x.fill();
       x.fillStyle = '#4aa8e0'; x.beginPath(); x.roundRect(84, 0, 288, 318, 10); x.fill();
@@ -1351,9 +1458,11 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
         : `The game lists the ${w.title.toLowerCase()} you can build here: a picture, name, designs and price for each.`, 219, 140, 230);
       x.restore();
     } else if (w?.kind === 'dialog') {
+      strip([400, 170, 440, 16]);
       hudWindow(x, [400, 170, 477, 335], w.icon, w.title, null, hits);
       hudNote(x, `The game's ${w.title} window: its tabs, lists and settings are drawn by the game's code here.`, 638, 340, 400);
     } else if (w?.kind === 'objectives') {
+      strip([400, 170, 440, 16]);
       hudWindow(x, [400, 170, 477, 460], 'Man_Objectives', tipOf('obj'), null, hits);
       x.fillStyle = '#000'; x.font = 'bold 22px Verdana, Tahoma, sans-serif'; x.textAlign = 'left'; x.fillText(HS.career ? 'Career scenario' : 'Sandbox', 409, 256);
       HUD.find(h => h.id === 'obj').icons.forEach((n, k) => {
@@ -1363,6 +1472,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
         hits.push({ box: [420, y + 1, 30, 30], label: n.split('_').pop() + ' hat', widget: n, icons: [n], act: () => { HS.hat = n; const v = $('#hud-hat'); if (v) v.value = n; } });
       });
     } else if (w?.kind === 'map') {
+      strip([64, 0, 330, 16]);
       hudWindow(x, [64, 0, 370, 368], 'Map', HS.texts?.get('MapDialog_Title') ?? 'Maps', HS.texts?.get('MapDialog_PeopleTabTitle') ?? 'Peeps', hits);
       x.fillStyle = '#8fae44'; x.fillRect(135, 70, 288, 288);
       x.fillStyle = '#aaa'; x.fillRect(274, 280, 6, 70);
@@ -1382,6 +1492,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       hits.push({ box: [12, 652, 132, 132], label: w.title + ' panel', widget: w.icon, icons: [w.icon] });
     } else if (w?.kind === 'quit') {
       const fr = iconByName('GUI2MiniDialog_Frame'), src = HS.icons.get('GUI2MiniDialog_Frame'), b = [490, 340, 300, 110];
+      strip([490, 340, 270, 17]);
       x.fillStyle = '#0005'; x.fillRect(b[0] + 4, b[1] + 4, b[2], b[3]);
       const mb = iconByName('GUI2MiniDialog_Background'), msrc = HS.icons.get('GUI2MiniDialog_Background');
       if (mb && msrc && mb.xs) drawStretched(x, msrc, mb, b[0] + 2, b[1] + 2, b[2] - 4, b[3] - 4); else { x.fillStyle = '#fff'; x.fillRect(b[0] + 2, b[1] + 2, b[2] - 4, b[3] - 4); }
@@ -1397,11 +1508,14 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       x.fillStyle = '#ccc'; x.font = '14px Verdana, Tahoma, sans-serif'; x.fillText('(the game leaves the park here) · click or press Esc to go back', 640, 412);
       hits.push({ box: [0, 0, HUD_W, HUD_H], label: '', act: () => { HS.win = null; } });
     }
+    x.restore();
+    if (w?.kind === 'tool' || w?.kind === 'left') { if (wdx || wdy) { w.dx = 0; w.dy = 0; } }   // tool panels don't move
+    else for (const t of hits.slice(h0)) t.box = [t.box[0] + wdx, t.box[1] + wdy, t.box[2], t.box[3]];
     HS.hits = hits;
     // the tooltip of what is under the pointer, below and to the right of it as the game draws it
     for (const t of hits) t.key = t.key || (t.flyK != null ? 'f' + t.flyK : t.id || t.label + t.box.join());
     const h = HS.hover && hits.find(t => t.key === HS.hover.key);
-    const tip = !h ? '' : h.flyK != null ? tipOf(FLY[HS.fly][h.flyK][0]) : h.disc ? tipOf(hudIcon(h)) : h.id === 'weather' ? tipOf(HS.weather) : h.id && TIPS[h.id] ? tipOf(h.id) : '';
+    const tip = !h ? '' : h.flyK != null ? tipOf(FLY[HS.fly][h.flyK][0]) : h.disc ? tipOf(hudIcon(h)) : h.id === 'weather' ? tipOf(HS.weather) : h.tipKey ? (HS.texts?.get(h.tipKey) || h.label) : h.id && TIPS[h.id] ? tipOf(h.id) : '';
     if (tip) {
       x.font = '11px Verdana, Tahoma, sans-serif'; const tw = x.measureText(tip).width + 14, tx = Math.min(HUD_W - tw - 4, h.box[0] + h.box[2] / 2 + 2), ty = h.box[1] + h.box[3] + 4;
       x.fillStyle = '#1e6aa8'; x.beginPath(); x.roundRect(tx - 1, ty - 1, tw + 4, 22, 9); x.fill();
@@ -1827,7 +1941,10 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     const g = G.sel, moved = G.moved.size;
     let h = '';
     const hs = G.view === 'hud' ? HS.sel : null;
-    if (G.view === 'hud' && HS.sim) h += `<h3>Simulating</h3><div class="sec"><div class="note">Click the buttons as in the game: a left button opens its menu (click it again to close it), a menu button opens what it opens in the game - a list of things to build, a window or a tool panel - and the top bar's speed, day / night, objectives and family buttons work. Point at a button for its tooltip (the game's own text). What you click is shown below to edit. Esc closes the window, then the menu, then stops simulating.<br><br>Inside the windows, the game's code draws lists and settings; they are left as notes here.</div><div class="btns"><button id="hud-simstop">Stop simulating</button></div></div>`;
+    if (G.view === 'hud' && HS.sim) h += `<h3>Simulating</h3><div class="sec"><div class="note">Click the buttons as in the game: a left button opens its menu (click it again to close it), a menu button opens what it opens in the game - a list of things to build, a window or a tool panel - and the top bar's speed, day / night, objectives and family buttons work. Point at a button for its tooltip (the game's own text). What you click is shown below to edit. Esc closes the window, then the menu, then stops simulating.<br><br>Inside the windows, the game's code draws lists and settings; they are left as notes here. Windows, the quit question and the build lists move by their blue title strip, as in the game (the round tool panels stay put).</div><div class="btns"><button id="hud-simstop">Stop simulating</button></div></div>
+      <h3>Message console</h3><div class="sec"><div class="note">The game's notification bar hangs from the notch in the top bar: drag its handle down to open it as far as you like, and back up to close it. The newest message is at the bottom; the arrows show earlier and later ones. Messages wait in it while it is closed (<b>${HS.con.msgs.length}</b> now).</div>
+        <div class="btns"><button id="hud-msg">Send a test message</button><button id="hud-msg5">Send 5</button><button id="hud-msgclr" ${HS.con.msgs.length ? '' : 'disabled'}>Clear</button></div>
+        <div class="btns"><button id="hud-conopen">${HS.con.bottom > CON.top + 6 ? 'Close it' : 'Open it'}</button></div></div>`;
     if (G.view === 'hud' && !hs && !HS.sim) h += `<h3>In-park screen</h3><div class="sec"><div class="note">The bar along the top of the screen and the buttons down the left, as the game shows them in a park. Click any piece to change its picture: edit its pixels, replace it with a picture of your own, or move its rectangle on the icon sheet. The options above the picture show the other states (speed buttons, weather, career mode, greyed buttons).</div></div>`;
     if (hs) {
       h += `<h3>${esc(hs.label)}</h3><div class="sec"><div class="kv"><span>In the game</span><b>${esc(hs.widget)}</b><span>Where</span><b>${hs.box[0]}, ${hs.box[1]} · ${hs.box[2]} × ${hs.box[3]}${hs.sliced ? ' (stretched)' : hudScaled(hs) ? ' (scaled)' : ''}</b></div>
@@ -1858,6 +1975,11 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     }
     el.innerHTML = h;
     $('#hud-simstop', el)?.addEventListener('click', () => hudSimulate(false));
+    const msgDone = () => { drawHud(); renderRight(); };
+    $('#hud-msg', el)?.addEventListener('click', () => { conMessage(1); msgDone(); });
+    $('#hud-msg5', el)?.addEventListener('click', () => { conMessage(5); msgDone(); });
+    $('#hud-msgclr', el)?.addEventListener('click', () => { HS.con.msgs = []; HS.con.scroll = 0; msgDone(); });
+    $('#hud-conopen', el)?.addEventListener('click', () => { HS.con.bottom = HS.con.bottom > CON.top + 6 ? 0 : 22 + CON.strip + CON.row * 6 + 3; msgDone(); });
     if (hs?.icons) {
       const box = $('#hud-vars', el);
       for (const n of hs.icons) {
@@ -1961,7 +2083,27 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     ['FrontEndIcons', 'Button icons'], ['GUI2Main2', 'Expansion badges']];
   const W = 1280, H = 800, SX = W / 1024, SY = H / 768, NPL = 5, CX = 734, CY = 239.5;
   const F = { menu: 'main', L: null, vals: {}, colour: 0, places: [], lists: {}, tex: {}, icons: null, texts: null, lang: null, words: new Map(), drag: null,
-    sel: new Set(), box: null, sim: false, hist: [], hover: -1, anim: 0, note: null };
+    sel: new Set(), box: null, sim: false, hist: [], hover: -1, anim: 0, note: null, pieces: null, pdrag: null, psel: null };
+  // the other pieces of the front screen: widgets of their own placed by code, not part of the background pictures
+  // (frontscreen.py 'pieces'). Badges and the logo by their top-left corner, Back / Quit by their centre.
+  const PIECES = [['b0', 'Soaked badge (shark)', 'FrontScreen_AOPBadge_0'], ['b1', 'Wild badge (tiger)', 'FrontScreen_AOPBadge_1'],
+    ['back', 'Back button (other menus)', 'File_CareerMap'], ['quit', 'Quit button', 'File_Quit'], ['logo', 'RCT3 logo', 'FrontScreen_RCT3Logo']];
+  const FRONT_SHEETS = ['GUI2MainIcons', 'GUI2LargeIcons', 'GUI2LargeIcons2'];      // Back / Quit's disc and icons
+  const pieceXY = k => k[0] === 'b' && k.length === 2 ? F.pieces.badges[+k[1]] : k === 'logo' ? F.pieces.logo : F.pieces.corners[k];
+  const pieceGame = k => k[0] === 'b' && k.length === 2 ? F.L.pieces.game.badges[+k[1]] : k === 'logo' ? F.L.pieces.game.logo : F.L.pieces.game.corners[k];
+  const pieceSaved = k => k[0] === 'b' && k.length === 2 ? F.L.pieces.badges[+k[1]] : k === 'logo' ? F.L.pieces.logo : F.L.pieces.corners[k];
+  function pieceBox(k) {        // [x, y, w, h] on the 1024 x 768 layout
+    const [x, y] = pieceXY(k), ic = PIECES.find(q => q[0] === k)[2];
+    if (k === 'b0' || k === 'b1') { const [w, h] = F.L.pieces.badge_sizes[+k[1]]; return [x, y, w, h]; }
+    if (k === 'logo') { const r = iconRect(ic) || [275, 0, 512, 140]; return [x, y, Math.abs(r[2] - r[0]), Math.abs(r[3] - r[1])]; }
+    const r = iconRect('MenuButtonSmall') || [0, 0, 32, 33], w = Math.abs(r[2] - r[0]), h = Math.abs(r[3] - r[1]);
+    return [x - w / 2, y - h / 2, w, h];
+  }
+  const piecesShown = () => PIECES.map(q => q[0]).filter(k => k !== 'back' || F.menu !== 'main');   // Back is not on the main menu
+  function pieceAt(x, y) {
+    for (const k of [...piecesShown()].reverse()) { const [bx, by, bw, bh] = pieceBox(k); if (x >= bx && x < bx + bw && y >= by && y < by + bh) return k; }
+    return null;
+  }
   // simulating: what each game button does wherever it sits (the four that open another front-screen menu, the rest
   // leave the front screen for a screen of their own)
   const OPENS = { play: 'play', tools: 'tools', sandbox: 'sandbox', custom: 'custom' };
@@ -1979,9 +2121,11 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   const sameLists = (a, b) => Object.keys(MENU_NAMES).every(m => (a[m] || []).join() === (b[m] || []).join());
   const placesDirty = () => F.places.some((p, n) => Math.hypot(p[0] - M().places[n][0], p[1] - M().places[n][1]) > 0.05);
   const menusDirty = () => placesDirty() || !sameLists(F.lists, M().menus);
-  const fdirty = () => F.L && (F.L.params.some(p => Math.abs(F.vals[p.key] - p.value) > 1e-6) || F.colour !== F.L.colour || menusDirty());
+  const piecesDirty = () => !!F.pieces && PIECES.some(([k]) => { const a = pieceXY(k), b = pieceSaved(k); return Math.hypot(a[0] - b[0], a[1] - b[1]) > 0.05; });
+  const fdirty = () => F.L && (F.L.params.some(p => Math.abs(F.vals[p.key] - p.value) > 1e-6) || F.colour !== F.L.colour || menusDirty() || piecesDirty());
   function takeLayout() {
     F.vals = Object.fromEntries(F.L.params.map(p => [p.key, p.value])); F.colour = F.L.colour >>> 0;
+    F.pieces = JSON.parse(JSON.stringify({ badges: F.L.pieces.badges, corners: F.L.pieces.corners, logo: F.L.pieces.logo }));
     F.places = M().places.map(p => [...p]); F.lists = Object.fromEntries(Object.keys(MENU_NAMES).map(m => [m, [...(M().menus[m] || [])]]));
   }
 
@@ -2050,14 +2194,27 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   }
   async function loadFrontTextures() {
     F.tex = {};
-    await Promise.all(PICTURES.map(async ([n]) => { try { F.tex[n] = await loadImage(imgUrl(MAIN, n + ':tex') + '&t=' + Date.now()); } catch (e) {} }));
+    await Promise.all([...PICTURES.map(([n]) => n), ...FRONT_SHEETS].map(async n => { try { F.tex[n] = await loadImage(imgUrl(MAIN, n + ':tex') + '&t=' + Date.now()); } catch (e) {} }));
   }
   const iconRect = n => F.icons?.find(g => g.name === n)?.rect;
   const word = k => F.words.get(k) ?? F.texts?.find(t => t.name === k)?.text ?? '';
   const btn = k => M().buttons[k];
-  function cornerAt(s) {
-    const r = F.vals.corner_r, a = F.vals.corner_start + F.vals.corner_step * s;
-    return [CX + r * Math.cos(a), CY - r * Math.sin(a)];
+  // an icon of Main drawn by its name (its sheet and rectangle; a rectangle given backwards is drawn mirrored)
+  function iconDraw(g, n, dx, dy, dw, dh) {
+    const ic = F.icons?.find(q => q.name === n), T = ic && F.tex[ic.texture.replace(/:tex$/, '')]; if (!T) return;
+    const [l, t, r, b] = ic.rect;
+    g.save(); g.translate(dx + (r < l ? dw : 0), dy + (b < t ? dh : 0)); g.scale(r < l ? -1 : 1, b < t ? -1 : 1);
+    g.drawImage(T, Math.min(l, r), Math.min(t, b), Math.abs(r - l), Math.abs(b - t), 0, 0, dw, dh); g.restore();
+  }
+  function drawPiece(g, k) {
+    const [x, y, w, h] = pieceBox(k), ic = PIECES.find(q => q[0] === k)[2];
+    if (k === 'back' || k === 'quit') {      // a type-4 button: the MenuButtonSmall disc, its icon at 0.684 of it
+      const big = F.sim && F.hover === k ? 1.15 : 1, cx = x + w / 2, cy = y + h / 2, i = w * 0.6842 * big;
+      iconDraw(g, 'MenuButtonSmall', cx - w * big / 2, cy - h * big / 2, w * big, h * big);
+      iconDraw(g, ic, cx - i / 2, cy - i / 2, i, i);
+    } else iconDraw(g, ic, x, y, w, h);
+    if (F.sim) return;
+    if (F.psel === k || F.pdrag?.k === k) { g.strokeStyle = '#3cf'; g.lineWidth = 2; g.setLineDash([5, 3]); g.strokeRect(x - 2, y - 2, w + 4, h + 4); g.setLineDash([]); }
   }
   function drawFront() {
     const g = fcv.getContext('2d'), T = F.tex;
@@ -2072,14 +2229,11 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     img('FrontEndBG2', 0, 0, 512, 256, 0, 512, 512, 256);
     img('FrontEndBG2', 0, 257, 512, 255, 512, 512, 512, 256);
     if (F.menu === 'main') img('FrontEndLogo', 0, 0, 512, 512, -4, 298, 389, 430);
-    img('FrontEndParts', 275, 0, 237, 140, 6, 24, 226, 130);
-    img('GUI2Main2', 320, 0, 100, 100, 762, 624, 72, 86); img('GUI2Main2', 320, 100, 100, 100, 892, 597, 72, 86);
+    // the logo, the expansion badges, Back / Quit: widgets of their own, where the program puts them
+    for (const k of piecesShown()) drawPiece(g, k);
     // the menu's title in the bottom bar
     g.fillStyle = '#000'; g.font = '700 22px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText(word(TITLES[F.menu]), 512, 724);
-    // Back / Quit (type 4, slots 4 and 5) on the main menu's corner arc
-    for (const s of [4, 5]) { const [x, y] = cornerAt(s); g.fillStyle = F.sim && F.hover === 'back' ? '#7cc4ff' : '#4aa0e0'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 15, 0, 7); g.fill(); g.stroke(); }
-    if (F.sim) { const [x, y] = cornerAt(4); g.fillStyle = '#fff'; g.font = '700 13px Arial'; g.fillText(F.menu === 'main' ? 'Quit' : 'Back', x, y + 27); }
     // the 5 places: an empty one is a numbered marker (still draggable - other menus use it)
     const size = F.vals.menu_size, items = F.lists[F.menu];
     F.places.forEach(([x, y], n) => {
@@ -2128,10 +2282,12 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     }
     return -1;
   }
-  const onBack = (x, y) => [4, 5].some(s => { const [bx, by] = cornerAt(s); return Math.hypot(x - bx, y - by) < 20; });
   function simClick(x, y) {
     if (F.note) { F.note = null; drawFront(); return; }
-    if (onBack(x, y)) { simBack(); return; }
+    const pc = fhit(x, y) < 0 ? pieceAt(x, y) : null;
+    if (pc === 'back') { simBack(); return; }
+    if (pc === 'quit') { F.note = 'Quit: the game asks whether to quit to Windows'; drawFront(); return; }
+    if (pc) return;
     const k = F.lists[F.menu][fhit(x, y)]; if (!k) return;
     if (OPENS[k]) { F.hist.push(F.menu); goMenu(OPENS[k]); }
     else { F.note = btn(k).label + ' opens ' + LEAVES[k]; drawFront(); }
@@ -2141,6 +2297,9 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     if (F.sim) { simClick(x, y); return; }
     const n = fhit(x, y), add = e.shiftKey || e.ctrlKey || e.metaKey;
     fcv.setPointerCapture(e.pointerId);
+    const pc = n < 0 && !add ? pieceAt(x, y) : null;
+    if (pc) { F.sel.clear(); F.psel = pc; F.pdrag = { k: pc, x, y, from: [...pieceXY(pc)] }; drawFront(); renderRight(); return; }
+    if (F.psel) { F.psel = null; renderRight(); }
     if (n < 0) { if (!add) F.sel.clear(); F.box = [x, y, x, y, new Set(F.sel)]; drawFront(); renderRight(); return; }
     if (add) { F.sel.has(n) ? F.sel.delete(n) : F.sel.add(n); drawFront(); renderRight(); if (!F.sel.has(n)) return; }
     else if (!F.sel.has(n)) { F.sel.clear(); F.sel.add(n); }
@@ -2149,8 +2308,13 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   });
   fcv.addEventListener('pointermove', e => {
     const [x, y] = fpos(e);
+    if (F.pdrag) {
+      const xy = pieceXY(F.pdrag.k), [fx, fy] = F.pdrag.from;
+      xy[0] = Math.round(Math.min(1124, Math.max(-100, fx + x - F.pdrag.x))); xy[1] = Math.round(Math.min(868, Math.max(-100, fy + y - F.pdrag.y)));
+      drawFront(); syncFrontInputs(); return;
+    }
     if (F.sim) {
-      const n = fhit(x, y), h = F.note ? -1 : onBack(x, y) ? 'back' : F.lists[F.menu][n] ? n : -1;
+      const n = fhit(x, y), pc = n < 0 ? pieceAt(x, y) : null, h = F.note ? -1 : pc === 'back' || pc === 'quit' ? pc : F.lists[F.menu][n] ? n : -1;
       fcv.style.cursor = h === -1 && !F.note ? 'default' : 'pointer'; if (h !== F.hover) { F.hover = h; drawFront(); } return;
     }
     if (F.box) {
@@ -2158,12 +2322,13 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       F.sel = new Set(keep); F.places.forEach(([px, py], m) => { if (px >= Math.min(x0, x1) && px <= Math.max(x0, x1) && py >= Math.min(y0, y1) && py <= Math.max(y0, y1)) F.sel.add(m); });
       drawFront(); return;
     }
-    if (!F.drag) { fcv.style.cursor = fhit(x, y) >= 0 ? 'grab' : 'crosshair'; return; }
+    if (!F.drag) { fcv.style.cursor = fhit(x, y) >= 0 || pieceAt(x, y) ? 'grab' : 'crosshair'; fcv.title = fhit(x, y) < 0 ? PIECES.find(q => q[0] === pieceAt(x, y))?.[1] || '' : ''; return; }
     const dx = x - F.drag.x, dy = y - F.drag.y;
     for (const [m, [px, py]] of F.drag.from) F.places[m] = [Math.round(Math.min(1124, Math.max(-100, px + dx))), Math.round(Math.min(868, Math.max(-100, py + dy)))];
     drawFront(); syncFrontInputs();
   });
   fcv.addEventListener('pointerup', () => {
+    if (F.pdrag) { F.pdrag = null; drawFront(); renderRight(); }
     if (F.box) { F.box = null; drawFront(); renderRight(); }
     if (F.drag) { F.drag = null; drawFront(); renderRight(); }
   });
@@ -2183,6 +2348,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     const el = $('#gu-right', P.right);
     el.querySelectorAll('input[data-k]').forEach(i => { const p = F.L.params.find(q => q.key === i.dataset.k); const v = p.angle ? deg(F.vals[p.key]) : F.vals[p.key]; if (document.activeElement !== i) i.value = +v.toFixed(p.angle ? 2 : 1); });
     el.querySelectorAll('input[data-pl]').forEach(i => { const [n, c] = i.dataset.pl.split(',').map(Number); if (document.activeElement !== i) i.value = Math.round(F.places[n][c]); });
+    el.querySelectorAll('input[data-pc]').forEach(i => { const [k, c] = i.dataset.pc.split(','); if (document.activeElement !== i) i.value = Math.round(pieceXY(k)[+c]); });
     const s = $('#fs-state', el); if (s) s.textContent = fdirty() ? 'Changed - not saved into the game yet.' : (F.L.changed ? 'Saved in the game.' : "The game's own layout.");
     const b = $('#fs-save', el); if (b) b.disabled = !fdirty();
   }
@@ -2223,6 +2389,10 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
         <label class="fs-row"><span>Bar colour</span><input type="color" id="fs-colour" value="${argbCss(F.colour)}"><span></span></label>
         <details style="margin-top:6px"><summary style="cursor:pointer;color:var(--dim)">Put the places on an arc</summary>${par('menu_r')}${par('menu_start')}${par('menu_step')}
           <div class="btns"><button id="fs-arc">Put the 5 places on this arc</button></div><div class="note">The game's own way: an arc round the big circle. Angles count anticlockwise from the right (180° = straight left of the circle's centre). The arc numbers also place profile and tutorial lists past place ${NPL}.</div></details></div>
+      <h3>Other pieces</h3><div class="sec">
+        ${PIECES.map(([k, label]) => `<div class="fs-pl" style="${F.psel === k ? 'color:var(--accent)' : ''}"><span>${esc(label)}</span><input type="number" data-pc="${k},0" value="${Math.round(pieceXY(k)[0])}" title="x"><input type="number" data-pc="${k},1" value="${Math.round(pieceXY(k)[1])}" title="y"></div>`).join('')}
+        <div class="btns"><button id="fs-pgame" title="The badges, Back / Quit and the logo where the game puts them (not saved yet)">Game's own places</button></div>
+        <div class="note">Drag them on the screen. None of these is part of the background: the expansion badges (shown for the expansions installed), <b>Back</b> (in every menu but the main one), <b>Quit</b> and the RCT3 logo are each their own piece, placed by the game's code (badges and the logo by the top-left corner, Back / Quit by the centre). The kids' picture is laid out by the game from the window's size and can't be moved. Pictures: <b>Expansion badges</b> and <b>Logo…</b> below.</div></div>
       <h3>Menu words · ${esc(MENU_NAMES[F.menu])}</h3><div class="sec">${[...new Set([TITLES[F.menu], ...items.map(k => btn(k).text)])].map(k => { const t = F.texts?.find(x => x.name === k); return t ? `<label class="fs-row" style="grid-template-columns:1fr 130px 32px"><span style="color:var(--dim);font-size:11px">${esc(k.replace(/^FrontScreen_/, '').replace(/_TT$/, ''))}</span><input type="text" data-w="${k}" maxlength="${t.max}" value="${esc(word(k))}"><small>${t.max}</small></label>` : ''; }).join('')}
         <div class="btns"><button id="fs-words" ${F.words.size ? '' : 'disabled'}>Save words</button></div><div class="note">A word can be as long as the game's own (the number). Help lines and other texts: <b>Menu text</b> on the left.</div></div>
       <h3>Pictures</h3><div class="sec">${PICTURES.map(([n, label]) => `<div class="li" data-pic="${n}" style="padding-left:6px">🖼 ${esc(label)}<small>${n}</small></div>`).join('')}
@@ -2231,6 +2401,8 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       <h3>${esc(F.L.groups.corner)}, lists, tutorial</h3><div class="sec"><details><summary style="cursor:pointer;color:var(--dim)">More numbers</summary>${grp('corner')}<div class="grp" style="margin-top:6px">${esc(F.L.groups.list)}</div>${grp('list')}<div class="grp" style="margin-top:6px">${esc(F.L.groups.tutorial)}</div>${grp('tutorial')}</details></div>`;
     el.querySelectorAll('input[data-k]').forEach(i => i.oninput = () => { const p = F.L.params.find(q => q.key === i.dataset.k); const v = +i.value; if (!isFinite(v)) return; F.vals[p.key] = p.angle ? rad(v) : v; drawFront(); syncFrontInputs(); });
     el.querySelectorAll('input[data-pl]').forEach(i => i.oninput = () => { const [n, c] = i.dataset.pl.split(',').map(Number), v = +i.value; if (!isFinite(v) || i.value === '') return; F.places[n][c] = v; drawFront(); syncFrontInputs(); });
+    el.querySelectorAll('input[data-pc]').forEach(i => i.oninput = () => { const [k, c] = i.dataset.pc.split(','), v = +i.value; if (!isFinite(v) || i.value === '') return; pieceXY(k)[+c] = v; F.psel = k; drawFront(); syncFrontInputs(); });
+    $('#fs-pgame', el).onclick = () => { for (const [k] of PIECES) { const xy = pieceXY(k), g = pieceGame(k); xy[0] = g[0]; xy[1] = g[1]; } drawFront(); renderRight(); };
     const relist = fn => { fn(F.lists[F.menu]); F.sel.clear(); drawFront(); renderRight(); };
     el.querySelectorAll('input[data-pick]').forEach(i => i.onchange = () => { const n = +i.dataset.pick; i.checked ? F.sel.add(n) : F.sel.delete(n); drawFront(); renderRight(); });
     const pa = $('#fs-pickall', el); if (pa) pa.onclick = () => { if (pa.textContent === 'Pick none') { F.sel.clear(); drawFront(); renderRight(); } else pickAll(); };
@@ -2262,10 +2434,11 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       const values = Object.fromEntries(F.L.params.filter(p => Math.abs(F.vals[p.key] - p.value) > 1e-6).map(p => [p.key, F.vals[p.key]]));
       const body = { values, colour: F.colour !== F.L.colour ? F.colour : null };
       if (menusDirty()) Object.assign(body, { places: F.places, menus: F.lists });
+      if (piecesDirty()) body.pieces = F.pieces;
       try { const r = await post('/api/tx/menu', body); F.L = { ...F.L, ...r }; takeLayout(); setEdits((await fetch('/api/tx/gui').then(r => r.json())).edits); toast('Saved the layout into RCT3plus.exe'); drawFront(); renderRight(); }
       catch (e) { toast('Could not save: ' + e.message, true); }
     };
-    $('#fs-undo', el).onclick = () => { takeLayout(); F.sel.clear(); drawFront(); renderRight(); };
+    $('#fs-undo', el).onclick = () => { takeLayout(); F.sel.clear(); F.psel = null; drawFront(); renderRight(); };
     $('#fs-reset', el).onclick = async () => {
       if (!await confirmBox("Game's own layout", "Put every place, every menu's buttons, every number and the bar colour back to the game's own, in RCT3plus.exe?", 'Reset')) return;
       try { const r = await post('/api/tx/menu/reset', {}); F.L = { ...F.L, ...r }; takeLayout(); setEdits((await fetch('/api/tx/gui').then(r => r.json())).edits); toast("The game's own layout is back"); drawFront(); renderRight(); }

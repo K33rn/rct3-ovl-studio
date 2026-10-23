@@ -39,7 +39,7 @@ PARAMS = {
     'tut_fwd':      ('Forward button angle', 'tutorial', [0xa4528d], 0xf8db74, 0xa45348),
     'tut_step':     ('Angle between pages', 'tutorial', [0xa45293, 0xa452ac], 0xf270b8, 0xa4534c),
 }
-GROUPS = {'menu': 'Menu buttons (every menu)', 'corner': 'Back / Quit buttons', 'list': 'Scenario lists',
+GROUPS = {'menu': 'Menu buttons (every menu)', 'corner': 'Corner arc (scenario-end menu; Back / Quit until moved under Other pieces)', 'list': 'Scenario lists',
           'tutorial': 'Tutorial pages'}
 ANGLES = {'menu_start', 'menu_step', 'corner_start', 'corner_step', 'list_start', 'list_step', 'tut_start', 'tut_fwd',
           'tut_step'}
@@ -87,7 +87,7 @@ def layout(lib) -> dict:
         out.append({'key': key, 'label': label, 'group': group, 'angle': key in ANGLES,
                     'value': _f32(d, ptr), 'orig': _f32(od, orig)})
     return {'params': out, 'groups': GROUPS, 'colour': _u32(d, COLOUR_AT), 'colour_orig': COLOUR_ORIG, 'menus': menus(lib, d),
-            'changed': EXE in tx.edits(lib)}
+            'pieces': pieces(lib, d), 'changed': EXE in tx.edits(lib)}
 
 
 def _original(lib) -> str | None:
@@ -132,7 +132,11 @@ def reset_layout(lib) -> dict:
             patches.append({'va': orig, 'f32': _f32(od, orig)})   # constants an earlier version wrote in place
     patches.append({'va': COLOUR_AT, 'u32': COLOUR_ORIG})
     if menus_installed(d):
-        patches += _menus_uninstall() + [{'off': _text_vsize_off(d), 'u32': TEXT_VSIZE}]
+        patches += _menus_uninstall()
+    if pieces_installed(d):
+        patches += _pieces_uninstall()
+    if menus_installed(d) or pieces_installed(d):
+        patches.append({'off': _text_vsize_off(d), 'u32': TEXT_VSIZE})
     tx.patch_exe(lib, EXE, patches, 'Front screen layout')
     return layout(lib)
 
@@ -169,6 +173,7 @@ R_FUNC = 0xa45110
 R_CALLS = {0xa457ab: CAVE + 0x80, 0xa47285: CAVE + 0x90, 0xa47d79: CAVE + 0xa0, 0xa4f18b: CAVE + 0xb0}
 ADD_BUTTON = 0xa47190
 TEXT_VSIZE = 0xb24ce5                                   # .text VirtualSize (raised to 0xb25000)
+MENUS_SPACE = 0x180                                     # the menus' part of the cave; the pieces use the rest
 MENU_FIELDS = {'main': 0x340, 'play': 0x314, 'tools': 0x32c, 'sandbox': 0x250, 'custom': 0x2b4}
 MENU_TITLES = {'main': 'Main menu', 'play': 'Play', 'tools': 'Tools', 'sandbox': 'Sandbox', 'custom': 'Custom scenario'}
 # key: (button field, call 0xa47190, push slot, mov reg [esi + menu], home menu, home slot, label, text, icon)
@@ -220,7 +225,7 @@ def _check_menus(d: bytes):
         bad('section size')
     if not inst:
         o = tx._exe_offset(d, CAVE)
-        if any(d[o:o + 0x300]):
+        if any(d[o:o + MENUS_SPACE]):
             bad('free space at the end of the code is in use')
     if _u32(d, ANGLE_JT0) not in (ANGLE_CASE0, CAVE + 0x40):
         bad('angle table')
@@ -292,7 +297,7 @@ def _menus_install() -> list[dict]:
 
 def _menus_uninstall() -> list[dict]:
     """Everything back as the game has it: cave zeroed, hooks and every button's call, slot and menu."""
-    p = [{'va': CAVE, 'hex': '00' * 0x300}, {'va': ANGLE_JT0, 'u32': ANGLE_CASE0}]
+    p = [{'va': CAVE, 'hex': '00' * MENUS_SPACE}, {'va': ANGLE_JT0, 'u32': ANGLE_CASE0}]
     p += [{'va': at + 1, 'u32': _rel(at, R_FUNC)} for at in R_CALLS]
     for key, (field, call, push, mov, home, slot, *_r) in BUTTONS.items():
         p += [{'va': call + 1, 'u32': _rel(call, ADD_BUTTON)}, {'va': push + 1, 'hex': f'{slot:02x}'},
@@ -352,8 +357,241 @@ def reset_menus(lib) -> dict:
     _, d = _exe(lib)
     _check_menus(d)
     if menus_installed(d):
-        tx.patch_exe(lib, EXE, _menus_uninstall() + [{'off': _text_vsize_off(d), 'u32': TEXT_VSIZE}],
-                     'Front screen layout')
+        vs = [] if pieces_installed(d) else [{'off': _text_vsize_off(d), 'u32': TEXT_VSIZE}]
+        tx.patch_exe(lib, EXE, _menus_uninstall() + vs, 'Front screen layout')
+    return layout(lib)
+
+
+# ---- pieces: the expansion badges, Back / Quit and the RCT3 logo ---------------------------------------------------
+# Not part of the background pictures - each is its own widget, placed in code (GUI coordinates are y-up: a rect's y
+# is its bottom edge, 0 at the bottom of the 1024 x 768 layout):
+#  - badges (0xa4bc80): a loop over the expansions, AOP 1 (Wild, tiger) then AOP 0 (Soaked, shark), skipping ones not
+#    installed. Each is a picture button (FrontScreen_AOPBadge_<n>, its icon's size) whose bottom-left corner is
+#    (734, 527) + 475 x unit(turn((0.7, -1), a)), turn = (x cos a + y sin a, y cos a - x sin a), a += 0.28 per badge.
+#    Hooked: the angle (fadd [0xf71cb0] at 0xa4be23) and both multiplies by 475 (0xa4be8e, 0xa4be9f) read a table by
+#    the loop's AOP number, so each badge has its own place.
+#  - Back (File_CareerMap) and Quit (File_Quit): type-4 buttons, slots 4 and 5 of the arc 0xa45670 places round
+#    (734, 527), which the scenario-end menu (type 4, slots 0-5) shares. They are moved to slots 6 and 7 (the slot
+#    pushes of their add calls and of the resize pass) and angle() / r() answer those two from a table: angle's jump-table entry for
+#    type 4 (0xa452d0) and r's (0xa45170) point at stubs; r() has no slot argument, so its stub reads it from the
+#    caller's frame, known by the return address (0xa47190 and 0xa457a0, as the menus' stubs do).
+#  - RCT3 logo (0xa46028): x = 0 x sx (fmul [0xf264e0]), top = 750 x sy (fmul [0xf8dba0]); both multiplies are
+#    pointed at numbers of our own.
+# The kids picture (FrontEndLogo) is laid out from the window and the other pieces' sizes (0xa55c80), with no number
+# of its own to change.
+PIECES = CAVE + MENUS_SPACE                     # 0xf25e80 .. the end of .text's file space (0xf26000)
+PMAGIC = b'RCT3OVL PIECES1\x00'
+P_BANG, P_BRAD, P_CANG, P_CRAD, P_LOGO = PIECES + 0x10, PIECES + 0x18, PIECES + 0x20, PIECES + 0x28, PIECES + 0x30
+BADGE_CENTRE, BADGE_V0, BADGE_R0, BADGE_STEP0 = (734.0, 527.0), (0.7, -1.0), 475.0, 0.28
+B_FADD, B_FMUL1, B_FMUL2 = 0xa4be23, 0xa4be8e, 0xa4be9f      # each 6 bytes (D8 05 / D8 0D addr)
+B_ANGLE_C, B_R_C = 0xf71cb0, 0xf8e594
+ANGLE_JT4, ANGLE_CASE4 = 0xa452d0, 0xa45264
+R_JT4, R_CASE4 = 0xa45170, 0xa45144
+# push imm8 of each button's slot: in its add call (0xa47190) and in the resize pass (0xa457a0); the game's slot, ours
+CORNER_SLOT = {'back': ((0xa501c1, 0xa48a49), 4, 6), 'quit': ((0xa5020b, 0xa48ad4), 5, 7)}
+LOGO_X_AT, LOGO_Y_AT, LOGO_X_C, LOGO_Y_C = 0xa46059, 0xa46063, 0xf264e0, 0xf8dba0
+LAYOUT_H = 768.0
+
+
+def _asm(at: int, parts: list) -> bytes:
+    """Tiny assembler for the stubs: bytes, ('jmp', target), ('jae8' / 'jne8' / 'jmp8', label), ('label', name)."""
+    def size(x):
+        return len(x) if isinstance(x, bytes) else 5 if x[0] == 'jmp' else 0 if x[0] == 'label' else 2
+    where, a = {}, at
+    for x in parts:
+        if not isinstance(x, bytes) and x[0] == 'label':
+            where[x[1]] = a
+        a += size(x)
+    out, a = b'', at
+    for x in parts:
+        if isinstance(x, bytes):
+            out += x
+        elif x[0] == 'jmp':
+            out += b'\xe9' + struct.pack('<I', _rel(a, x[1]))
+        elif x[0] != 'label':
+            d = where[x[1]] - (a + 2)
+            assert -128 <= d < 128
+            out += bytes([{'jae8': 0x73, 'jne8': 0x75, 'jmp8': 0xeb}[x[0]], d & 0xff])
+        a += size(x)
+    return out
+
+
+def _u(v: int) -> bytes:
+    return struct.pack('<I', v)
+
+
+def _pieces_code() -> list[tuple[int, bytes]]:
+    c = []
+    a = PIECES + 0x40          # badge angle: a = table[AOP number] (instead of a += 0.28)
+    c.append((a, _asm(a, [b'\x8b\x54\x24\x34', b'\xdd\xd8', b'\xd9\x04\x95' + _u(P_BANG), ('jmp', B_FADD + 6)])))
+    a = PIECES + 0x58          # badge radius, the x and the y multiply (an argument is pushed by then: +4)
+    c.append((a, _asm(a, [b'\x8b\x54\x24\x38', b'\xd8\x0c\x95' + _u(P_BRAD), ('jmp', B_FMUL1 + 6)])))
+    a = PIECES + 0x70
+    c.append((a, _asm(a, [b'\x8b\x54\x24\x38', b'\xd8\x0c\x95' + _u(P_BRAD), ('jmp', B_FMUL2 + 6)])))
+    a = PIECES + 0x88          # angle(type 4, slot 6 / 7) = table (two zeros are on the FPU stack at the case)
+    c.append((a, _asm(a, [b'\x8b\x44\x24\x08', b'\x83\xe8\x06', b'\x83\xf8\x02', ('jae8', 'g'), b'\xdd\xd8', b'\xdd\xd8',
+                          b'\xd9\x04\x85' + _u(P_CANG), b'\xc2\x08\x00', ('label', 'g'), ('jmp', ANGLE_CASE4)])))
+    a = PIECES + 0xb0          # r(type 4): the slot from the caller's frame
+    c.append((a, _asm(a, [b'\x8b\x04\x24', b'\x3d' + _u(0xa4728a), ('jne8', 'n'), b'\x8b\x44\x24\x54', ('jmp8', 'c'),
+                          ('label', 'n'), b'\x3d' + _u(0xa457b0), ('jne8', 'g'), b'\x8b\x44\x24\x20',
+                          ('label', 'c'), b'\x83\xe8\x06', b'\x83\xf8\x02', ('jae8', 'g'),
+                          b'\xd9\x04\x85' + _u(P_CRAD), b'\xc2\x04\x00', ('label', 'g'), ('jmp', R_CASE4)])))
+    return c
+
+
+def pieces_installed(d: bytes) -> bool:
+    try:
+        o = tx._exe_offset(d, PIECES)
+    except ValueError:
+        return False
+    return bytes(d[o:o + 16]) == PMAGIC
+
+
+def _check_pieces(d: bytes):
+    def bad(what):
+        raise ValueError(f'{EXE} is a version the front screen designer does not know ({what})')
+    inst = pieces_installed(d)
+    o = tx._exe_offset(d, PIECES)
+    if not inst and any(d[o:o + 0x180]):
+        bad('free space at the end of the code is in use')
+    hooks = {B_FADD: (b'\xd8\x05' + _u(B_ANGLE_C), PIECES + 0x40), B_FMUL1: (b'\xd8\x0d' + _u(B_R_C), PIECES + 0x58),
+             B_FMUL2: (b'\xd8\x0d' + _u(B_R_C), PIECES + 0x70)}
+    for at, (orig, stub) in hooks.items():
+        o = tx._exe_offset(d, at)
+        if bytes(d[o:o + 6]) not in (orig, b'\xe9' + _u(_rel(at, stub)) + b'\x90'):
+            bad(f'{at:#x}')
+    if _u32(d, ANGLE_JT4) not in (ANGLE_CASE4, PIECES + 0x88) or _u32(d, R_JT4) not in (R_CASE4, PIECES + 0xb0):
+        bad('jump tables')
+    for ats, game, ours in CORNER_SLOT.values():
+        for at in ats:
+            o = tx._exe_offset(d, at)
+            if d[o - 1] != 0x6a or d[o] not in (game, ours):
+                bad(f'{at:#x}')
+    for at, c, mine in ((LOGO_X_AT, LOGO_X_C, P_LOGO), (LOGO_Y_AT, LOGO_Y_C, P_LOGO + 4)):
+        o = tx._exe_offset(d, at)
+        if _u32(d, at) not in (c, mine) or bytes(d[o - 2:o]) != b'\xd8\x0d':
+            bad(f'{at:#x}')
+
+
+def _badge_sizes(lib) -> list[tuple[float, float]]:
+    """Each badge's size: its icon's (the game sizes the button by it)."""
+    rects = {g['name']: g['rect'] for g in tx.icons(lib, MAIN)}
+    out = []
+    for n in range(2):
+        r = rects.get(f'FrontScreen_AOPBadge_{n}', [0, 0, 100, 100])
+        out.append((float(abs(r[2] - r[0])), float(abs(r[3] - r[1]))))
+    return out
+
+
+def _turn(v, a):
+    x, y = v
+    return x * math.cos(a) + y * math.sin(a), y * math.cos(a) - x * math.sin(a)
+
+
+def _badge_xy(a: float, r: float, size) -> list[float]:
+    """Top-left of a badge (1024 x 768, y down) from its angle and distance."""
+    x, y = _turn(BADGE_V0, a)
+    k = r / math.hypot(x, y)
+    left, bottom = BADGE_CENTRE[0] + k * x, BADGE_CENTRE[1] + k * y
+    return [round(left, 2), round(LAYOUT_H - bottom - size[1], 2)]
+
+
+def _badge_ar(xy, size) -> tuple[float, float]:
+    ox, oy = xy[0] - BADGE_CENTRE[0], LAYOUT_H - xy[1] - size[1] - BADGE_CENTRE[1]
+    r = max(math.hypot(ox, oy), 0.5)
+    a = math.atan2(BADGE_V0[1], BADGE_V0[0]) - math.atan2(oy, ox)
+    return math.remainder(a, 2 * math.pi), r
+
+
+def _corner_xy(a: float, r: float) -> list[float]:
+    return [round(CENTRE[0] + r * math.cos(a), 2), round(CENTRE[1] - r * math.sin(a), 2)]
+
+
+def _corner_ar(xy) -> tuple[float, float]:
+    dx, dy = xy[0] - CENTRE[0], CENTRE[1] - xy[1]
+    return math.atan2(dy, dx), max(math.hypot(dx, dy), 0.5)
+
+
+def _game_pieces(lib, d: bytes, sizes) -> dict:
+    """Where the game puts them with its own numbers (the corner arc as it is now)."""
+    get = lambda k: _f32(d, struct.unpack_from('<I', d, tx._exe_offset(d, PARAMS[k][2][0]) + 2)[0])   # noqa: E731
+    r = get('corner_r')
+    return {'badges': [_badge_xy(BADGE_STEP0 * 2, BADGE_R0, sizes[0]), _badge_xy(BADGE_STEP0, BADGE_R0, sizes[1])],
+            'corners': {k: _corner_xy(get('corner_start') + get('corner_step') * game, r)
+                        for k, (_, game, _o) in CORNER_SLOT.items()},
+            'logo': [0.0, LAYOUT_H - 750.0]}
+
+
+def pieces(lib, d: bytes | None = None) -> dict:
+    """The badges' top-left corners, Back / Quit's centres and the logo's top-left (1024 x 768, y down)."""
+    if d is None:
+        _, d = _exe(lib)
+    _check_pieces(d)
+    sizes = _badge_sizes(lib)
+    game = _game_pieces(lib, d, sizes)
+    if not pieces_installed(d):
+        return {'installed': False, **game, 'game': game, 'badge_sizes': sizes}
+    return {'installed': True, 'game': game, 'badge_sizes': sizes,
+            'badges': [_badge_xy(_f32(d, P_BANG + 4 * n), _f32(d, P_BRAD + 4 * n), sizes[n]) for n in range(2)],
+            'corners': {k: _corner_xy(_f32(d, P_CANG + 4 * (ours - 6)), _f32(d, P_CRAD + 4 * (ours - 6)))
+                        for k, (_, _g, ours) in CORNER_SLOT.items()},
+            'logo': [round(_f32(d, P_LOGO), 2), round(LAYOUT_H - _f32(d, P_LOGO + 4), 2)]}
+
+
+def _pieces_uninstall() -> list[dict]:
+    p = [{'va': PIECES, 'hex': '00' * 0x180},
+         {'va': B_FADD, 'hex': 'd805' + _u(B_ANGLE_C).hex()}, {'va': B_FMUL1, 'hex': 'd80d' + _u(B_R_C).hex()},
+         {'va': B_FMUL2, 'hex': 'd80d' + _u(B_R_C).hex()}, {'va': ANGLE_JT4, 'u32': ANGLE_CASE4}, {'va': R_JT4, 'u32': R_CASE4},
+         {'va': LOGO_X_AT, 'u32': LOGO_X_C}, {'va': LOGO_Y_AT, 'u32': LOGO_Y_C}]
+    p += [{'va': at, 'hex': f'{game:02x}'} for ats, game, _o in CORNER_SLOT.values() for at in ats]
+    return p
+
+
+def set_pieces(lib, badges: list | None = None, corners: dict | None = None, logo: list | None = None) -> dict:
+    """badges: 2 top-left [x, y] (Soaked, Wild); corners: {'back' | 'quit': centre [x, y]}; logo: top-left [x, y].
+    Missing ones keep where they are now. Writes the stubs and hooks the first time."""
+    _, d = _exe(lib)
+    _check(d)
+    _check_menus(d)
+    _check_pieces(d)
+    cur = pieces(lib, d)
+    badges = badges if badges is not None else cur['badges']
+    corners = {**cur['corners'], **(corners or {})}
+    logo = logo if logo is not None else cur['logo']
+    sizes = cur['badge_sizes']
+    if len(badges) != 2 or set(corners) != set(CORNER_SLOT):
+        raise ValueError('2 badges and Back / Quit are needed')
+    for what, (x, y) in [('badge', b) for b in badges] + list(corners.items()) + [('logo', logo)]:
+        if not (-300 <= float(x) <= 1324 and -300 <= float(y) <= 1068):
+            raise ValueError(f'{what} ({float(x):.0f}, {float(y):.0f}) is off the screen')
+    p = []
+    if not pieces_installed(d):
+        p.append({'va': PIECES, 'hex': PMAGIC.hex()})
+        p += [{'va': a, 'hex': b.hex()} for a, b in _pieces_code()]
+        p += [{'va': B_FADD, 'hex': 'e9' + _u(_rel(B_FADD, PIECES + 0x40)).hex() + '90'},
+              {'va': B_FMUL1, 'hex': 'e9' + _u(_rel(B_FMUL1, PIECES + 0x58)).hex() + '90'},
+              {'va': B_FMUL2, 'hex': 'e9' + _u(_rel(B_FMUL2, PIECES + 0x70)).hex() + '90'},
+              {'va': ANGLE_JT4, 'u32': PIECES + 0x88}, {'va': R_JT4, 'u32': PIECES + 0xb0},
+              {'va': LOGO_X_AT, 'u32': P_LOGO}, {'va': LOGO_Y_AT, 'u32': P_LOGO + 4}]
+        p += [{'va': at, 'hex': f'{ours:02x}'} for ats, _g, ours in CORNER_SLOT.values() for at in ats]
+        p.append({'off': _text_vsize_off(d), 'u32': 0xb25000})
+    for n, xy in enumerate(badges):
+        a, r = _badge_ar([float(v) for v in xy], sizes[n])
+        p += [{'va': P_BANG + 4 * n, 'f32': a}, {'va': P_BRAD + 4 * n, 'f32': r}]
+    for k, (_, _g, ours) in CORNER_SLOT.items():
+        a, r = _corner_ar([float(v) for v in corners[k]])
+        p += [{'va': P_CANG + 4 * (ours - 6), 'f32': a}, {'va': P_CRAD + 4 * (ours - 6), 'f32': r}]
+    p += [{'va': P_LOGO, 'f32': float(logo[0])}, {'va': P_LOGO + 4, 'f32': LAYOUT_H - float(logo[1])}]
+    tx.patch_exe(lib, EXE, p, 'Front screen layout')
+    return layout(lib)
+
+
+def reset_pieces(lib) -> dict:
+    _, d = _exe(lib)
+    _check_pieces(d)
+    if pieces_installed(d):
+        vs = [] if menus_installed(d) else [{'off': _text_vsize_off(d), 'u32': TEXT_VSIZE}]
+        tx.patch_exe(lib, EXE, _pieces_uninstall() + vs, 'Front screen layout')
     return layout(lib)
 
 

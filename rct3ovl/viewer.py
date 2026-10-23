@@ -387,6 +387,9 @@ def serve(root: str, port: int = 8765, open_browser: bool = True):
                         r = frontscreen.set_layout(lib, body.get('values', {}), body.get('colour'))
                         if body.get('places') is not None:      # free places and each menu's buttons
                             r = frontscreen.set_menus(lib, body['places'], body['menus'])
+                        if body.get('pieces') is not None:      # badges, Back / Quit, the RCT3 logo
+                            pc = body['pieces']
+                            r = frontscreen.set_pieces(lib, pc.get('badges'), pc.get('corners'), pc.get('logo'))
                         return self.js(r)
                     if u.path == '/api/tx/menu/reset':
                         return self.js(frontscreen.reset_layout(lib))

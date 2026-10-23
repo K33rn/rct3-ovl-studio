@@ -1353,3 +1353,55 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - tests/fw_frame_rules.py (made-up fireworks: world X turn sign, own X turn on a sideways parent, base particle still,
   still ParticleDesc fires along +Z): new passes, old code fails all five. All 896 effects 6 s without NaN; fw_fan,
   fw_game_made, ui_fireworks (its two 404s are there with the old code too) pass.
+
+## 2026-10-22: GUI Editor - front-screen pieces (badges, Back / Quit, logo) and what drags in a park
+- User: the in-park menus should drag as in the game; add the notification bar (message console) with test
+  notifications; find out if the shark / tiger, Back and Quit are baked into the front-screen background, and make
+  them editable.
+- Front screen, from RCT3plus.exe: none of them is background. GUI rects are y-UP (y = bottom edge, 0 at the bottom of
+  the 1024 x 768 layout) - which is where the old "centre y 239.5" came from (768 - 527 ~ 241).
+  - Badges (0xa4bc80): loop AOP 1 (Wild, tiger) then AOP 0 (Soaked, shark), installed ones only, picture button
+    FrontScreen_AOPBadge_<n> (GUI2Main2 320,0 / 320,100, 100 x 100); bottom-left = (734, 527) + 475 x
+    unit(turn((0.7, -1), a)), turn = (x cos + y sin, y cos - x sin) (0xc21230), a += 0.28 (0xf71cb0, shared) per
+    shown badge. Screen top-left of the tiger (888, 590), shark (758, 615) - matches the Neon screenshots.
+  - Back = type 4 slot 4, icon File_CareerMap (button +0x358, not on the main menu); Quit = type 4 slot 5, File_Quit
+    (+0x354); MenuButtonSmall disc, icon x 0.6842 (0xa4744c table: type 3 0.5, type 5 1.0). The resize pass places
+    them again with its own pushes (0xa48a46 / 0xa48ad1). Scenario-end menu: type 4 slots 0-5 (0xa43061..0xa43113,
+    resize 0xa41386..0xa414e0).
+  - RCT3 logo (0xa46028): rect x 0 x sx (fmul [0xf264e0] - the shared zero), top 750 x sy (fmul [0xf8dba0]), its icon's
+    size. Kids picture (FrontEndLogo, +0x114): laid out in 0xa55c80 from the window and other pieces - no number.
+  - Patch (frontscreen.py 'pieces', cave 0xf25e80, the menus keep 0xf25d00 + 0x180): badge angle / radius per AOP
+    number from a table (hooks at 0xa4be23, 0xa4be8e, 0xa4be9f, jmp + nop); Back / Quit moved to slots 6 / 7 (all
+    four push sites) and angle()'s / r()'s type-4 jump-table entries (0xa452d0 / 0xa45170) answer slots 6 / 7 from a
+    table (r() reads the slot from the caller's frame by return address, like the menus' stubs); logo multiplies
+    pointed at our x / y.
+  - Tested: scratch copy (tmp/re22/pieces_check.py: game places, set / read back, stubs disassembled, menus on top and
+    off, reset byte-identical); tests/ui_front_pieces.py (viewer on tmp/fg22: drag, type, save, sim Quit / Back,
+    reset); in the game (Steam, Neon layout kept): badges, logo, Quit moved as set on the main menu, Back in the Play
+    and Sandbox menus at its new place and it goes back, Quit asks "Are you sure you want to exit?" and quits. Steam
+    exe put back after (md5 a44b21... as before).
+- In a park (Steam, sandbox, 1280 x 800):
+  - Windows (Park Operations 400,296 478 x 208), the quit dialog (500,340 278 x 120: tick, cross, save) and the build
+    lists (84,0 288 x 318) drag by their blue title / header strip only (not by the white header or body). The round
+    tool panels at the bottom left do not move (a drag there uses the tool).
+  - Message console: hangs from the top bar's notch (handle "=" at 620,16, tooltip "Click and drag open"); dragged down
+    to any height (it stays where let go), x 385-857, striped rows (white / #e5e5e5, 18 px) to the bottom strip with
+    the handle and Next / Previous arrows (724 / 743, grey when there is nothing more). Newest message in the bottom
+    row: a 16 px icon at x 395, text at x 427 ("Sheryl H: Hey!" - a guest's thoughts sent to the console with the cloud
+    button of her info panel). Closed, nothing shows: messages wait in it.
+- Viewer (texgui.js):
+  - Front screen designer: the pieces are drawn from their own icons where the program puts them (badges 100 x 100 from
+    GUI2Main2, logo 237 x 140 from FrontEndParts, Back / Quit = MenuButtonSmall + icon x 0.684; Back only off the main
+    menu), dragged on the screen or typed under **Other pieces**, "Game's own places", saved with the layout (POST
+    /api/tx/menu {pieces}); in the simulation Back goes back and Quit asks. The corner-arc numbers now only move the
+    scenario-end menu once the pieces are placed.
+  - In-park simulate: windows (dialogs, objectives, map), the quit question and the build lists drag by their title /
+    header strip (offset kept per window, its buttons follow); tool panels don't. Message console drawn from
+    MessageConsole_Top / _Left / _Right with the rows, handle and SquareArrowUp / Down (grey when nothing more): drag the
+    notch handle to open it to any height, drag it back to close; Send a test message / Send 5 / Clear (the game's
+    message texts with made-up names; icons other than the guest's are stand-ins), arrows page the messages. Editing
+    view: Messages Open shows it with its pieces to pick and edit.
+  - Tests: tests/ui_front_pieces.py, tests/ui_hud_drag.py, tests/front_pieces_exe.py (all on tmp/fg22, a scratch copy
+    of Main + English + the original exe); ui_front_sim, ui_hud_sim, ui_hud_anims still pass; fg22 md5s unchanged.
+- Not done: the kids' picture can't move (no number in the code); clicking the console handle without dragging does
+  nothing here (not checked in the game); the icons of non-guest messages were not seen in the game.

@@ -1420,3 +1420,7 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   treat them as the .frw they are. tests/ui_fw_water_list.py (Fireworks 256 incl. the 4 fountains, Water Jets 2 + 640,
   AQUA previews, double-click adds it); ui_mixmaster passes.
 - The game's own effect picker is unchanged (it reads FireworkEffects as fireworks).
+- Follow-up (user: "does this sort new fireworks added in as well"): it didn't reach them - list_fireworks was built
+  once per viewer run (↻ Reload got the same list). Now it checks the files' (mtime, size) and the Mod Loader records'
+  stamp on each call: unchanged 0.01 s; added / changed files are read alone (2 added: 0.18 s), removed ones drop out,
+  and every effect is sorted again. tests/fw_new_files.py (scratch folder: an AQUA copy -> water, a peony -> firework).

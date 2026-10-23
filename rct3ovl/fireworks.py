@@ -155,22 +155,47 @@ def is_water(name: str, title: str = '', pack_files: set = frozenset()) -> bool:
 
 
 def list_fireworks(lib: Library) -> list[dict]:
-    cache = getattr(lib, '_fireworks', None)
-    if cache is None:
-        cache = []
-        water = _water_files(lib)
-        for f in game_files(lib, 'Fireworks', 'frw'):
+    """Every firework the game can use. Files added, changed or removed since the last call (copied in by hand, a Mod
+    Loader install, the game's designer) are picked up: only those are read again; each is sorted water / firework
+    with the Mod Loader's records as they are now."""
+    files = {}
+    for f in game_files(lib, 'Fireworks', 'frw'):
+        try:
+            st = os.stat(f)
+            files[f] = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            pass
+    sig = (tuple(sorted(files.items())), _records_stamp(lib))
+    if getattr(lib, '_fireworks', None) is not None and getattr(lib, '_fireworks_sig', None) == sig:
+        return lib._fireworks
+    seen = getattr(lib, '_fireworks_files', {})           # path -> (stamp, parsed) from the last call
+    water, cache, keep = _water_files(lib), [], {}
+    for f, stamp in files.items():
+        old = seen.get(f)
+        if old and old[0] == stamp:
+            d = old[1]
+        else:
             try:
                 d = load_firework(lib, f)
-                d['custom'] = _is_created(lib, f)
-                d['ingame'] = _in_user_dir(f)
-                d['water'] = is_water(d['file'], d['title'], water)
-                cache.append(d)
             except Exception:
-                pass
-        cache.sort(key=lambda d: d['title'].lower())
-        lib._fireworks = cache
+                continue
+            d['custom'] = _is_created(lib, f)
+            d['ingame'] = _in_user_dir(f)
+        d['water'] = is_water(d['file'], d['title'], water)
+        keep[f] = (stamp, d)
+        cache.append(d)
+    cache.sort(key=lambda d: d['title'].lower())
+    lib._fireworks, lib._fireworks_sig, lib._fireworks_files = cache, sig, keep
     return cache
+
+
+def _records_stamp(lib: Library):
+    """When the Mod Loader's records last changed (an install can name a new water pack)."""
+    try:
+        from . import mods
+        return os.stat(mods._records_path(lib)).st_mtime_ns
+    except Exception:
+        return None
 
 
 def list_displays(lib: Library) -> list[dict]:

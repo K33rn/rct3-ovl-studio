@@ -117,8 +117,14 @@ Prob_MaleLeader 0.5. Groups (families, couples, gangs) arrive together and share
   checks that at least one can.
 - While walking in they count as *GuestsOnWayToPark*; on entering they pay (CashInfo.SpentOnParkEntry) and count in
   *GuestIntake* and *GuestsInPark*.
-- How many come: the park keeps an *IdealGuests* figure beside appeal by age group, park rating and publicity, and a
-  *GuestGenerationRate* (0.75–1.0 in the campaigns). How they combine is not decoded yet.
+- How many come: the park keeps a live **ideal guests** figure at Park+0x18c (the toolbar's debug tooltip "Debug
+  ideal guests: %.0f" prints it, `0x658386`) and records it monthly in the IdealGuests graph, next to appeal by age
+  group, park rating and publicity, and a *GuestGenerationRate* (0.75–1.0 in the campaigns; the scenario editor shows
+  it ×100 as a percentage, `0x5f9c72`). In the saved graph histories (newest first) intake runs while guests in the
+  park are below the ideal figure and dries up above it — Run Down Zoo: ideal 115 → 334 → 155 while guests in the
+  park fell 438 → 310 and intake went 25, 23, 11 … 0. The formula that produces the ideal figure is still not found.
+- Counting (`0x704ab0`, the park's "guest added" handler): a guest already in the park adds 1 to GuestsInPark and to
+  their age group's graph (Guest+0x120: child / teenager / adult); otherwise they count as on their way.
 
 ## Guests: what they're made of
 
@@ -150,23 +156,53 @@ current value eases toward it.
   frame; a "big think" re-plans what to do next.
 - Thoughts are kept as `RecentThoughts` {Thought id, Variant, About (the ride / shop), Time}; the park-wide thought
   summaries (`Thought_PI_Guests_Hungry`, `_Thirsty`, `_Tired`, `_Toilet`) feed the park inspector's messages.
-- Most guests in a saved park are in state 16 (881 of 1,524, sub-states 0–6; most likely walking about), then 7
-  (163), 10, 8, 0, 20, 12. Mapping the state numbers to their names is still open.
+- States, from 6,800 guests in every campaign park (what the guests in each state are doing and what they're aimed
+  at) and the game's own state descriptions (`0x7c8d23`, the person-state console text; the queue, swim, high-dive
+  and jacuzzi sub-state names are strings in the exe):
 
-### Choosing a ride (`0x7592aa`)
+  | State | Guests | Meaning | Evidence |
+  |---|---|---|---|
+  | 0 | 139 | just arrived / choosing | TimeInPark 0, moving, targets of every kind |
+  | 4 | 18 | heading for a chosen ride or shop | moving, target ride / stall |
+  | 7 | 453 | **queueing** | the code's queue sub-states 0 Start, 1 PushingIn, 2 Queueing (442 of them), 3 Waiting, 4 Entering, 5 WaitingToPay, 6 Paying, 7 Leaving; standing, target ride |
+  | 8 | 446 | **on a ride** | target ride, seated animations (100, 104) |
+  | 9 | 2 | getting off | |
+  | 10 | 92 | **using a shop, viewing gallery or special attraction** | target stall / gallery / attraction |
+  | 11 | 7 | walking to a ride's entrance | |
+  | 12 | 20 | **sitting on a bench** | target bench, sitting animations |
+  | 13 | 20 | **waiting outside the park** at an injection point | IsInPark 0, target injection point |
+  | 14 | 3 | at the park entrance (entering or leaving) | target the entrance |
+  | 16 | 5,479 | **walking** (the paths, or in from / out to an injection point) | path tiles, injection points; sub-states 0–6 |
+  | 19 | 2 | watching a firework display | target FireworkDisplay |
+  | 20 | 9 | watching an entertainer | target Entertainer |
+  | 256 (0x100) | 32 | standing watching a ride (inferred) | still, idle animation, target ride |
+  | 258 | 1 | high dive (Soaked!) | sub-states AlignLadder, ClimbLadder, WalkAlongBoard, Dive |
+  | 259 | 103 | **swimming** (Soaked!) | sub-states Start, Idle, Travel, Queue, Shower, Diving, SunLounger, Splashing Someone |
+  | 260 | 2 | jacuzzi (Soaked!) | sub-states In, Sit, Out |
 
-Each guest has an intensity band [Min, Max] (PreferedIntensityMin/Max); a ride is judged by its intensity and nausea
-ratings (a ride not yet rated counts as intensity 10, nausea 0 — so too intense for nearly everyone; the
-*GuestsRideUnratedRides* setting presumably lifts that, not yet traced):
+  States from 0x100 up are the pool states (the describer tests for 0x100 first). Names marked in bold match both
+  the data and the code's own words; the rest are read from the data.
+
+### How a guest feels about a ride (`0x7592aa`)
+
+Correction to the first version of these notes: this is the guest's **reaction** to a ride, not the choice to ride
+it. Each guest has an intensity band [Min, Max] (PreferedIntensityMin/Max); the ride's intensity and nausea ratings
+(an unrated ride counts as intensity 10, nausea 0) give six scores — neutral (always 0.5), too tame (squared), in the
+band, tame, too intense, too sickening:
 
 - The outer quarter of the band at each end is a fade zone, edge = (Max − Min) × 0.25.
 - Too tame: intensity below Min + edge → appeal falls off as 1 − (intensity − Min) / edge (squared).
 - Too intense: intensity above Max − edge → 1 − (Max − intensity) / edge.
 - Nausea: the guest's limit is **2 × NauseaTolerance + 2** (2, 4, 6 or 8); a ride above it is penalised by
   (nausea − limit) × 0.5.
-- The scores go to the decision code (`0x7c34f0`). Inferred from the fields it can see, not traced yet: it weighs
-  them against the guest's needs, the ride's price (unless *GuestsIgnoreRideCost*) and the queue (QueueingTime,
-  PerceivedQueueingTime).
+- `0x7c34f0` sorts the six scores, largest first, and packs the order into Guest+0x378 (3 bits each); `0x7d647b`
+  then takes the first one the guest's seat type has an animation for (mask table `0xfc5348`) — the on-ride reaction
+  (bored, enjoying, scared, sick) kept in TargetOnRideReaction. Other situations set fixed orders (`0x7c3610`).
+
+What a guest weighs when *choosing* a ride goes through each attraction's assessment interface — the debug panel at
+`0x4d7c50` lists its methods: valid, excitement, intensity, queue, nausea, sunburn, ideal, fraction. The weighting
+inside the guest's choice is still not traced. (`0x6cf640`, which compares a ride's excitement / intensity / nausea
+and seven other values against a threshold, is the scenario objectives' "coaster with excitement above …" check.)
 
 The scenario settings that switch parts of this off: GuestsIgnoreRideIntensity, GuestsIgnoreRideNausea,
 GuestsIgnoreRideCost, GuestsRideUnratedRides, GuestsRevisitRides, GuestsHaveFixedHealth, GuestsHaveNoCameras /
@@ -177,9 +213,56 @@ Camcorders, and the GuestDefault_* values (Cash, Happiness, Hunger, Thirst, Inte
 TotalProfit, TotalGuests, BuildTime, Popularity, Satisfaction, TimeSinceLastCrash and IntervalData {GuestsPerInterval,
 …} (`0x4c2e40`), used for the ride's popularity and the guests' choices.
 
+## Ride ratings: a small program per ride type
+
+Excitement, intensity and nausea are not one formula in the program: every ride type carries its own **rating
+program** in its OVL — the RideOption list of its Ride record (vanilla tracked rides at trr+0x40, Soaked!/Wild! ones
+through the pointer at trr+0x12c, then +8; flat rides likewise). The layout is the RCT3 Importer's `RideOption`;
+read here for all 162 ride types (tmp/research/programs.json). Each entry is one instruction:
+
+| Type | Fields | Does |
+|---|---|---|
+| 12 | three floats (e.g. 50, 30, 10) | header |
+| 10 | value, stat | setup values (15, 18, 20…) |
+| 8 | E, I, N, stat, group, factor | **ratings += (E, I, N) × stat × factor** (stat 0 = the constant 1) |
+| 4 | stat, group, value | guard: stat **<** value |
+| 7 | stat, group, value | guard: stat **≥** value |
+| 2 | stat, group, value | guard: stat **=** value (yes/no features) |
+| 6 | stat, group, value | guard: stat **>** value |
+| 9 | three floats | **ratings × (a, b, c)** — always 0.5, 0.5, 0.5: halve everything |
+| 0 | | separator |
+| 11 | value, stat | trailer |
+
+Guards apply to the next action, and several guards in a row must all hold (the guard meanings are read from how the
+programs are built, e.g. `< 6000` followed by its `≥ 6000` twin). The Looping Coaster's program, decoded:
+
+```
+E += 0.7 x min(s15, 6000) / 6000
+if s7 = 1:  E += 0.45, I -= 0.25, N -= 0.2
+if s8 = 1:  E += 0.4,  I += 0.05
+E += 0.2 x s3 / 7;   E -= 0.2 x s1 / 7
+(E, I, N) += (0.25, 0.5, 0.2) x s13 / 37
+(E, I, N) += (0.4, 0.6, 0) x s14 / 9
+E += 0.6 x min(s4, 150) / 150
+(E, I, N) += (0.6, 6.0, 2.5) x G0 + (1.8, 2.0, 4.0) x G1 + (1.0, 3.0, 1.5) x G2 + (1.2, 1.5, 1.5) x G3   [group 512]
+E += 4.5 x s32;  E += 0.24 x s5;  (E, I, N) += (3.0, 0.5, 0.2)
+halve all: if s21 < 7 and s22 < 1;  if s13 < 10;  if s17 > -0.1 and s22 < 1;  if s20 < 2
+```
+
+That is why, per ride type, the stored ratings of the game's designs fit a linear model of their test results almost
+exactly (Looping Coaster and Body Slide R² = 1.000, Wooden Coaster 0.93–0.997) while all coasters together don't
+(0.5–0.7). Group 256 stats are ride measurements; group 512 are four G-force terms that carry most of the intensity
+and nausea (Heartline's older program writes the same four as stats 33–36). Which measurement each stat number is, is
+inferred from the scales the programs use, not read from code: s13 ≈ top speed (÷37–45, "below 10 → halve"),
+s15 ≈ ride length (thresholds 100–6,000), s4 ≈ ride time (÷150), s14 ≈ inversions or drops (÷9), s18 a G value
+(compared with 1.2–1.5), s1 / s3 counts (÷7), s7 / s8 yes/no features.
+
+So a custom ride's ratings can be changed by editing its program in its OVL — the same writer the Heartline loop
+uses could do it.
+
 ## Still open
 
-- The IdealGuests formula (from appeal, park rating, publicity and the generation rate) and the spawn interval.
-- The full guest state machine (state numbers → walking, queueing, on ride, eating, leaving…).
-- How the decision code (`0x7c34f0`) weighs intensity, nausea, price, queue and needs against each other.
-- The ride rating formulas (excitement / intensity / nausea from the thrill accumulators and G-forces).
+- The formula that produces the ideal guests figure (Park+0x18c), and the spawn interval.
+- The exact stat numbers of the rating programs (the lookup isn't a plain switch and wasn't found), and the four
+  G-force terms of group 512.
+- The weighting inside a guest's choice of ride (price, queue, needs against the assessment interface).

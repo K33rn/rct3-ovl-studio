@@ -1492,3 +1492,17 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - Ride choice 0x7592aa: comfort band [IntensityMin, IntensityMax] with a 25 % fade at each end; unrated rides count
   as intensity 10; nausea limit 2 x NauseaTolerance + 2, penalty (nausea - limit) x 0.5.
 - Open: IdealGuests formula, guest state names, the decision weighting (0x7c34f0), ride rating formulas.
+
+## 2026-10-23: research, second pass (docs/research-physics-and-guests.md updated)
+- Guest states named from 6,800 guests in all campaign parks plus the exe's state descriptions (0x7c8d23): 0 new,
+  4 heading somewhere, 7 queueing (sub-states from the code), 8 on a ride, 10 shop / gallery, 12 bench, 13 outside the
+  park, 14 park entrance, 16 walking, 19 fireworks, 20 entertainer, 0x100+ pool states (259 swimming, 258 high dive,
+  260 jacuzzi).
+- Correction: 0x7592aa + 0x7c34f0 rank a guest's feelings about a ride (neutral / too tame / in band / too intense /
+  sick) and pick the on-ride reaction animation the seat allows (0x7d647b) - not the choice to ride.
+- Ride ratings are a per-ride-type program in the OVL (RideOption list: type 8 add (E,I,N) x stat x factor, 4/7/2/6
+  guards <, >=, =, >, 9 halve, 0 separator); programs read for 162 ride types (tmp/research/programs.json). Per type
+  the designs' ratings fit their test results linearly (R2 1.000 for Looping Coaster / Body Slide). Stat numbers
+  inferred from scales; their lookup in the exe not found.
+- Ideal guests live at Park+0x18c (toolbar debug tooltip 0x658386); park graph histories decoded (67 floats, newest
+  first); the guest-added handler 0x704ab0 counts guests per age group. The ideal-guests formula is still open.

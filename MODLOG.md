@@ -1477,3 +1477,18 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   writer round trip 150/150).
 - Tree: "No new folders or files" only answers the Refresh button; the automatic check (coming back to the window,
   back from the Mod Loader) is quiet unless it finds something. tests/ui_refresh_quiet.py.
+
+## 2026-10-23: research - train physics, guest spawning and behaviour (docs/research-physics-and-guests.md)
+- Method: the save-field registrations in the exe (push offset/size/type/name, call 0x8088c0) give each saved
+  object's layout (train 0x56c4bb, park 0x707b1b, guest 0x76bd23); the code using those offsets was found by
+  scanning every instruction for [reg+offset] (tmp/research/scanfp.py, cooc.py); values from four campaign parks.
+- Train step 0x567390: friction multiplier (NoFriction cheat 0, LowFriction 0.3, else the ride type's +0x6c0);
+  static friction holds a stopped train while |F| <= mu_s N k; rolling friction mu_d N k and drag c v^2 oppose
+  motion; a = F/m, v += a dt; some states clamp v at 0 (no roll-back). Gravity (0, -9.81, 0) in the car code.
+  rit +0x2c / +0x30 / +0x34 (Importer speed_unk01..03) = dynamic friction, static friction, drag coefficient.
+- Guests spawn at GuestInjectionPoint scenery (map edges), not at the entrance: for a park entrance the game picks
+  the injection point with the shortest walking route to it (0x786f70 via 0x708a30); entrances chosen at random
+  (0x708980). Demographics weights (families, couples, gangs...) and the park's generation settings recorded.
+- Ride choice 0x7592aa: comfort band [IntensityMin, IntensityMax] with a 25 % fade at each end; unrated rides count
+  as intensity 10; nausea limit 2 x NauseaTolerance + 2, penalty (nausea - limit) x 0.5.
+- Open: IdealGuests formula, guest state names, the decision weighting (0x7c34f0), ride rating formulas.

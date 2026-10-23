@@ -1424,3 +1424,17 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   once per viewer run (↻ Reload got the same list). Now it checks the files' (mtime, size) and the Mod Loader records'
   stamp on each call: unchanged 0.01 s; added / changed files are read alone (2 added: 0.18 s), removed ones drop out,
   and every effect is sorted again. tests/fw_new_files.py (scratch folder: an AQUA copy -> water, a peony -> firework).
+
+## 2026-10-22: user screenshots - console looked wrong, a line through the main viewer's message, numbered CFR animations
+- Message console: MessageConsole_Left / _Right / _Top are one picture (pink-striped frame, white recess, the "="
+  handle printed where Left and Right meet). Stretching their 1 px middle column with image smoothing blended in the
+  neighbouring handle column (a grey smear along the bottom strip) and made seams between the stacked Top pieces; the
+  extra handle lines drawn on top made a dark block. Now: drawStretched draws without smoothing and each part reaches
+  0.6 px under the next (hairline gaps at fractional zoom), Left runs 1 px under Right, no handle of our own, and the
+  console is drawn before the top bar as in the game - closed it sits behind the bar (bottom y 24) and its handle
+  shows in the notch as the game's white half-disc. Compared with the game's screenshot side by side.
+- Main viewer: the camera started at the origin, level with the grid, so the grid was one line across the middle
+  through the messages there; it now starts above it (14, 10, 18), and messages get a dark text shadow.
+- CFR animations '1Idle', '2Start', '3Loop', '4Stop' (Kamikaze, Mega Disko, Power Twist): the numbers are in the files
+  (the authors' tools order them so); the animation menu shows them without it (value stays the file's name).
+  ui_rides / ui_cfr / ui_hud_drag / ui_hud_sim pass (ui_rides now dismisses the tour first - it timed out before).

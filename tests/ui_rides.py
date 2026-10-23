@@ -13,6 +13,7 @@ with sync_playwright() as p:
     pg = b.new_page(viewport={'width': 1400, 'height': 850})
     errors = []
     pg.on('pageerror', lambda e: errors.append(str(e)))
+    pg.add_init_script("try { localStorage.setItem('rct3ovl.tour.main', '1'); } catch (e) {}")
     pg.goto(base + '/')
     pg.wait_for_function("document.getElementById('rootinfo').textContent.includes('OVL pairs')", timeout=120000)
     print('buttons:', pg.eval_on_selector_all('.head h1 button', 'bs => bs.map(b => b.textContent)'))

@@ -1102,7 +1102,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   const HUD_VIEWS = { all: [0, 0, HUD_W, HUD_H], top: [290, 0, 700, 40], left: [0, 145, 120, 480] };
   const HS = { view: 'all', speed: 1, weather: 'IconSun', hat: 'Difficulty_Hat_Apprentice', dn: 'GUI2_DayNightCycle_DayNight', career: false, fireworks: false, animals: false, sel: null, hover: null, cv: null, icons: new Map(), xf: null,
     sim: false, fly: null, item: null, win: null, dnOpen: false, toggles: new Set(), hits: [], texts: null,
-    con: { bottom: 0, msgs: [], scroll: 0, view: 'closed' }, conEls: [], drag: null, dragged: false };
+    con: { bottom: 0, msgs: [], scroll: 0, view: 'closed' }, conEls: [], conHits: [], drag: null, dragged: false };
   // ---- the message console (the notification bar), as seen in the game (Steam, sandbox, 1280 x 800) --------------------
   // It hangs from the top bar's notch: drag its handle ("Click and drag open") down and it opens to wherever it is let
   // go, up to MessageConsole_Left's height + 315 (RCT3plus.exe 0x61c1a0). 472 wide at x 385; striped rows (white /
@@ -1131,27 +1131,31 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   }
   const conRows = () => Math.max(0, Math.floor((HS.con.bottom - CON.strip - CON.top) / CON.row));
   const conMaxScroll = () => Math.max(0, HS.con.msgs.length - conRows());
-  // draws the console (open or closed); its pieces go into els (to select and edit them) and its handles into hits
+  // draws the console, under the top bar as the game does: closed it sits behind the bar (bottom at y 24) and only its
+  // handle shows through the notch; the handle is part of its picture (MessageConsole_Left / _Right meet under it).
+  // Its pieces go into els (to select and edit them) and its handles into hits.
+  const CON_CLOSED = 24;
   function drawConsole(x, hits, els) {
-    const c = HS.con, b = c.bottom, X = CON.x, Wd = CON.w;
+    const c = HS.con, open = c.bottom > CON.top + 6, b = open ? c.bottom : CON_CLOSED, X = CON.x, Wd = CON.w;
     const piece = (n, dx, dy, dw, dh, label) => {
       const g = iconByName(n), src = HS.icons.get(n);
       if (g && src) { if (g.xs) drawStretched(x, src, g, dx, dy, dw, dh); else x.drawImage(src, dx, dy, dw, dh); }
       els?.push({ id: 'con_' + n, label, widget: 'MessageConsole', icons: [n], box: [dx, dy, dw, dh].map(Math.round), sliced: !!g?.xs });
     };
-    if (b <= CON.top + 6) {            // closed: only its handle in the notch
-      x.fillStyle = '#000'; for (let k = 0; k < 3; k++) x.fillRect(616, 14 + 2 * k, 9, 1);
+    const lh = iconByName('MessageConsole_Left') ? Math.abs(iconByName('MessageConsole_Left').rect[3] - iconByName('MessageConsole_Left').rect[1]) : 39;
+    const th = iconByName('MessageConsole_Top') ? Math.abs(iconByName('MessageConsole_Top').rect[3] - iconByName('MessageConsole_Top').rect[1]) : 36;
+    x.save(); x.beginPath(); x.rect(X - 6, 0, Wd + 12, b + 8); x.clip();
+    if (!open) {
+      piece('MessageConsole_Left', X, b - lh, Math.round(Wd / 2) + 1, lh, 'Message console (bottom left)');
+      piece('MessageConsole_Right', X + Math.round(Wd / 2), b - lh, Wd - Math.round(Wd / 2), lh, 'Message console (bottom right)');
+      x.restore();
       hits?.push({ id: 'barM', key: 'conHandle', box: [600, 0, 38, 23], label: 'Message console', drag: 'con' });
       return;
     }
-    const lh = iconByName('MessageConsole_Left') ? Math.abs(iconByName('MessageConsole_Left').rect[3] - iconByName('MessageConsole_Left').rect[1]) : 39;
-    const th = iconByName('MessageConsole_Top') ? Math.abs(iconByName('MessageConsole_Top').rect[3] - iconByName('MessageConsole_Top').rect[1]) : 36;
-    x.save(); x.beginPath(); x.rect(X - 6, CON.top, Wd + 12, b - CON.top + 8); x.clip();
-    x.fillStyle = '#0003'; x.fillRect(X + 3, CON.top, Wd, b - CON.top + 3);
     let ty = b - lh, first = true;
     while (ty > CON.top - th) { ty -= th; piece('MessageConsole_Top', X, ty, Wd, th, first ? 'Message console (side pieces)' : null); first = false; }
     if (els) els.splice(1, els.length - 1, ...els.slice(1).filter(e => e.label));
-    piece('MessageConsole_Left', X, b - lh, Math.round(Wd / 2), lh, 'Message console (bottom left)');
+    piece('MessageConsole_Left', X, b - lh, Math.round(Wd / 2) + 1, lh, 'Message console (bottom left)');   // under Right's edge
     piece('MessageConsole_Right', X + Math.round(Wd / 2), b - lh, Wd - Math.round(Wd / 2), lh, 'Message console (bottom right)');
     // the rows, from the bottom up: the newest message at the bottom
     const rx = X + 10, rw = Wd - 20, rb = b - CON.strip, n = conRows(), msgs = c.msgs, last = msgs.length - 1 - c.scroll;
@@ -1165,9 +1169,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
         x.fillText(m.text, rx + 32, y + CON.row / 2 + 0.5, rw - 40);
       }
     }
-    x.fillStyle = '#c9c9d0'; x.fillRect(rx + rw - 1, CON.top, 1, rb - CON.top);
-    // the bottom strip: the handle in the middle, Next (down) and Previous (up) messages
-    x.fillStyle = '#000'; for (let k = 0; k < 3; k++) x.fillRect(616, b - 8 + 2 * k, 9, 1);
+    // the bottom strip (its handle is in the picture): Next (down) and Previous (up) messages
     const canUp = c.scroll < conMaxScroll(), canDown = c.scroll > 0;
     for (const [n2, ax, ok, tip, act] of [['SquareArrowDown', 717, canDown, 'TT_GUI2_MessageConsoleNextMessages', () => { c.scroll = Math.max(0, c.scroll - 1); }],
       ['SquareArrowUp', 736, canUp, 'TT_GUI2_MessageConsolePrevoiusMessages', () => { c.scroll = Math.min(conMaxScroll(), c.scroll + 1); }]]) {
@@ -1245,11 +1247,15 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     return { src: [[0, c[1]], [c[1], Math.max(c[2], c[1] + 1)], [c[2], c[3]]], dst: [[0, c[1]], [c[1], c[1] + mid], [c[1] + mid, c[1] + mid + (c[3] - c[2])]] };
   }
   function drawStretched(x, src, g, dx, dy, dw, dh) {
-    const sx = stretchSpans(g.xs, dw), sy = stretchSpans(g.ys, dh);
+    const sx = stretchSpans(g.xs, dw), sy = stretchSpans(g.ys, dh), smooth = x.imageSmoothingEnabled;
+    x.imageSmoothingEnabled = false;          // a 1 px middle stretched with smoothing takes in its neighbours
     sx.src.forEach((a, i) => sy.src.forEach((b, j) => {
       const sw = Math.min(a[1], src.width) - a[0], sh = Math.min(b[1], src.height) - b[0], d = sx.dst[i], e = sy.dst[j];
-      if (sw > 0 && sh > 0 && d[1] > d[0] && e[1] > e[0]) x.drawImage(src, a[0], b[0], sw, sh, dx + d[0], dy + e[0], d[1] - d[0], e[1] - e[0]);
+      // each part reaches a little under the next one: at a fractional zoom the edges would leave hairline gaps
+      const ox = i < sx.src.length - 1 ? 0.6 : 0, oy = j < sy.src.length - 1 ? 0.6 : 0;
+      if (sw > 0 && sh > 0 && d[1] > d[0] && e[1] > e[0]) x.drawImage(src, a[0], b[0], sw, sh, dx + d[0], dy + e[0], d[1] - d[0] + ox, e[1] - e[0] + oy);
     }));
+    x.imageSmoothingEnabled = smooth;
   }
   function showHud(el) {
     el.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column">
@@ -1333,6 +1339,8 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
     const gr = x.createLinearGradient(0, 0, 0, HUD_H); gr.addColorStop(0, '#6f9a24'); gr.addColorStop(1, '#5d8a1c');   // a park's grass
     x.fillStyle = gr; x.fillRect(0, 0, HUD_W, HUD_H);
     x.fillStyle = '#ffffff10'; for (let i = 0; i < 400; i++) { const a = (i * 7919) % HUD_W, b = (i * 104729) % HUD_H; x.fillRect(a, b, 3, 2); }
+    HS.conEls = []; HS.conHits = [];
+    drawConsole(x, HS.conHits, HS.sim || HS.con.view !== 'open' ? null : HS.conEls);
     for (const h of HUD) {
       const [bx, by, bw, bh] = h.box;
       if (h.sliced) { const g = iconByName(h.icons[0]), src = HS.icons.get(h.icons[0]); if (g && src) { if (g.xs) drawStretched(x, src, g, bx, by, bw, bh); else x.drawImage(src, bx, by, bw, bh); } continue; }
@@ -1346,8 +1354,6 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       const ic = HS.icons.get(hudIcon(h)); if (!ic) continue;
       x.globalAlpha = h.dim && !HS[h.dim] ? 0.3 : 1; x.drawImage(ic, bx, by, bw, bh); x.globalAlpha = 1;
     }
-    HS.conEls = [];
-    if (!HS.sim && HS.con.view === 'open') drawConsole(x, null, HS.conEls);
     if (HS.sim) drawHudSim(x, s);
     else for (const [h, col] of [[HS.hover, '#ffffffb0'], [HS.sel, '#f2a93b']]) if (h) { x.strokeStyle = col; x.lineWidth = 1.5 / s; x.strokeRect(h.box[0] - 1, h.box[1] - 1, h.box[2] + 2, h.box[3] + 2); }
     x.restore();
@@ -1434,7 +1440,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       hits.push({ box, label: spaced(n.split('_').pop()), widget: n, icons: [n], act: () => { HS.dn = n; HS.dnOpen = false; const v = $('#hud-dn'); if (v) v.value = n; } });
     });
     // the message console (under the windows)
-    drawConsole(x, hits, null);
+    hits.push(...HS.conHits);
     // the window it opened, where it was dragged to (windows, the quit dialog and the build lists move by their blue
     // title strip in the game; the round tool panels stay put)
     const w = HS.win, wdx = w?.dx || 0, wdy = w?.dy || 0, h0 = hits.length;

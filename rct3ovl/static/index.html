@@ -109,7 +109,7 @@
   #info { position: absolute; left: 10px; bottom: 10px; max-width: 46%; max-height: 45%; overflow: auto; font-size: 12px;
     background: #0e1014cc; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: none; }
   #info table { border-collapse: collapse; } #info td { padding: 1px 8px 1px 0; color: var(--dim); } #info td:first-child { color: var(--text); white-space: nowrap; }
-  #msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); pointer-events: none; text-align: center; padding: 20px; }
+  #msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); pointer-events: none; text-align: center; padding: 20px; text-shadow: 0 0 3px #20232a, 0 0 6px #20232a, 0 0 10px #20232a; }
   .err { color: var(--err) !important; }
   @media (max-width: 900px) { #app { grid-template-columns: 1fr; grid-template-rows: 30vh 25vh 1fr; } .col { border-right: 0; border-bottom: 1px solid var(--line); } .resizer { display: none; } }
 </style>
@@ -189,6 +189,9 @@ scene.background = new THREE.Color('#20232a');
 const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 5000);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+// before anything is opened, look down onto the grid (from its own level it is a line across the middle, through the
+// messages shown there)
+camera.position.set(14, 10, 18); controls.target.set(0, 0, 0); controls.update();
 scene.add(new THREE.HemisphereLight(0xffffff, 0x445066, 1.6));
 const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(3, 6, 4); scene.add(sun);
 let grid = new THREE.GridHelper(20, 20, 0x556070, 0x343a46); scene.add(grid);
@@ -700,7 +703,10 @@ function loadGlb(buf, name, meta, tag, wanted, my) {
     // all animation names this thing has; morph parts / heads / people only carry a few in the file, others reload
     const all = (meta.animations || []).map(a => String(a).split(':')[0]);
     const names = [...new Set([...clips.map(c => c.name), ...all])];
-    const sel = $('anim'); sel.innerHTML = names.map(n => `<option${clips.some(c => c.name === n) ? '' : ' class="reload"'}>${esc(n)}</option>`).join('');
+    // custom flat rides number their animations to keep them in order in the files ('1Idle', '2Start', '3Loop',
+    // '4Stop'); the list shows the names without it (the option's value stays the file's name)
+    const label = n => String(n).replace(/^\d+[\s_-]*(?=[A-Za-z])/, '');
+    const sel = $('anim'); sel.innerHTML = names.map(n => `<option value="${esc(n)}"${clips.some(c => c.name === n) ? '' : ' class="reload"'}>${esc(label(n))}</option>`).join('');
     grp('g-anim', names.length > 0);
     const nv = meta.variants || meta.outfits || 1;
     $('outfit').innerHTML = Array.from({ length: nv }, (_, i) => `<option value="${i}">Variant ${i + 1} of ${nv}</option>`).join('');

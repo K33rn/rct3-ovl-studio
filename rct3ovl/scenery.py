@@ -129,14 +129,16 @@ def list_scenery(lib: Library) -> list[dict]:
     except Exception:
         pass
     out = []
-    for n in sorted(k for k in lib.index['names'] if k.endswith(':sid')):
+    names = lib.index['names']
+    # file by file (the list is sorted below): opening each OVL once instead of again and again
+    for n in sorted((k for k in names if k.endswith(':sid')), key=lambda k: (names[k].lower(), k)):
         try:
             d = _resolve(lib, n)
         except Exception:                               # one broken record shouldn't hide the rest
             d = None
         if d:
             out.append(d)
-    out.sort(key=lambda d: (CATEGORY_ORDER.index(d['category']), d['theme'] != 'Standard', d['theme'], d['title'].lower()))
+    out.sort(key=lambda d: (CATEGORY_ORDER.index(d['category']), d['theme'] != 'Standard', d['theme'], d['title'].lower(), d['name']))
     try:
         json.dump({'stamp': stamp, 'items': out}, open(p, 'w', encoding='utf-8'))
     except OSError:

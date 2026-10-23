@@ -41,47 +41,55 @@ def _key(lib) -> str:
 
 def catalogue(lib) -> list[dict]:
     """Every tex / ftx in the game: {n: name, t: tag, p: OVL pair (relative), w, h, f: format / frames, r: recolour}.
-    Built once (it opens every OVL with pictures) and kept on disk until an OVL changes."""
+    Kept on disk per OVL pair: when files change (a mod installed, a texture saved) only those pairs are read again."""
     cached = getattr(lib, '_texcat', None)
     if cached is not None:
         return cached
     ovls = [o for o in lib.index['ovls'] if not o.get('error') and (o.get('counts', {}).get('tex') or o.get('counts', {}).get('ftx'))]
-    sig = hashlib.md5(json.dumps([(o['path'], o.get('mtime')) for o in ovls]).encode()).hexdigest()
     path = os.path.join(lib.cache_dir, f'texcat_{_key(lib)}.json')
     try:
-        d = json.load(open(path))
-        if d.get('sig') == sig:
-            lib._texcat = d['items']
-            return lib._texcat
+        saved = json.load(open(path)).get('pairs') or {}
     except Exception:
-        pass
-    items = []
+        saved = {}
+    pairs, items = {}, []
     for ov in ovls:
-        try:
-            o, ts = lib.open(ov['path'])
-        except Exception:
-            continue
-        for r in o.resources:
-            if r.loader.tag not in ('tex', 'ftx') or not r.name:
-                continue
-            it = {'n': r.name.split(':')[0], 't': r.loader.tag, 'p': ov['path']}
-            try:
-                if r.loader.tag == 'tex':
-                    bm = ts.tex_bitmap(r)
-                    if bm is None or bm.format == 0x01:
-                        continue
-                    it.update(w=bm.width, h=bm.height, f=FORMAT_NAMES.get(bm.format, hex(bm.format)))
-                else:
-                    n = o.u32(r.data + 28); fr = o.ptr(r.data + 32)
-                    if not n or not fr:
-                        continue
-                    _s, w, h = struct.unpack('<III', o.read(fr, 12))
-                    it.update(w=w, h=h, f=n, r=o.u32(r.data + 16))
-            except OvlError:
-                continue
-            items.append(it)
-    json.dump({'sig': sig, 'items': items}, open(path, 'w'))
+        old = saved.get(ov['path'])
+        if old is not None and old.get('mtime') == ov.get('mtime'):
+            pairs[ov['path']] = old
+        else:
+            pairs[ov['path']] = {'mtime': ov.get('mtime'), 'items': _pair_textures(lib, ov['path'])}
+        items += pairs[ov['path']]['items']
+    if pairs != saved:
+        json.dump({'pairs': pairs}, open(path, 'w'))
     lib._texcat = items
+    return items
+
+
+def _pair_textures(lib, rel: str) -> list[dict]:
+    try:
+        o, ts = lib.open(rel)
+    except Exception:
+        return []
+    items = []
+    for r in o.resources:
+        if r.loader.tag not in ('tex', 'ftx') or not r.name:
+            continue
+        it = {'n': r.name.split(':')[0], 't': r.loader.tag, 'p': rel}
+        try:
+            if r.loader.tag == 'tex':
+                bm = ts.tex_bitmap(r)
+                if bm is None or bm.format == 0x01:
+                    continue
+                it.update(w=bm.width, h=bm.height, f=FORMAT_NAMES.get(bm.format, hex(bm.format)))
+            else:
+                n = o.u32(r.data + 28); fr = o.ptr(r.data + 32)
+                if not n or not fr:
+                    continue
+                _s, w, h = struct.unpack('<III', o.read(fr, 12))
+                it.update(w=w, h=h, f=n, r=o.u32(r.data + 16))
+        except OvlError:
+            continue
+        items.append(it)
     return items
 
 

@@ -1299,3 +1299,23 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   errors) and the Desktop copy. tests/mods_rules.py checks the fix on the real VTR Twister.zip (8 bytes change).
 - The viewer never reads the bsh box, so its framing is unchanged.
 - Not checked: the fixed rides running with riders (only placed / idle checked).
+
+## 2026-10-22: tabs slow to load (user report)
+- Cause: every API request runs under one server lock, and two lists built from the whole game were thrown away
+  whenever ANY OVL changed (a Mod Loader install, the flat-ride fix) and rebuilt on next use, blocking every other tab
+  meanwhile. Measured on the Desktop copy (7,783 sids, ~8,100 pairs): scenery list 212 s in process / 41 s via the
+  server (one /api/tree waited 147 s behind it); texture catalogue 25 s.
+- Fixes (results unchanged - checked):
+  1. library.find / find_near: resources by name from a per-Ovl dict (_names) instead of a pass over every resource;
+     find_near's look into subfolders uses an index of file-name starts (_stem_index) instead of a pass over every
+     OVL per lookup.
+  2. rides._imports: the OVL's sorted resource starts and symbol refs are built once per Ovl and searched with
+     bisect (it sorted both for every record: quadratic in big OVLs; 2/3 of what remained).
+  3. scenery.list_scenery resolves items OVL by OVL (fewer re-opens of the 64-slot cache); ties in the final sort
+     broken by name, so the order is what it was.
+  4. texedit.catalogue cached per OVL pair (mtime): a change rereads only the changed pairs (0.06 s; full 2.4 s).
+     The old one-signature cache file is read as empty once and rebuilt.
+- Scenery list now 6.4-6.8 s from scratch. Old vs new viewer side by side (separate cache homes, git worktree of
+  HEAD): /api/tree, rides, designs, tracksets, scenery, items, people, parks, tx/catalogue identical; 115 sampled
+  /api/ride, scenery_item, trackset, design answers byte-identical.
+- Still one lock: a 6 s rebuild still holds other tabs that long, once after files change.

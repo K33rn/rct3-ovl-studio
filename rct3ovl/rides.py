@@ -2,6 +2,7 @@
 (bsh/shs) and the bone animations (ban) that visual lists for it (typically Static, Start, Loop, Stop)."""
 from __future__ import annotations
 
+import bisect
 import os
 
 from .anims import load_ban, load_svd
@@ -17,9 +18,16 @@ _THEMES = {'vanilla': 'Standard', 'safari': 'Wild!', 'capetyphoon': 'Soaked!'}
 
 
 def _imports(o, r) -> list[str]:
-    starts = sorted({x.data for x in o.resources if x.data > r.data})
-    end = starts[0] if starts else r.data + 4096
-    return [n for n, s in sorted(o.symbol_refs, key=lambda x: x[1]) if r.data <= s < end]
+    """The imports (symbol references) inside resource r's record: from its data up to the next resource's.
+    The sorted lists are kept on the Ovl (sorting them for every record made big OVLs slow)."""
+    srt = o.__dict__.get('_import_sort')
+    if srt is None:
+        refs = sorted(o.symbol_refs, key=lambda x: x[1])
+        srt = o._import_sort = (sorted({x.data for x in o.resources}), refs, [s for _, s in refs])
+    starts, refs, sites = srt
+    i = bisect.bisect_right(starts, r.data)
+    end = starts[i] if i < len(starts) else r.data + 4096
+    return [n for n, _ in refs[bisect.bisect_left(sites, r.data):bisect.bisect_left(sites, end)]]
 
 
 def _group(rel: str) -> str:

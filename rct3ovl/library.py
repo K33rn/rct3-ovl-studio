@@ -16,6 +16,18 @@ def find_pairs(root: str) -> list[str]:
                    for dp, _, fs in os.walk(root) for f in fs if f.lower().endswith('.ovl')})
 
 
+def _names(o: Ovl) -> dict:
+    """An OVL's resources by lower-case name (the first of a name wins, as a pass in order would find it)."""
+    d = o.__dict__.get('_by_name')
+    if d is None:
+        d = {}
+        for r in o.resources:
+            if r.name:
+                d.setdefault(r.name.lower(), r)
+        o._by_name = d
+    return d
+
+
 def _mtime(common: str) -> float:
     """When an OVL pair last changed (the later of its two files)."""
     return max((os.path.getmtime(p) for p in pair_paths(common) if os.path.exists(p)), default=0)
@@ -136,17 +148,15 @@ class Library:
         """'marble:ftx' -> (Ovl, LoaderRef, TextureSet) or None. Looks in `prefer` first."""
         lname = name.lower()
         if prefer is not None:
-            for r in prefer.resources:
-                if r.name.lower() == lname:
-                    return prefer, r, self.open(prefer.files[0].path)[1]
+            r = _names(prefer).get(lname)
+            if r is not None:
+                return prefer, r, self.open(prefer.files[0].path)[1]
         rel = self.index['names'].get(lname)
         if not rel:
             return None
         o, ts = self.open(rel)
-        for r in o.resources:
-            if r.name.lower() == lname:
-                return o, r, ts
-        return None
+        r = _names(o).get(lname)
+        return (o, r, ts) if r is not None else None
 
     def find_near(self, name: str, ovl: Ovl):
         """Like find(), but looks in `ovl`, then in the other OVLs of the same folder (then in its subfolders), before
@@ -177,20 +187,34 @@ class Library:
             # named after the item in a subfolder (EntranceExit\MainEntrance\MainEntrance.common.ovl), while
             # every theme calls its entrance MainEntrance: look in the subfolders' OVLs named like the resource
             stem = name.split(':')[0].lower()
-            for ov in sorted((ov for ov in self.index['ovls'] if not ov.get('error')
-                              and ov['path'].lower().startswith(folder + os.sep)
-                              and os.path.basename(ov['path']).lower().startswith(stem + '.')),
-                             key=lambda ov: ov['path'].count(os.sep)):
-                o, ts = self.open(ov['path'])
-                r = next((r for r in o.resources if r.name.lower() == name.lower()), None)
+            for path in sorted((p for p in self._stems().get(stem, ()) if p.lower().startswith(folder + os.sep)),
+                               key=lambda p: p.count(os.sep)):
+                o, ts = self.open(path)
+                r = _names(o).get(name.lower())
                 if r:
                     return o, r, ts
         if rel:
             o, ts = self.open(rel)
-            for r in o.resources:
-                if r.name.lower() == name.lower():
-                    return o, r, ts
+            r = _names(o).get(name.lower())
+            if r is not None:
+                return o, r, ts
         return hit
+
+    def _stems(self) -> dict:
+        """OVL pairs by the starts of their file name that end before a '.' ('rr03.station.common.ovl' under 'rr03',
+        'rr03.station' and 'rr03.station.common'): find_near's look into subfolders without a pass over every OVL."""
+        st = self.__dict__.get('_stem_index')
+        if st is None:
+            st = {}
+            for ov in self.index['ovls']:
+                if ov.get('error'):
+                    continue
+                b = os.path.basename(ov['path']).lower()
+                for i, c in enumerate(b):
+                    if c == '.':
+                        st.setdefault(b[:i], []).append(ov['path'])
+            self._stem_index = st
+        return st
 
     def animations_for(self, ovl: Ovl, shape) -> list:
         """Bone animations that drive a bone shape: listed by any scenery visual (svd) LOD that uses the shape,

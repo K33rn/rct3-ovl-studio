@@ -469,7 +469,9 @@ async function build() {
     d = { n, fw, life: n.Lifetime || 0, lifeR: n.LifetimeRandom || 0, s0: n.StartSize ?? 1, s1: n.EndSize ?? 1, sR: n.SizeRandom || 0,
       drag: n.Drag || 0, grav: n.GravityScale || 0, stretch: n.VelStretch || 0, sound: n.SoundName || '',
       sndMin: n.SoundMinDist || 70, sndMax: n.SoundMaxDist || 300, spin: n.CameraSpinRate || 0,
-      pspin: (n.SpinRateX || n.SpinRateY) ? [n.SpinRateX || 0, n.SpinRateY || 0] : null,       // the particle turns: its bursts spin
+      // a ParticleBaseDesc (no texture fields) is updated by 0x9c75e0: it never moves and keeps the frame it was born
+      // with - it only fires its emitters and plays its sound. A ParticleDesc (0x9c8390) moves and is reframed every step
+      still: n.kind === 'base',
       up: n.UpScale || 0, spinY: n.SpinRateY || 0,     // a push of UpScale g along its own up, turning about its path (corkscrews)
       burnN: (n.BurnLength | 0) > 1 ? Math.min(256, n.BurnLength | 0) : 0, burnS: n.BurnSize ?? 0.2,   // a burn trail
       R: curve(n.ColourR), G: curve(n.ColourG), B: curve(n.ColourB),
@@ -508,12 +510,37 @@ async function build() {
     const a = Math.random() * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
     return [u[0] * c + w[0] * s, u[1] * c + w[1] * s, u[2] * c + w[2] * s];
   }
-  function rotXYZ(v, rx, ry, rz) {
+  // A particle's frame (RCT3plus.exe): three rows - side r0, travel r1, up r2 (r0 = r1 x r2). The emitter turns the new
+  // particle's frame by SpinOffset + SpinRate x t about X, then Y, then Z (0x9cbdf0):
+  //  - ParticleRelative: the parent's frame, turned about its OWN axes (0xbedd30 / 0xbeddc0 / 0xbede50: the rows mix)
+  //  - else: the world's frame (r0 +X, r1 +Y, r2 +Z), each row turned about the WORLD axes (0xbedee0 / 0xbedf70 /
+  //    0xbee000), in the game's sense of turn
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const comb = (a, ka, b, kb) => [a[0] * ka + b[0] * kb, a[1] * ka + b[1] * kb, a[2] * ka + b[2] * kb];
+  function turnOwn(F, ax, ay, az) {
+    let [r0, r1, r2] = F, c, s;
+    if (ax) { c = Math.cos(ax); s = Math.sin(ax); [r1, r2] = [comb(r1, c, r2, s), comb(r2, c, r1, -s)]; }
+    if (ay) { c = Math.cos(ay); s = Math.sin(ay); [r0, r2] = [comb(r0, c, r2, -s), comb(r0, s, r2, c)]; }
+    if (az) { c = Math.cos(az); s = Math.sin(az); [r0, r1] = [comb(r0, c, r1, s), comb(r1, c, r0, -s)]; }
+    return [r0, r1, r2];
+  }
+  function turnWorld(v, ax, ay, az) {
     let [x, y, z] = v, c, s;
-    if (rx) { c = Math.cos(rx); s = Math.sin(rx); [y, z] = [y * c - z * s, y * s + z * c]; }
-    if (ry) { c = Math.cos(ry); s = Math.sin(ry); [x, z] = [x * c + z * s, -x * s + z * c]; }
-    if (rz) { c = Math.cos(rz); s = Math.sin(rz); [x, y] = [x * c - y * s, x * s + y * c]; }
+    if (ax) { c = Math.cos(ax); s = Math.sin(ax); [y, z] = [c * y + s * z, c * z - s * y]; }
+    if (ay) { c = Math.cos(ay); s = Math.sin(ay); [x, z] = [c * x - s * z, s * x + c * z]; }
+    if (az) { c = Math.cos(az); s = Math.sin(az); [x, y] = [c * x + s * y, c * y - s * x]; }
     return [x, y, z];
+  }
+  // each update (0x9c8390) ends by rebuilding the frame from the velocity (0xbed6e0): travel = v / |v| - world +Z when
+  // the particle stands still (v exactly 0) - side = travel x up, normalised, up = side x travel. In place: it runs for
+  // every particle that has emitters, every step
+  function reframe(p) {
+    const h = p.h, u = p.u, sp = Math.hypot(p.vx, p.vy, p.vz);
+    if (sp > 0) { h[0] = p.vx / sp; h[1] = p.vy / sp; h[2] = p.vz / sp; } else { h[0] = 0; h[1] = 0; h[2] = 1; }
+    let ax = h[1] * u[2] - h[2] * u[1], ay = h[2] * u[0] - h[0] * u[2], az = h[0] * u[1] - h[1] * u[0];
+    const l = Math.hypot(ax, ay, az);
+    if (l > 0) { ax /= l; ay /= l; az /= l; } else { ax = 0; ay = 0; az = 1; }
+    u[0] = ay * h[2] - az * h[1]; u[1] = az * h[0] - ax * h[2]; u[2] = ax * h[1] - ay * h[0];
   }
   let parts = [], ghosts = [], silent = false;   // ghosts: dead particles whose burn trail is still fading
   // Burn Length (RCT3plus.exe 0x9c8930): a particle with more than 1 gets a trail of its last Burn Length positions,
@@ -540,9 +567,15 @@ async function build() {
   // and however the tube leans: from the game's Mortar wall x 8 (tubes 20 deg off vertical) Gemini Rockets' shells
   // (a non-relative emitter) climb almost straight up
   const WORLD_DIR = [0, 1, 0], WORLD_UP = [0, 0, 1];
+  // a new particle's up, kept across its heading (the launch passes the tube's direction with up +Z; emitted frames
+  // already are, up to the mixing of the parent's two frames)
+  function upAcross(h, u) {
+    const k = u[0] * h[0] + u[1] * h[1] + u[2] * h[2], v = [u[0] - k * h[0], u[1] - k * h[1], u[2] - k * h[2]], l = Math.hypot(...v);
+    return l > 1e-6 ? [v[0] / l, v[1] / l, v[2] / l] : [u[0], u[1], u[2]];
+  }
   function spawn(d, x, y, z, vx, vy, vz, h, parent, mods, u) {
     if (parts.length >= MAX_PARTICLES) return null;
-    const p = { d, x, y, z, vx, vy, vz, h, u: u || [0, 0, 1], age: 0, life: Math.max(1e-3, d.life + Math.random() * d.lifeR), em: new Float32Array(d.emitters.length),
+    const p = { d, x, y, z, vx, vy, vz, h: [h[0], h[1], h[2]], u: upAcross(h, u || [0, 0, 1]), age: 0, life: Math.max(1e-3, d.life + Math.random() * d.lifeR), em: new Float32Array(d.emitters.length),
                 r0: Math.random(), mods, delays: d.emitters.map(e => e.tr ? Math.random() * e.tr : 0) };
     if (d.burnN) Object.assign(p, { tr: new Float32Array(d.burnN * 6), th: 0, tn: 0, tnext: 0, ox: x, oy: y, oz: z });
     parts.push(p);
@@ -568,8 +601,10 @@ async function build() {
       if (n <= 0) continue;
       p.em[i] += n;
       const cd = descInfo(p.d.fw, e.desc);
-      const sp = Math.hypot(p.vx, p.vy, p.vz);
-      const h0 = e.rel ? (sp > 0.05 ? [p.vx / sp, p.vy / sp, p.vz / sp] : p.h) : WORLD_DIR, u0 = e.rel ? p.u : WORLD_UP;
+      // the parent's frame at a particle's release time: its frame before this step and after, mixed linearly
+      // (0x9cbf04-0x9cc1dd: no renormalising) - a still ParticleDesc is turned to +Z by its first step, but what it
+      // releases at the start of its window still leaves along the frame it was born with
+      const hp = p.hp || p.h, upv = p.up || p.u;
       const spun = e.spin[0] || e.spin[1] || e.spin[2] || e.spin0[0] || e.spin0[1] || e.spin0[2];
       for (let k = 0; k < n; k++) {
         // each particle leaves at its own time in the window (RCT3plus.exe 0x9cbdf0: t = start + k x (window / N), the
@@ -578,11 +613,17 @@ async function build() {
         const tj = (e.b <= e.a ? e.a : e.a + (e.b - e.a) * (j0 + k) / N) * p.life + p.delays[i];
         const back = clamp(p.age - tj, 0, dt);
         const ta = p.age - back;
-        // the new particle's frame: its parent's when ParticleRelative - along the parent's travel, with its up - else
-        // the world's (straight up); then turned by the emitter's spin
-        let h = h0, u = u0;
-        if (e.rel && p.d.pspin) { h = rotXYZ(h, p.d.pspin[0] * ta, p.d.pspin[1] * ta, 0); u = rotXYZ(u, p.d.pspin[0] * ta, p.d.pspin[1] * ta, 0); }
-        if (spun) { const a = [e.spin0[0] + e.spin[0] * ta, e.spin0[1] + e.spin[1] * ta, e.spin0[2] + e.spin[2] * ta]; h = rotXYZ(h, ...a); u = rotXYZ(u, ...a); }
+        // the new particle's frame: its parent's (travel, up) when ParticleRelative, else the world's (straight up);
+        // then turned by the emitter's spin (see turnOwn / turnWorld)
+        const w = p.fresh || !p.hp ? 1 : 1 - back / dt, w0 = 1 - w;
+        const h1 = comb(hp, w0, p.h, w), u1 = comb(upv, w0, p.u, w);
+        const F0 = e.rel ? [cross(h1, u1), h1, u1] : [cross(WORLD_DIR, WORLD_UP), WORLD_DIR, WORLD_UP];
+        let F = F0;
+        if (spun) {
+          const a = [e.spin0[0] + e.spin[0] * ta, e.spin0[1] + e.spin[1] * ta, e.spin0[2] + e.spin[2] * ta];
+          F = e.rel ? turnOwn(F0, ...a) : F0.map(r => turnWorld(r, ...a));
+        }
+        const h = F[1], u = F[2];
         // as RCT3plus.exe 0x9cc5c4-0x9cc8f9 draws them: SpeedRandom x a direction (a point of the unit cube, normalised),
         // SpeedRandomCircle x a direction in the frame's ring; PositionRandom a point inside a ball of radius 1/2
         // (a cube point kept when |p| <= 0.5), PositionRandomCircle one inside a disk of radius 1/2
@@ -593,7 +634,8 @@ async function build() {
         const vy = h[1] * e.speed + s[1] * sr + c[1] * e.src + p.vy * e.psf;
         const vz = h[2] * e.speed + s[2] * sr + c[2] * e.src + p.vz * e.psf;
         // where the parent was at its time, then moved on by its own velocity for the rest of the step
-        let x = p.x - p.vx * back + ps[0] * pr + vx * back, y = p.y - p.vy * back + ps[1] * pr + vy * back, z = p.z - p.vz * back + ps[2] * pr + vz * back;
+        const mv = p.d.still ? 0 : back;   // a still parent did not move during the step
+        let x = p.x - p.vx * mv + ps[0] * pr + vx * back, y = p.y - p.vy * mv + ps[1] * pr + vy * back, z = p.z - p.vz * mv + ps[2] * pr + vz * back;
         if (pc) { x += pc[0] * e.prc; y += pc[1] * e.prc; z += pc[2] * e.prc; }
         const q = spawn(cd, x, y, z, vx, vy, vz, h, e.rel ? p : null, p.mods, u);
         if (!q) return;
@@ -610,23 +652,15 @@ async function build() {
   // spin and 0.94 with it - 0.64 x the push (fitted with fine steps; 1.0 gives 0.31) matches both. Measured, not derived.
   const UP_SEEN = 0.64;
   function upPush(p, d, dt) {
-    let u = p.u;
-    const sp = Math.hypot(p.vx, p.vy, p.vz);
-    if (sp > 1e-4) {
-      const n = [p.vx / sp, p.vy / sp, p.vz / sp], k = u[0] * n[0] + u[1] * n[1] + u[2] * n[2];
-      u = [u[0] - k * n[0], u[1] - k * n[1], u[2] - k * n[2]];
-      let l = Math.hypot(...u);
-      if (l < 1e-4) { u = randPerp(n); l = 1; }
-      u = u.map(x => x / l);
-      if (d.spinY) {
-        const a = d.spinY * dt, c = Math.cos(a), s = Math.sin(a);
-        const w = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
-        u = [u[0] * c + w[0] * s, u[1] * c + w[1] * s, u[2] * c + w[2] * s];
-      }
-      p.u = u;
-    }
-    const a = GRAVITY * d.up * UP_SEEN * dt;
+    const u = p.u, a = GRAVITY * d.up * UP_SEEN * dt;
     p.vx += u[0] * a; p.vy += u[1] * a; p.vz += u[2] * a;
+  }
+  // SpinRateY turns the frame about its travel (0xbeddc0 on rows 0 / 2): up' = cos x up + sin x side. SpinRateX turns it
+  // about its side (0xbedd30), but the rebuild that follows puts travel back along the velocity, so it leaves no trace
+  function spinUp(p, a) {
+    const h = p.h, u = p.u, c = Math.cos(a), s = Math.sin(a);
+    const sx = h[1] * u[2] - h[2] * u[1], sy = h[2] * u[0] - h[0] * u[2], sz = h[0] * u[1] - h[1] * u[0];
+    u[0] = c * u[0] + s * sx; u[1] = c * u[1] + s * sy; u[2] = c * u[2] + s * sz;
   }
   function step(dt) {
     const g = GRAVITY * dt;
@@ -638,11 +672,15 @@ async function build() {
       // a pushed particle whose up turns fast (Thunder Blitz: 31 rad/s) is moved in steps of at most 0.1 rad of
       // turn: at 1/60 s the push no longer averages out round the path and the stars drift and climb far too much
       const n = d.up && d.spinY ? Math.min(16, Math.ceil(Math.abs(d.spinY) * dt / 0.1)) : 1, h = dt / n;
-      for (let s = 0; s < n; s++) {
+      const framed = !d.still && (d.up || d.spinY || d.emitters.length);   // its frame is used: pushed, or fired from
+      if (framed) { const a = p.hp ||= [0, 0, 0], b = p.up ||= [0, 0, 0]; a[0] = p.h[0]; a[1] = p.h[1]; a[2] = p.h[2]; b[0] = p.u[0]; b[1] = p.u[1]; b[2] = p.u[2]; }
+      for (let s = 0; s < n && !d.still; s++) {
+        if (d.spinY && framed) spinUp(p, d.spinY * h);
         if (d.grav) p.vy -= g / n * d.grav;
         if (d.up) upPush(p, d, h);
         if (d.drag) { const k = Math.max(0, 1 - d.drag * h); p.vx *= k; p.vy *= k; p.vz *= k; }
         p.x += p.vx * h; p.y += p.vy * h; p.z += p.vz * h;
+        if (framed) reframe(p);
       }
       // no carrying along with the parent: the game's update (0x9c8390) only moves a particle by its own velocity - a
       // child follows its parent through Parent Speed Factor at birth (moved as well, the Comet's trail ran ahead of

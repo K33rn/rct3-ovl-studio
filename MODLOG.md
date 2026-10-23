@@ -1319,3 +1319,37 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   HEAD): /api/tree, rides, designs, tracksets, scenery, items, people, parks, tx/catalogue identical; 115 sampled
   /api/ride, scenery_item, trackset, design answers byte-identical.
 - Still one lock: a 6 s rebuild still holds other tabs that long, once after files change.
+
+## 2026-10-22: fireworks not bursting in spheres (user's screenshots: WP-W1 Grand Willow, Lux Flare, an AFE water effect)
+- The W1 files are not on this PC (only WP-W1-Co-G-Comet); tested on the installed custom packs instead. 751 of 896
+  effects fire from a TURNED RELATIVE frame (ParticleRelative + SpinOffset/Rate + speed) - every AFE-made pack.
+- Read from RCT3plus.exe (disassembly + Unicorn emulation of the routines, scratch scripts):
+  1. Frame rows: side r0, travel r1, up r2. Emitter (0x9cbdf0): ParticleRelative ([esi+0x84]) -> the parent's frame
+     turned about its OWN axes, X then Y then Z (0xbedd30: r1' = c r1 + s r2, r2' = c r2 - s r1; 0xbeddc0: r0' = c r0 -
+     s r2, r2' = s r0 + c r2; 0xbede50: r1' = c r1 - s r0, r0' = c r0 + s r1); else identity turned about the WORLD axes
+     (0xbedee0: y' = c y + s z, z' = c z - s y; 0xbedf70: x' = c x - s z, z' = s x + c z; 0xbee000: x' = c x + s y,
+     y' = c y - s x). The viewer turned both about world axes, in the opposite sense (mirror image).
+  2. Parent state at a release time: previous and new frame rows mixed linearly by w = (t - t0)/(t1 - t0) (+ TimeRandom
+     jitter), no renormalising (0x9cbf04-0x9cc1dd).
+  3. ParticleDesc update (0x9c8390, vtable 0xf84dec): turn about own X by SpinRateX dt and own Y by SpinRateY dt, forces,
+     move, then rebuild (0xbed6e0, args velocity, old up): travel = v/|v|, or (0,0,1) when v is exactly 0 (checked in
+     the emulator); side = travel x up (normalised); up = side x travel. So SpinRateX leaves no trace, SpinRateY turns
+     the up about the path - for every particle, not only UpScale ones.
+  4. ParticleBaseDesc update (0x9c75e0, vtable 0xf84b98; fields Lifetime / LifetimeRandom / RefCount): no movement, no
+     frame rebuild - it only fires its emitters, plays its sound, dies at time 1. The viewer moved base particles.
+  The third emitter argument [ebp+0x10] = parent desc [esi+0xc] (Lifetime): spin angle = fraction x life x rate (s).
+- fireworks.js: turnOwn / turnWorld (game signs), reframe() each step for particles with emitters / UpScale / spin,
+  spinUp() for SpinRateY, base particles still, release frame mixed from the parent's frame before / after the step;
+  the guessed parent-spin turn (pspin, world axes) removed; spawn keeps up across the heading (tubes).
+- Viewer old vs new (picker camera and a wide one): AnonDXD-P4-Po-GChaos-IL a few balls -> a full red/white sphere;
+  Kriscendo Sunflower a white blob -> spreading stars; PF2 Sol rounder (old stretched tall); Snowflake Peony no longer
+  leaning; GreenPeony unchanged (fw_vs_game ratios as before).
+- In the game (Steam, sandbox, MixMaster picker preview, recorded): AnonDXD Chaos = an expanding red/white sphere (the
+  new viewer); PF2 Sol-B = a round blue sphere; Spheres of Fire = column with lobes off to the sides (new: two lobes;
+  old: one column). Picker: list scrolls with the wheel (1-2 rows a notch); tooltips give full names.
+- AQUA water (1 A AQUA (N.L) RGB (5m)): game = a ~5 m magenta jet; viewer old and new = ~7 m jet (same), in orange (the
+  effect's ColourModifier 1/0.57/0; the picker preview colours it magenta). Its nozzle (GravityScale 1.8, no speed)
+  falls through the ground in the viewer - not checked in the game. Not changed.
+- tests/fw_frame_rules.py (made-up fireworks: world X turn sign, own X turn on a sideways parent, base particle still,
+  still ParticleDesc fires along +Z): new passes, old code fails all five. All 896 effects 6 s without NaN; fw_fan,
+  fw_game_made, ui_fireworks (its two 404s are there with the old code too) pass.

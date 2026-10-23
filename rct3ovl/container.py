@@ -265,10 +265,12 @@ class Ovl:
                     self.symbols[b.vaddr + i * size] = s
                     self.symbol_by_name.setdefault(s.name, s)
             extra_pos = f.data_end
+            nrefs = 0                   # symbol references the loaders resolve; the block exists only if there are any
             if len(ch2) > 1 and ch2[1].size:
                 b = ch2[1]
                 for i in range(b.size // 20):
                     ltype, dp, hx, sym, nres = struct.unpack_from('<IIIII', f.data, b.file_offset + i * 20)
+                    nrefs += nres
                     if f.version == 5:
                         hx &= 0xFFFF
                     ref = LoaderRef(f.loaders[ltype] if ltype < len(f.loaders) else Loader('?', '?', 0, '?'),
@@ -280,9 +282,9 @@ class Ovl:
                         ref.extra.append(f.data[extra_pos + 4:extra_pos + 4 + n]); ref.extra_at.append(extra_pos + 4)
                         extra_pos += 4 + n
                     self.resources.append(ref)
-            if len(ch2) > 2 and ch2[2].size:
+            if len(ch2) > 2 and ch2[2].size and (nrefs or f.version != 1):
                 b = ch2[2]; size = 12 if f.version == 1 else 16
-                for i in range(b.size // size):
+                for i in range(min(b.size // size, nrefs) if f.version == 1 else b.size // size):
                     site, sp = struct.unpack_from('<II', f.data, b.file_offset + i * size)
                     self.symbol_refs.append((self._safe_str(sp), site))
 

@@ -379,9 +379,19 @@ def restore(lib, rel: str) -> None:
             except PermissionError:
                 raise PermissionError(f'{os.path.basename(p)} is in use - close RollerCoaster Tycoon 3 and try again')
             os.remove(_lp(src))
+    added = e.get(rel, {}).get('added', [])
+    for f in added:                                 # files the change put beside it (new track pieces)
+        try:
+            os.remove(_lp(os.path.join(lib.root, f)))
+        except FileNotFoundError:
+            pass
+        except PermissionError:
+            raise PermissionError(f'{os.path.basename(f)} is in use - close RollerCoaster Tycoon 3 and try again')
     e.pop(rel, None)
     _save_edits(lib, e)
     _reload(lib, rel)
+    if added and hasattr(lib, 'refresh_index'):
+        lib.refresh_index()
 
 
 # ---- GUI: icons and texts -------------------------------------------------------------------------------------

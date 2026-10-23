@@ -904,6 +904,9 @@ def _found(lib: Library, owned: set) -> list:
     groups = {}
     st = stock()
     root = ar['game']
+    # files the editors added beside a change they made (the Heartline loop's models): part of that change, listed with it
+    from . import texedit
+    st = st | {f.replace('\\', '/').lower() for e in texedit.edits(lib).values() for f in e.get('added', [])}
     for dp, dn, fn in os.walk(root):
         for f in fn:
             rel = os.path.relpath(os.path.join(dp, f), root).replace('\\', '/')
@@ -991,7 +994,28 @@ def scan(lib: Library) -> dict:
     pkgs = [summary(r, ar) for r in recs]
     found = [summary(g, ar) for g in _found(lib, owned)]
     return {'areas': ar, 'kinds': {k: {'label': v[0], 'area': v[1], 'tab': v[2]} for k, v in KINDS.items()},
-            'packages': pkgs, 'found': found, 'sevenzip': bool(_seven_zip()), 'ride_fixes': ride_fixes(lib)}
+            'packages': pkgs, 'found': found, 'sevenzip': bool(_seven_zip()), 'ride_fixes': ride_fixes(lib),
+            'additions': additions(lib)}
+
+
+def additions(lib: Library) -> list:
+    """New pieces this program can add to the game's own rides (built from the user's game files)."""
+    from . import trackloop
+    try:
+        return [trackloop.status(lib)] if os.path.exists(os.path.join(lib.root, trackloop._rel(f'{trackloop.T7}/Track7'))) else []
+    except Exception:
+        return []
+
+
+def set_addition(lib: Library, aid: str, on: bool) -> dict:
+    from . import trackloop
+    if aid != 'heartline-loop':
+        raise ValueError(f'no addition {aid}')
+    if on:
+        trackloop.install(lib)
+    else:
+        trackloop.uninstall(lib)
+    return scan(lib)
 
 
 def details(lib: Library, pid: str) -> dict:

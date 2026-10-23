@@ -289,7 +289,9 @@ const GF = { firework: ['🎆', 'Firework'], effect: ['✨', 'Particle effect'],
 // folders start closed; the ones you open stay open while the tree is redrawn (filtering opens everything that matches)
 const openDirs = new Set();
 let newPaths = new Set(), lastCheck = 0;
-async function loadTree(refresh) {
+// refresh: look again for new folders and files; quiet (the automatic checks: coming back to the window, back from the
+// Mod Loader) says nothing unless something was found - "No new folders or files" only answers the Refresh button
+async function loadTree(refresh, quiet) {
   const t = await (await fetch('/api/tree' + (refresh ? '?refresh=1' : ''))).json();
   if (refresh) {   // what appeared since the last look: OVLs (new folders, mods) and loose firework files
     const before = new Set([...ovls.map(o => o.path), ...gameFiles.map(g => 'file:' + g.path)]);
@@ -297,8 +299,9 @@ async function loadTree(refresh) {
     const fresh = now.filter(p => !before.has(p)).concat(t.changes?.changed || []);
     fresh.forEach(p => newPaths.add(p));
     const gone = t.changes?.removed?.length || 0;
-    msg([fresh.length && `Found ${fresh.length} new or changed (marked new in the tree)`, gone && `${gone} removed from the game folder`]
-      .filter(Boolean).join(' · ') || 'No new folders or files');
+    const found = [fresh.length && `Found ${fresh.length} new or changed (marked new in the tree)`,
+      gone && `${gone} removed from the game folder`].filter(Boolean).join(' · ');
+    if (found || !quiet) msg(found || 'No new folders or files');
   }
   ovls = t.ovls; gameFiles = t.files || [];
   $('rootinfo').textContent = `${ovls.length} OVL pairs · ${gameFiles.length} firework files · ${t.root}`;
@@ -310,7 +313,7 @@ async function loadTree(refresh) {
 }
 $('treerefresh').onclick = () => { lastCheck = Date.now(); loadTree(true); };
 // coming back to the window (after copying folders into the game): look for new ones, at most every 15 s
-window.addEventListener('focus', () => { if (Date.now() - lastCheck > 15000) { lastCheck = Date.now(); loadTree(true).catch(() => {}); } });
+window.addEventListener('focus', () => { if (Date.now() - lastCheck > 15000) { lastCheck = Date.now(); loadTree(true, true).catch(() => {}); } });
 function renderTree(filter) {
   const f = filter.toLowerCase(), root = {};
   for (const o of ovls) {
@@ -907,7 +910,7 @@ async function openModsTab() {
         document.getElementById('app').style.display = '';
         renderer.setAnimationLoop(viewerLoop); clock.getDelta(); resize();
         setTab(before); history.replaceState(null, '', hash === '#mods' ? '#' : hash || '#');
-        if (changed) { lastCheck = Date.now(); loadTree(true); }
+        if (changed) { lastCheck = Date.now(); loadTree(true, true); }
       },
       openTab: async (tab, filter) => {
         if (tab === 'fireworks') return openFw();

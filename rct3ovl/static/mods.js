@@ -168,6 +168,12 @@ function build() {
       <div style="font-size:12px;color:var(--dim);margin:4px 0">${fx.length === 1 ? 'Its model is' : 'Their models are'} marked as only as tall as the ride; the game needs a much taller box
       to draw a placed flat ride (as CFH's Kamikaze and Cinipaes' Mega Disko have). The files are copied to the Mod Loader's store first.</div>
       <button data-fix="1">Fix ${fx.length === 1 ? 'it' : 'them'}</button></div>`;
+    const ad = S.data.additions || [];
+    if (ad.length && S.cat === 'all') h += `<h3 class="sec">Additions <small>new pieces for the game's own rides, built from your game's files</small></h3>` +
+      ad.map(a => `<div class="need"><b>${esc(a.name)}</b> ${a.installed ? '<span class="badge on">added</span>' : ''}
+        <div style="color:var(--dim);margin:3px 0 6px">${esc(a.about)}</div>
+        <button data-add="${esc(a.id)}" data-on="${a.installed ? 0 : 1}" title="${a.installed ? 'Put the changed game files back as they were and remove the new ones'
+          : 'Back up the files it changes, then add it (close RollerCoaster Tycoon 3 first)'}">${a.installed ? 'Remove' : 'Add to the game'}</button></div>`).join('');
     if (S.cat !== 'found') h += `<h3 class="sec">Installed with the Mod Loader <small>${mine.length ? '' : 'nothing yet'}</small></h3>` + mine.map(card).join('');
     if (S.cat !== 'installed') h += `<h3 class="sec">Found in the game <small>custom content put there some other way - it can be disabled or removed here too</small></h3>` +
       (found.length ? found.map(card).join('') : '<div class="empty">No other custom content in the game folders.</div>');
@@ -313,6 +319,15 @@ function build() {
       fb.disabled = true;
       try { const r = await api('/api/mods/fixrides', {}); toast(`Fixed ${plural(r.fixed.length, 'flat ride')}`); ui.changed = true; await refresh(); }
       catch (err) { toast(err.message, true); fb.disabled = false; }
+      return;
+    }
+    const ab = e.target.closest('button[data-add]');
+    if (ab) {
+      const on = ab.dataset.on === '1';
+      ab.disabled = true; toast(on ? 'Building it from your game files…' : 'Putting the game files back…');
+      try { S.data = await api('/api/mods/addition', { id: ab.dataset.add, on }); toast(on ? 'Added - start the game to build with it' : 'Removed');
+            ui.changed = true; renderCats(); renderList(); renderDetails(); }
+      catch (err) { toast(err.message, true); ab.disabled = false; }
       return;
     }
     const p = e.target.closest('.pkg'); if (!p) return;

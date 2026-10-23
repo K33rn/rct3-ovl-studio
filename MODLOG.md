@@ -1438,3 +1438,42 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - CFR animations '1Idle', '2Start', '3Loop', '4Stop' (Kamikaze, Mega Disko, Power Twist): the numbers are in the files
   (the authors' tools order them so); the animation menu shows them without it (value stays the file's name).
   ui_rides / ui_cfr / ui_hud_drag / ui_hud_sim pass (ui_rides now dismisses the tour first - it timed out before).
+
+## 2026-10-23: a vertical loop for the Heartline Coaster (built, placed and ridden in the game)
+- Heartline (tracks/coasters/Heartline, track style Track7) has 19 sections: straights, slopes, chain, Twist,
+  Heartline transfer up / down. Every loop in the game enters from a medium slope up and leaves on a medium slope down
+  one tile to the side (TrackSection: curves 7/7, special 12, direction 1 left / 2 right, entry slope 1, exit slope 2,
+  flags 4; Track3/5/11/20/28 alike). Layout of tks / sid / trr / spl: the RCT3 Importer source
+  (github.com/chances/rct3-importer: include/tracksection.h, trackedride.h, sceneryrevised.h, libOVLng).
+- rct3ovl/ovlwrite.py: v1 OVL pairs as a relocatable model (blocks + pointer links), edited and written back; symbols
+  kept sorted (strcasecmp), the loader table grouped by type then name, symbol references grouped by loader. 400 + 150
+  game pairs write back byte-identical.
+- rct3ovl/trackloop.py: path = Track11's Loopleft/right centre line moved 0.957 m along the track's up vector (the
+  gap between the two styles' medium-slope rail lines) and cut at Heartline's medium-slope joints (2 cm off the
+  original), rails 1.35 m each side; splines re-fitted (33 nodes), with the per-segment table (curve parameter at
+  1/15..14/15 of the length x255, rounded up: 558/600 of the game's segments match exactly, the rest by 1). Model:
+  Track7 Straight_data's track mesh sliced 1 m (2 m at ME/LO) and bent along the loop (11 copies), no support frames.
+  Section / scenery item = Heartline's own records with the loop's values and Track11 loop's footprint (4 x 2 tiles,
+  per-tile blocked heights) and box (16 x 20 x 8). Heartline's ride lists both and prices them at 50,700 (Looping
+  Coaster 33,800 x Heartline's 1.5 rate).
+- What the game needs (three crashes at 0x831f6d - a null section in the ride's list, read when the builder first
+  offers the loop):
+  1. The sections in Track7's own pair, not a new OVL referenced from the ride (crashed).
+  2. The internal name = the model OVL's name, exactly as every style names its loop: Loopleft:tks / Loopleft:sid /
+     LoopleftL_spline:spl in Track7, models in Track7\Loopleft_data (Loopleft:svd, Loopleft_HI/ME/LO:shs). Each ride
+     resolves them in its own track folder, as it does Straight:tks. Internal name Loopleft with symbols HLLoopLeft:tks
+     crashed; HLLoopLeft throughout worked but was listed as "HLLoopLeft" and unpriced (the price list matches on the
+     internal name). With the game's names it is listed as "Loop" (SceneryItem_Loopleft:txt, translated) at $507.
+- Verified in the game (Steam RCT3, sandbox): listed after a slope up, ghost and supports drawn, builds (the round
+  preview at the bottom left is the build button - clicking the ghost does nothing for any piece), joins straights /
+  slopes / transfers, a closed circuit with both loops. Test run (chain lift ~38 m, drop, Loop left, Loop right,
+  transfer down, back to the station; 'Low friction' ticked because the long flat return lane stalled the train):
+  altitude humps with vertical G ~ +3.5 g at each loop's bottom, speed dipping at the tops, the train upside down over
+  the top (recorded: tmp/game23/rec/run2.mkv), full laps back to the station.
+- Install / remove: Mod Loader > Additions ("Heartline Coaster: vertical loop"): backs up Heartline and Track7, always
+  builds from those originals; Remove (or Textures & GUI > Changed files) puts both back and deletes the model pairs
+  (edits.json 'added'); the Mod Loader no longer lists editor-added files as found custom content.
+  tests/heartline_loop.py (scratch copy: install, read back, joints, twice = no stacking, removed byte-identical,
+  writer round trip 150/150).
+- Tree: "No new folders or files" only answers the Refresh button; the automatic check (coming back to the window,
+  back from the Mod Loader) is quiet unless it finds something. tests/ui_refresh_quiet.py.

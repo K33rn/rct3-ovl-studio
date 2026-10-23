@@ -1,7 +1,7 @@
 """Front-screen pieces (badges, Back / Quit, logo) written into a scratch copy of RCT3plus.exe: the game's places, set
 and read back, the stubs disassembled, menus on top and off, reset byte-identical. usage: front_pieces_exe.py <folder with a copy of RCT3plus.exe> x"""
 import os, sys, struct, hashlib, types
-sys.path.insert(0, r'C:\Users\user\rct3-work\rct3ovl')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rct3ovl import frontscreen as fs, texedit as tx
 folder, game = sys.argv[1], sys.argv[2]
 md5 = lambda: hashlib.md5(open(os.path.join(folder, 'RCT3plus.exe'), 'rb').read()).hexdigest()

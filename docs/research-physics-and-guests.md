@@ -122,7 +122,52 @@ Prob_MaleLeader 0.5. Groups (families, couples, gangs) arrive together and share
   group, park rating and publicity, and a *GuestGenerationRate* (0.75–1.0 in the campaigns; the scenario editor shows
   it ×100 as a percentage, `0x5f9c72`). In the saved graph histories (newest first) intake runs while guests in the
   park are below the ideal figure and dries up above it — Run Down Zoo: ideal 115 → 334 → 155 while guests in the
-  park fell 438 → 310 and intake went 25, 23, 11 … 0. The formula that produces the ideal figure is still not found.
+  park fell 438 → 310 and intake went 25, 23, 11 … 0.
+- Counting (`0x704ab0`, the park's "guest added" handler) is below; the formulas follow.
+
+### How many guests come (`0x43d940`, the park's update, and `0x437a10`)
+
+Every update the park works out three numbers in `0x437a10`:
+
+- **IdealGuests (the graph's current value)** = the sum over every ride that's open and not broken down of what the
+  ride says it can serve (its virtual function +0x54), plus the same for the other attractions (`0xa88450`) and
+  `0xb6cab0`'s totals, capped at 65,535. More and bigger working attractions raise it.
+- **AssessedEntranceFee** = 2 × the sum over rides of max(0, the ride's assessed value − its ticket price), so cheap,
+  good rides raise the entrance fee guests will accept.
+- **The draw** (the function's return value):
+  - start from the park rating: clamp(ParkRating − 200, 0, 650) + 50, which is 50 at a rating of 200 or below and 700
+    at 850 or above;
+  - quarter it (÷4) for each of these that's true: guests in the park + on their way > IdealGuests; guests in the park
+    + on their way > 800; the entrance fee > AssessedEntranceFee; the entrance fee > 2 × AssessedEntranceFee (so a
+    fee over twice the assessed figure divides it by 16);
+  - multiply by clamp(PublicityLevel, 25, 400) / 100.
+
+Then the update (`0x43df37` on):
+
+- **The live ideal figure** (Park+0x18c, the debug tooltip's number) = the IdealGuests graph value + the publicity
+  level, where publicity above 200 counts half: ideal = IdealGuests + max(0, p ≤ 200 ? p : 200 + (p − 200) / 2).
+- **A guest is generated** this tick when a random number in [0, 1) × 131,072 is below
+  draw × GuestGenerationRate × dt × 96 **and** GuestsInPark < the live ideal figure. dt is the frame time; it's ×5 or
+  ×2 under two game options (`0x440fd0` items 0x30 / 0x2f, most likely the fast-forward speeds) and ×0.01 in one
+  special mode. Generation stops altogether while option 0x2e is set or a park flag is (paused / park closed).
+  - So the chance per second is draw × rate × 96 / 131,072. A park rated 600 with publicity 100 and rate 1.0 gets
+    draw 450, about **one guest every 3 seconds** while it's under its ideal number; a top park (rating 850+,
+    publicity 400) gets draw 2,800, about **2 a second**. The spawn goes to `0x781da0` / `0x7a9a80` (the guest
+    generator), which picks the injection point as described above.
+
+### New guests' preferences (`0x762a00`, when a guest is created)
+
+- Intensity band: Min = 7 × random; if Min ≤ 4, Max = Min + 3, otherwise Max = 2 × Min (8–14) and Min becomes 4; Max is
+  capped at 14. PreferedRideIntensity starts at 1.
+- NauseaTolerance (when the scenario hasn't set one): picked from [0, 1, 1, 2, 2, 2, 3, 3], so ⅛ get 0, ¼ get 1,
+  ⅜ get 2 and ¼ get 3.
+- The scenario's IntensityPreference setting (`0x758bb0`, 0–3) instead sets fixed bands: 0 → [0, 5], 1 → [1, 8],
+  2 → [4, 10], 3 → [6, 12]. A guest's *ideal* intensity is Min + f × (Max − Min) with f = 0.25 / 0.5 / 0.7 / 0.9 for
+  preference 0–3 (`0x758c30`).
+- PoolPreference = random clamped to 0.1–0.9, PoolNeed = 1.5 × random, Toilet = 0.2 × random, sunburn sensitivity =
+  random × the weather's UV value / 150.
+- After a ride, a guest whose happiness is 0.784 or more gains 0.2 on their upper intensity limit, up to 14
+  (`0x7691a0`). Guests get braver as they enjoy rides.
 - Counting (`0x704ab0`, the park's "guest added" handler): a guest already in the park adds 1 to GuestsInPark and to
   their age group's graph (Guest+0x120: child / teenager / adult); otherwise they count as on their way.
 
@@ -147,8 +192,15 @@ Prob_MaleLeader 0.5. Groups (families, couples, gangs) arrive together and share
 | CashInfo | CurrentCash, ATMCash, WithdrawnCash, SpentOn… (in cents) | cash $19–$93 |
 
 Stats come in pairs: **Current** and **Target**; in the saves they differ for most guests (mean happiness 0.66
-current vs 0.65 target, energy 0.50 vs 0.61). Inferred, not traced in code yet: events set the target and the
-current value eases toward it.
+current vs 0.65 target, energy 0.50 vs 0.61). In memory they are two blocks of {Energy, Happiness, Nausea, Sunburn}
+at Guest+0x408 and Guest+0x418; rides add to the first block's happiness and nausea, and the decisions below read the
+second. Consumption is {Food, Drink, Toilet} at Guest+0x428.
+
+**Groups** (`0x773ad0`): a GuestGroup decides with weighted averages of its members' second block and intensity band,
+each member weighted by how far their value is from the middle ((x − 0.5)² + 0.25, or (x − 5)² + 10 for intensity), so
+the group follows its most extreme members. Food, drink and toilet take the group's maximum. The group keeps a bit mask of
+what it's looking for at Group+0xe0 (food 1, drink 2, toilet 4, umbrella 8, ATM 0x10, first aid 0x20, home 0x40;
+bench, sun block and bin are in the same list), which the "ListObjectsOfDesire" debug command prints.
 
 ### Thinking
 
@@ -199,10 +251,79 @@ band, tame, too intense, too sickening:
   then takes the first one the guest's seat type has an animation for (mask table `0xfc5348`) — the on-ride reaction
   (bored, enjoying, scared, sick) kept in TargetOnRideReaction. Other situations set fixed orders (`0x7c3610`).
 
-What a guest weighs when *choosing* a ride goes through each attraction's assessment interface — the debug panel at
-`0x4d7c50` lists its methods: valid, excitement, intensity, queue, nausea, sunburn, ideal, fraction. The weighting
-inside the guest's choice is still not traced. (`0x6cf640`, which compares a ride's excitement / intensity / nausea
-and seven other values against a threshold, is the scenario objectives' "coaster with excitement above …" check.)
+### Choosing a ride (`0x76e3a0`, wrapped by `0x76ee40`)
+
+Each attraction gets a score for the guest (or the group) doing the choosing. The score is a weighted sum; the
+weights are a table at `0x10ef880` (writable data, so they could be patched): excitement 0.24, intensity 0.22, value
+for money 0.175, nausea and sunburn 0.025, queue 0.21, constant 0.075, and 0.03 / 0.025 for two chooser terms. Each part is
+also logged on the ride (`0x4bfc00`, component numbers in brackets). The parts come from the attraction's
+assessment interface (the debug panel at `0x4d7c50` lists it: valid, excitement, intensity, queue, nausea, sunburn,
+ideal, fraction).
+
+Ruled out at once (score 0, with a thought naming the reason): not a ride; closed or broken down; the ride needs
+something the guest lacks (an age or height rule, thought 0x10); **can't afford it** — the price is above the
+guest's cash, thought 1 when they have under $5.00, thought 2 otherwise.
+
+score =
+- 0.03 × a chooser value + 0.025 × a group/person factor (`0x76e010`) [5]
+- **weather**:
+  - rain (weather type 3 or more) on a ride that's under cover less than 0.375 of the way: 20 % of the time the guest
+    refuses (thought 3);
+  - on rides the game treats as weather-dependent (`0x49ac80`, likely the water rides): +0.08 above 31 °C, +0.05
+    above 28 °C, −0.05 below 18 °C. The code also has −0.1 below 15 °C and −0.2 below 12 °C, but the way the tests
+    are ordered seems to make those two steps unreachable.
+- **+ 0.22 × intensity fit** [1]: the assessment's intensity answer for the chooser's band. It is a flat 0.5 for
+  rides with a fixed answer, and −1 outright when it comes back as "too intense" or "too tame" (categories 4 / 5).
+- **nausea** [2]:
+  - if the ride's nausea is over 2.5 and the guest is already queasy (> 0.6): −0.3 and thought 7;
+  - otherwise + 0.025 × (2 − 0.075 × (nausea + sunburn) − 0.5 × the guest's own level).
+- **+ 0.175 × value for money** [4] = 0.175 × 0.006 × (value′ − price), with prices in cents. value′ is the
+  assessment's "ideal" price × (1 + the best discount on offer), × 0.25 for some choosers. So each $1 below what the
+  ride is worth adds about 0.1. If the guest has a pass the term is replaced by +0.2. A score above 1 here also sets
+  the "good value" thought.
+- **+ 0.24 × excitement** [0], or −10 if the ride's excitement is 0 or less.
+  - A ride with no valid ratings skips the weather, intensity, nausea, value and excitement parts and gets a flat
+    +0.4 instead.
+- **+ history** [8]:
+  - −0.2 for a ride the chooser has just done;
+  - a term for rides they've been on before;
+  - +0.6 for the chooser's favourite.
+- × min(a chooser factor, 5) on weather-dependent rides, and × a fit factor where the ride has one (`0x4bd9d0`).
+
+The wrapper then adds **0.21 × the queue's appeal** (the queue object's method with this guest, `0x10ef890`) + 0.075
+[9]. A ride is a candidate only when its score without the queue part is at least 0.1. Below that the guest gets a
+thought naming the main reason: dull (0x15), poor value (8) or too intense (0x13). How the caller picks among the
+candidates (best score or weighted random) wasn't traced.
+
+### After the ride (`0x75f3a0`): did they like it, favourite ride
+
+The guest scores the ride S (an integer), using their happiness h (0–1) to widen the bands by w = 2.55 × h:
+
+- **intensity fit**: 3 if inside [Min, Max]; 2 if inside [Min − 2w, Max + w]; 1 if inside [Min − 4w, Max + 2w];
+  otherwise 0.
+- **nausea fit**, by NauseaTolerance's comfort band [0, 3], [0, 6], [2, 8] or [4, 10] (`0x10ef810`): the same 3 / 2 / 1 / 0
+  scale.
+- S starts at:
+  - **70** if both fits are 3;
+  - otherwise 15 if one of them is 3, then +35 if both are 2 or more, else +10 if one is;
+  - then +10 if both are 1 or more, else −60.
+- **Price** against the ride's assessed value V: +40 if the price ≤ V, +15 if ≤ 1.5 V, −45 above that; +15 when the
+  park doesn't charge for rides.
+- **Queue time**: +10 under 30 s; −10 over 90 s; −25 over 300 s.
+- **Novelty**: +10 if not ridden before, +10 more if they've never ridden that kind of ride.
+- **Effects**:
+  - happiness += S / 255, capped to 0–1;
+  - the ride's satisfaction gets 2 × S;
+  - nausea += nausea rating × 100 / 255 × clamp(1 − happiness, 0.25, 0.78) × clamp(2 × food, 1, 2) × ½ / ¼ / ⅛ for
+    tolerance 1 / 2 / 3 (1 for tolerance 0). A full stomach doubles it.
+  - The ride becomes the **favourite** when 25 × excitement + S beats FavouriteRideRating and both happiness values
+    are ≥ 0.4.
+- If the ride broke down while they were on it: happiness −0.4, nausea −0.1, thought 0x2d.
+  - Otherwise, a very happy guest (≥ 0.85, nausea ≤ 0.5) on a ride near their limit (intensity ≥ Max − 1) who rolls
+    under excitement / 3 sets EnjoyedLastRide (wants to go again).
+
+(`0x6cf640`, which compares a ride's excitement / intensity / nausea and seven other values against a threshold, is
+the scenario objectives' "coaster with excitement above …" check.)
 
 The scenario settings that switch parts of this off: GuestsIgnoreRideIntensity, GuestsIgnoreRideNausea,
 GuestsIgnoreRideCost, GuestsRideUnratedRides, GuestsRevisitRides, GuestsHaveFixedHealth, GuestsHaveNoCameras /
@@ -220,49 +341,111 @@ program** in its OVL — the RideOption list of its Ride record (vanilla tracked
 through the pointer at trr+0x12c, then +8; flat rides likewise). The layout is the RCT3 Importer's `RideOption`;
 read here for all 162 ride types (tmp/research/programs.json). Each entry is one instruction:
 
-| Type | Fields | Does |
-|---|---|---|
-| 12 | three floats (e.g. 50, 30, 10) | header |
-| 10 | value, stat | setup values (15, 18, 20…) |
-| 8 | E, I, N, stat, group, factor | **ratings += (E, I, N) × stat × factor** (stat 0 = the constant 1) |
-| 4 | stat, group, value | guard: stat **<** value |
-| 7 | stat, group, value | guard: stat **≥** value |
-| 2 | stat, group, value | guard: stat **=** value (yes/no features) |
-| 6 | stat, group, value | guard: stat **>** value |
-| 9 | three floats | **ratings × (a, b, c)** — always 0.5, 0.5, 0.5: halve everything |
-| 0 | | separator |
-| 11 | value, stat | trailer |
+The game has its own names for all of this (name tables at `0xbb5600`, `0xbb57a0`, `0xbb57e0`, used by a text form
+of the programs); the interpreter is `0x500e90`.
 
-Guards apply to the next action, and several guards in a row must all hold (the guard meanings are read from how the
-programs are built, e.g. `< 6000` followed by its `≥ 6000` twin). The Looping Coaster's program, decoded:
+| Type | Name | Fields | Does |
+|---|---|---|---|
+| 0 | AssessAlways | | resets the conditions: what follows always applies |
+| 1 | AssessOpMode | value | condition: the ride's operating mode = value |
+| 2–7 | AssessEQ / NE / LT / LE / GT / GE | stat, value | condition: stat =, ≠, <, ≤, >, ≥ value |
+| 8 | AssessAdd | E, I, N, stat, factor | **ratings += (E, I, N) × stat × factor** |
+| 9 | AssessMult | three floats | **ratings × (a, b, c)** — in practice 0.5, 0.5, 0.5 |
+| 10 | AssessReliabilityRate | value, stat | the ride's breakdown rate = value × stat |
+| 11 | AssessUnderCover | value, stat | how much of the ride is under cover |
+| 12 | AssessValue | three floats | the ride's value = (a, b, c) · (E, I, N) |
+
+Conditions in a row must all hold, and their result stays in force for every following action until the next
+condition after an action, or an AssessAlways. Stat numbers (`0xbb5600`), with where the value comes from
+(`0x500eba`–`0x5013f2`; test results at ride+0x5d0, G values converted to g by × 1/9.81):
+
+| # | Stat | # | Stat | # | Stat |
+|---|---|---|---|---|---|
+| 0 | StatNone (= 1) | 12 | IsCircuit | 24 | DistanceUnderGround |
+| 1 | One (= 1) | 13 | MaxSpeed | 25 | MaxTunnelSpeed |
+| 2 | NRideCycles | 14 | AverageSpeed | 26 | NTunnels |
+| 3 | NCars | 15 | RideLength | 27 | NTunnelsBank |
+| 4 | RideTime | 16 | MaxPositiveVerticalG | 28 | NTunnelsSloped |
+| 5 | AssessedScenery | 17 | MaxNegativeVerticalG | 29 | FractionUnderground |
+| 6 | NTrains | 18 | MaxLateralG | 30 | NBrakes |
+| 7 | TrainType | 19 | AirTime | 31 | NBoosters |
+| 8 | DualTrack | 20 | NDrops | 32 | AssessedTrackScenery |
+| 9 | LaunchSpeed | 21 | HighestDropHeight | 33 | TrainingLevel |
+| 10 | FixedSpeed | 22 | NInversions | 34 | ShowAssessment |
+| 11 | LiftChainSpeed | 23 | NLiftHills | 35 | TrackLength |
+
+Group 512 (the "G-force terms" of the first notes) is the game's **Assessed** set, four 3-vectors that an AssessAdd
+multiplies component by component: AssessedGForces, AssessedTrackTypes, AssessedDrops, AssessedTunnels (also
+addressable as stats 33–36 in older programs). They're computed from the test results before the program runs:
+
+- **AssessedGForces** (`0x4fe8f0`). With P = ½ × max vertical G, n = 0.3 × max negative G, L = ½ × max lateral G
+  (all in g):
+  - E = 0.625 × (0.08 P − 0.24 max(n, −2.5) + 0.4 min(L, 1.5));
+  - I = (L + 0.8 P − 0.8 (n − 1)) / 11;
+  - N = (L / 3 + 0.26 P − 0.222 (n − 1)) / 3.3;
+  - lateral above 3.5: I gets +3.75 and N +2 inside the brackets; above 4: another +8.5 and +4, and E is halved.
+- **AssessedTrackTypes** (`0x4fea70`):
+  - special pieces, as (E, I, N) added before scaling: spinning tunnel (0.4, 0.55, 0.25); turntable (+0.48, +0.65,
+    +0.55); splash or rapids (+0.5, +0.2, +0.3); waterfall (+0.55, 0, +0.3);
+  - helices h: E + 0.0389 × min(h, 9), N + 0.0227 × min(h, 11), I + 0.2 × clamp(h − 5, 0, 10);
+  - each 90° / 180° / 270° corner: flat corners E 0.0097 / 0.03 / 0.025, banked corners E 0.0113 / 0.0375 / 0.0375,
+    with smaller I and N amounts;
+  - sloped corners: E only, capped per size (360° turns also add intensity, 0.075 each up to 8);
+  - inversions v: (0.267, 0.217, 0.5) × min(v, 6);
+  - finally E × 0.227, I × 0.265, N × 0.175.
+- **AssessedDrops** (`0x4fedf0`), d = NDrops, h = HighestDropHeight:
+  - E = 0.444 × (0.111 min(d, 9) + 0.00244 h);
+  - I = 0.238 × (0.142 min(d, 12) + 0.00488 h);
+  - N = 0.5 × (0.1 min(d, 12) + 0.00156 h).
+- **AssessedTunnels** (`0x4feeb0`), u = DistanceUnderGround:
+  - E = 0.196 × (0.0741 MaxTunnelSpeed + 0.0014 min(u, 1000) + 0.118 min(NTunnels, 11) + 0.2 if banked + 0.2 if
+    sloped);
+  - I = 0.0005 min(u, 2000);
+  - N = 0.357 × (0.0025 min(u, 1000) + 0.15 if banked + 0.15 if sloped).
+
+The Looping Coaster's program, with the names:
 
 ```
-E += 0.7 x min(s15, 6000) / 6000
-if s7 = 1:  E += 0.45, I -= 0.25, N -= 0.2
-if s8 = 1:  E += 0.4,  I += 0.05
-E += 0.2 x s3 / 7;   E -= 0.2 x s1 / 7
-(E, I, N) += (0.25, 0.5, 0.2) x s13 / 37
-(E, I, N) += (0.4, 0.6, 0) x s14 / 9
-E += 0.6 x min(s4, 150) / 150
-(E, I, N) += (0.6, 6.0, 2.5) x G0 + (1.8, 2.0, 4.0) x G1 + (1.0, 3.0, 1.5) x G2 + (1.2, 1.5, 1.5) x G3   [group 512]
-E += 4.5 x s32;  E += 0.24 x s5;  (E, I, N) += (3.0, 0.5, 0.2)
-halve all: if s21 < 7 and s22 < 1;  if s13 < 10;  if s17 > -0.1 and s22 < 1;  if s20 < 2
+E += 0.7 x min(RideLength, 6000) / 6000
+if TrainType = 1:  E += 0.45, I -= 0.25, N -= 0.2
+if DualTrack = 1:  E += 0.4,  I += 0.05
+E += 0.2 x (NCars - 1) / 7
+(E, I, N) += (0.25, 0.5, 0.2) x MaxSpeed / 37
+(E, I, N) += (0.4, 0.6, 0) x AverageSpeed / 9
+E += 0.6 x min(RideTime, 150) / 150
+(E, I, N) += (0.6, 6.0, 2.5) * AssessedGForces + (1.8, 2.0, 4.0) * AssessedTrackTypes
+           + (1.0, 3.0, 1.5) * AssessedDrops   + (1.2, 1.5, 1.5) * AssessedTunnels      (* = per component)
+E += 4.5 x AssessedTrackScenery;  E += 0.24 x AssessedScenery;  (E, I, N) += (3.0, 0.5, 0.2)
+halve all if: HighestDropHeight < 7 and NInversions < 1;  MaxSpeed < 10;
+              MaxNegativeVerticalG > -0.1 and NInversions < 1;  NDrops < 2
 ```
+
+After the program (`0x501730` on):
+
+- under one condition (`0xaf0ef0`) the ratings are set to zero;
+- a small excitement-only adjustment comes from a list on the tracked ride (`0x500780`, not identified);
+- an intensity adjustment from a ride setting nudges I by 0.2 × setting × I (or × (10 − I)) while I is 0–10;
+- **intensity punishes excitement** (`0x4ff2f0`): E is halved at intensity 10, 11, 12, 13.2 and 14.5 (each
+  threshold again), and × 0.1 at 20;
+- **value** = AssessValue's (a, b, c) · (E, I, N), × 0.8 / 0.6 / 0.4 / 0.2 / 0.1 cumulatively as intensity passes
+  15 / 20 / 25 / 30 / 35, clamped to 0–2,000;
+- reliability and under-cover are stored alongside (`0x531170`).
 
 That is why, per ride type, the stored ratings of the game's designs fit a linear model of their test results almost
 exactly (Looping Coaster and Body Slide R² = 1.000, Wooden Coaster 0.93–0.997) while all coasters together don't
-(0.5–0.7). Group 256 stats are ride measurements; group 512 are four G-force terms that carry most of the intensity
-and nausea (Heartline's older program writes the same four as stats 33–36). Which measurement each stat number is, is
-inferred from the scales the programs use, not read from code: s13 ≈ top speed (÷37–45, "below 10 → halve"),
-s15 ≈ ride length (thresholds 100–6,000), s4 ≈ ride time (÷150), s14 ≈ inversions or drops (÷9), s18 a G value
-(compared with 1.2–1.5), s1 / s3 counts (÷7), s7 / s8 yes/no features.
+(0.5–0.7): each type has its own program, and the Assessed terms aren't linear.
 
 So a custom ride's ratings can be changed by editing its program in its OVL — the same writer the Heartline loop
 uses could do it.
 
 ## Still open
 
-- The formula that produces the ideal guests figure (Park+0x18c), and the spawn interval.
-- The exact stat numbers of the rating programs (the lookup isn't a plain switch and wasn't found), and the four
-  G-force terms of group 512.
-- The weighting inside a guest's choice of ride (price, queue, needs against the assessment interface).
+Smaller pieces only:
+
+- what each ride type returns for the ideal-guests count (virtual function +0x54);
+- the queue-appeal method;
+- the chooser terms weighted 0.03 / 0.025;
+- the two scenery stats (`0x5003f0`, `0x4fefc0`: capped sums of nearby scenery counts);
+- how the caller picks among the scored rides.
+
+All of the numbers above are read from the code and not yet checked against a running game.

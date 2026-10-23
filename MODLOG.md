@@ -1506,3 +1506,21 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   inferred from scales; their lookup in the exe not found.
 - Ideal guests live at Park+0x18c (toolbar debug tooltip 0x658386); park graph histories decoded (67 floats, newest
   first); the guest-added handler 0x704ab0 counts guests per age group. The ideal-guests formula is still open.
+
+## 2026-10-23: research, third pass (docs/research-physics-and-guests.md updated)
+- Guest generation (0x43d940 + 0x437a10): IdealGuests graph = sum of open rides' capacity (vfunc +0x54) and other
+  attractions, cap 65,535; AssessedEntranceFee = 2 x sum max(0, ride value - price); draw = (clamp(rating-200,0,650)
+  + 50), /4 per condition (over ideal, over 800 guests, fee > assessed, fee > 2x assessed), x clamp(publicity,25,400)/100.
+  Live ideal (Park+0x18c) = IdealGuests + publicity (half above 200). Spawn when rand x 131072 < draw x rate x dt x 96
+  and GuestsInPark < live ideal: ~0.33 guests/s for rating 600 / publicity 100.
+- Guest creation (0x762a00): intensity band rolls, NauseaTolerance distribution, preference-set bands (0x758bb0),
+  ideal intensity (0x758c30); upper limit grows 0.2 after happy rides (0x7691a0).
+- Ride choice score 0x76e3a0 / 0x76ee40: weights table 0x10ef880 (excitement 0.24, intensity 0.22, value 0.175,
+  nausea 0.025, queue 0.21, const 0.075), affordability, rain / temperature, unrated +0.4, favourite +0.6; candidate
+  if score without queue >= 0.1.
+- After-ride scoring 0x75f3a0 (fits 70/15/35/10/-60, price vs value, queue time, novelty), happiness += S/255,
+  nausea gain, favourite rule. Groups average members weighted toward extremes (0x773ad0); desire mask Group+0xe0.
+- Rating programs fully named from the exe's own tables (0xbb5600 stats, 0xbb57a0 Assessed groups, 0xbb57e0 ops);
+  interpreter 0x500e90. Group 512 = AssessedGForces / TrackTypes / Drops / Tunnels (0x4fe8f0, 0x4fea70, 0x4fedf0,
+  0x4feeb0), all decoded; post-steps: excitement halved at intensity 10/11/12/13.2/14.5 (0x4ff2f0), value formula.
+- Not yet checked in a running game.

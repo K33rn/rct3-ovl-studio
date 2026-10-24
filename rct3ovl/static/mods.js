@@ -17,7 +17,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const size = n => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : n >= 1e3 ? Math.round(n / 1e3) + ' KB' : n + ' B';
 const plural = (n, one, many = one + 's') => `${n.toLocaleString()} ${n === 1 ? one : many}`;
-const ICON = { scenery: '🌳', path: '🧱', ride: '🎢', cars: '🚃', station: '🚉', game: '📦', design: '📐', firework: '🎆', laser: '🔦',
+const ICON = { scenery: '🌳', path: '🧱', ride: '🎢', cars: '🚃', station: '🚉', plugin: '🧩', game: '📦', design: '📐', firework: '🎆', laser: '🔦',
                waterjet: '⛲', show: '🎇', scenario: '🗺', park: '🏞', structure: '🏗', peep: '🧍', billboard: '🖼', picture: '🖼', music: '🎵' };
 const TAB_LABEL = { scenery: 'Scenery tab', designs: 'Ride Designs tab', fireworks: 'MixMaster' };
 const AREA_LABEL = { game: 'game folder', user: 'your RCT3 folder', pictures: 'Pictures\\RCT3', music: 'Music\\RCT3' };

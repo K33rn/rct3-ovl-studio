@@ -42,6 +42,7 @@ KINDS = {   # kind: (label, area, viewer tab that shows it)
     'ride': ('Custom tracked rides', 'game', 'designs'),
     'cars': ('Ride cars', 'game', None),
     'station': ('Station platforms', 'game', None),
+    'plugin': ('Code mods', 'game', None),
     'game': ('Other game files', 'game', None),
     'design': ('Coaster designs', 'user', 'designs'),
     'firework': ('Fireworks', 'user', 'fireworks'),
@@ -67,6 +68,9 @@ AUDIO = ('.mp3', '.ogg', '.wav', '.wma')
 PICTURES = ('.jpg', '.jpeg', '.png', '.bmp', '.tga')
 ARCHIVES = ('.zip', '.rar', '.7z', '.tar', '.gz', '.tgz')
 GAME_FILES_SKIP = ('.chk', '.log', '.bak')          # made by the game or left behind by tools
+# code mods: a DLL named like one the game loads (RCT3plus.exe imports d3d9, dinput8, dsound, winmm, version...) placed
+# beside the exe is loaded instead of Windows' own; its settings (.ini) go with it
+PLUGIN_DLLS = {'d3d9.dll', 'dinput8.dll', 'dsound.dll', 'winmm.dll', 'version.dll', 'd3d8.dll', 'ddraw.dll', 'dxgi.dll'}
 USER_SKIP = {'rct3.fc', 'desktop.ini', 'thumbs.db'}
 
 
@@ -484,6 +488,10 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
         f = os.path.basename(p)
         ext = os.path.splitext(f)[1].lower()
         set_ = name
+        if f.lower() in PLUGIN_DLLS or ext == '.asi':
+            return add(p, 'game', f, 'plugin', set_)
+        if ext == '.ini' and any(x.lower() in PLUGIN_DLLS or x.lower().endswith('.asi') for x in os.listdir(os.path.dirname(p))):
+            return add(p, 'game', f, 'plugin', set_)
         if f.lower() in USER_SKIP or ext in ('.bak',):
             return skip(p, 'not needed by the game')
         if hint == 'billboard' and ext in PICTURES:
@@ -894,6 +902,8 @@ def _group_game(rel: str) -> tuple:
         return 'cars', p[2]
     if lp[0] == 'fireworks':
         return 'firework', 'Fireworks (game folder)'
+    if len(p) == 1 and (lp[0] in PLUGIN_DLLS or lp[0].endswith('.asi')):
+        return 'plugin', p[0]
     return 'game', '/'.join(p[:2]) if len(p) > 2 else p[0]
 
 

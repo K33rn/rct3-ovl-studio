@@ -1524,3 +1524,20 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
   interpreter 0x500e90. Group 512 = AssessedGForces / TrackTypes / Drops / Tunnels (0x4fe8f0, 0x4fea70, 0x4fedf0,
   0x4feeb0), all decoded; post-steps: excitement halved at intensity 10/11/12/13.2/14.5 (0x4ff2f0), value formula.
 - Not yet checked in a running game.
+
+## 2026-10-23: research, fourth pass (the leftovers)
+- IdealGuests per ride = the ride type's attractivity (vfunc +0x54 = 0x52f540 -> ride+0x294 record): vanilla trr+0x38,
+  S/W records hold -1 there and the value at +0x1c of the ride sub-record (trr+0x12c). Tracked rides 30-120
+  (Giga 120, Looping 95, Heartline 35); dump script tmp/research/attr3.py. Flat rides not read.
+- Choice score's small terms: 0.03 x happiness (guest vfunc +0x24, second health block) + 0.025 x ride-type appeal
+  table (ride data +0x5c) indexed by age (Guest+0x120) and sex (+0x121), group kinds after (0x76e010).
+- Queue appeal 0x532fd0 = 1 - 0.075 x guests in that entrance's queue. Score logs are running averages (0x4bfc00).
+- The pick: passing a ride entrance (0x76ffe0 from 0x781a0b) takes the best acceptable one by
+  excitement + 0.1 x max(0, 50 - queued) (0x76e210), coin toss on ties; searching for a kind (0x76fb20) keeps the
+  five heaviest within 80 m (1,024 m with chooser flag +8) weighted appeal / (d^2 + 1) and draws one in proportion.
+- AssessedScenery (stat 5, 0x5003f0): 11x11 tiles around the station, dominant theme minus others, x2 / x0.5 by the
+  ride's theme, x0.01 cap 1, +0.17 base under a height test. AssessedTrackScenery (stat 32, 0x4fefc0): 0.06826 x
+  capped weighted sum of 26 test-run counters (+0x108..+0x16c), counter kinds unnamed.
+- 0x500780: excitement from objects passed in the test (0x5009e0 records count and closest distance):
+  5e-6 x object value(+0x3c) x falloff 20-40 m, x1.2 / x0.6 for repeats, -0.2 past three.
+- Not yet checked in a running game.

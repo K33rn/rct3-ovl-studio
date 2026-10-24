@@ -130,8 +130,15 @@ Prob_MaleLeader 0.5. Groups (families, couples, gangs) arrive together and share
 Every update the park works out three numbers in `0x437a10`:
 
 - **IdealGuests (the graph's current value)** = the sum over every ride that's open and not broken down of what the
-  ride says it can serve (its virtual function +0x54), plus the same for the other attractions (`0xa88450`) and
+  ride type's **attractivity** (its virtual function +0x54, `0x52f540`), plus the same for the other attractions (`0xa88450`) and
   `0xb6cab0`'s totals, capped at 65,535. More and bigger working attractions raise it.
+  - Attractivity is a fixed number in each ride type's OVL record: the first field of its ride settings (vanilla
+    tracked rides at trr+0x38; Soaked!/Wild! ones keep −1 there and the real value 0x1c further on, which is why
+    the method checks for −1). For the tracked rides it runs from 30 to 120: 120 for the Giga, Hyper Twister,
+    Floorless, Flying, Twister and Stand-Up Twister coasters; 100 for the Corkscrew, Inverted and Multi-Dimensional;
+    95 for the Looping; 70 for Rapids; 50 for the Ghost Train and Vintage Cars; 40 for the boat hires; 35 for the
+    Heartline Twister; 30 for the Airboats (all of them in tmp/research/attract.json). So a Giga coaster adds 120 to
+    the ideal guest count, and two boat hires together add only 80.
 - **AssessedEntranceFee** = 2 × the sum over rides of max(0, the ride's assessed value − its ticket price), so cheap,
   good rides raise the entrance fee guests will accept.
 - **The draw** (the function's return value):
@@ -255,8 +262,8 @@ band, tame, too intense, too sickening:
 
 Each attraction gets a score for the guest (or the group) doing the choosing. The score is a weighted sum; the
 weights are a table at `0x10ef880` (writable data, so they could be patched): excitement 0.24, intensity 0.22, value
-for money 0.175, nausea and sunburn 0.025, queue 0.21, constant 0.075, and 0.03 / 0.025 for two chooser terms. Each part is
-also logged on the ride (`0x4bfc00`, component numbers in brackets). The parts come from the attraction's
+for money 0.175, nausea and sunburn 0.025, queue 0.21, constant 0.075, happiness 0.03, and appeal to the guest's age
+and sex 0.025. Each part is also logged on the ride (`0x4bfc00`, component numbers in brackets). The parts come from the attraction's
 assessment interface (the debug panel at `0x4d7c50` lists it: valid, excitement, intensity, queue, nausea, sunburn,
 ideal, fraction).
 
@@ -265,7 +272,10 @@ something the guest lacks (an age or height rule, thought 0x10); **can't afford 
 guest's cash, thought 1 when they have under $5.00, thought 2 otherwise.
 
 score =
-- 0.03 × a chooser value + 0.025 × a group/person factor (`0x76e010`) [5]
+- **0.03 × happiness** (the guest's second health block, from the chooser's method +0x24) **+ 0.025 × the ride
+  type's appeal to this guest** [5] (`0x76e010`): a table in the ride type's data (+0x5c) with one value for each
+  age group (Guest+0x120: child, teenager, adult) and sex (Guest+0x121), and more values used when a group
+  chooses
 - **weather**:
   - rain (weather type 3 or more) on a ride that's under cover less than 0.375 of the way: 20 % of the time the guest
     refuses (thought 3);
@@ -290,10 +300,28 @@ score =
   - +0.6 for the chooser's favourite.
 - × min(a chooser factor, 5) on weather-dependent rides, and × a fit factor where the ride has one (`0x4bd9d0`).
 
-The wrapper then adds **0.21 × the queue's appeal** (the queue object's method with this guest, `0x10ef890`) + 0.075
-[9]. A ride is a candidate only when its score without the queue part is at least 0.1. Below that the guest gets a
-thought naming the main reason: dull (0x15), poor value (8) or too intense (0x13). How the caller picks among the
-candidates (best score or weighted random) wasn't traced.
+The wrapper then adds **0.21 × the queue's appeal** + 0.075 [9]. Queue appeal (`0x532fd0`) = 1 − 0.075 × the
+number of guests in the queue at that entrance, so it reaches 0 at about 13 people and goes negative beyond that. A
+ride is a candidate only when its score without the queue part is at least 0.1. Below that the guest gets a thought
+naming the main reason: dull (0x15), poor value (8) or too intense (0x13).
+
+Each score part is also kept on the ride as a running average (log = (5 × log + value) / 6, `0x4bfc00`).
+
+#### How the pick is made
+
+The score is only a pass / fail test (`0x76f8f0`). Which ride the guest then goes for is decided in one of two ways:
+
+- **Passing by** (`0x76ffe0`, called from the walking code at `0x781a0b`). A guest on a tile with ride entrances
+  checks each one. Among those that pass the test, the one with the higher **pull** wins (`0x76e210`): pull =
+  the ride's excitement (if it is rated) + 0.1 × max(0, 50 − the number of guests queueing for the ride). A tie is
+  settled by a coin toss. So a good ride the guest walks past is taken right away, and a queue of 50 or more cancels
+  the queue part.
+- **Looking for something of a kind** (`0x76fb20`, filtered by attraction type or by stall, `0x76e1f0` /
+  `0x76f860`). The game goes through every attraction of that kind that passes the test and takes its nearest
+  entrance. That entrance must be within 80 m (1,024 m when the chooser's method +8 says so, `0x761190`). Each one
+  is weighted appeal / (distance² + 1): appeal is 1 for a ride, and the stall's appeal for the guest's age and sex
+  for a stall (`0x594a40`). The five heaviest are kept, and one of them is picked **at random in proportion to its
+  weight**. Nearby places win almost every time: one at 5 m outweighs one at 20 m about 16 to 1.
 
 ### After the ride (`0x75f3a0`): did they like it, favourite ride
 
@@ -403,6 +431,23 @@ addressable as stats 33–36 in older programs). They're computed from the test 
   - I = 0.0005 min(u, 2000);
   - N = 0.357 × (0.0025 min(u, 1000) + 0.15 if banked + 0.15 if sloped).
 
+Two more stats are worked out the same way. They add to excitement only:
+
+- **AssessedScenery** (stat 5, `0x5003f0`): theming around the station.
+  - The game takes the first station piece (or the middle of the ride if it has no station) and counts the scenery
+    on the 11 × 11 tiles around it by theme (`0x48c620`).
+  - score = (the count of the most common theme − the counts of the other themes; the no-theme count is left out),
+    × 2 if that theme is the ride's own, × 0.5 if the ride has a different theme;
+  - then × 0.01, capped at 1;
+  - plus 0.17 when the station is lower than a height read from the map at that spot (perhaps below ground or water;
+    not confirmed). That 0.17 is also the whole result when nothing themed is nearby.
+- **AssessedTrackScenery** (stat 32, `0x4fefc0`): what the train passes during the test run.
+  - The test counts the objects it passes close to by what kind they are, in 26 counters (results +0x108 to +0x16c,
+    increased in `0x4ffc00`–`0x5001f0`; which kind each counter is hasn't been named).
+  - The stat is 0.06826 × a weighted sum of them. Each counter is capped (5 to 70), weighted 0.006 to 0.2, and some
+    count any non-zero value as +4 or +10 at once; four of them are simple flags worth +0.25 to +1.
+  - The Looping Coaster's program multiplies this stat by 4.5, so it can be worth a lot of excitement.
+
 The Looping Coaster's program, with the names:
 
 ```
@@ -423,7 +468,12 @@ halve all if: HighestDropHeight < 7 and NInversions < 1;  MaxSpeed < 10;
 After the program (`0x501730` on):
 
 - under one condition (`0xaf0ef0`) the ratings are set to zero;
-- a small excitement-only adjustment comes from a list on the tracked ride (`0x500780`, not identified);
+- **passing other objects** (`0x500780`, excitement only):
+  - During the test a callback (`0x5009e0`) records each object the train passes, with how often and how close.
+  - Each object adds 5 × 10⁻⁶ × a whole-number property of the object (its data +0x3c; maybe its price in cents,
+    not confirmed) × max(0, 1 − 0.05 × (max(distance, 20) − 20)). That's the full amount within 20 m and nothing
+    beyond 40 m.
+  - Passing twice adds 20 %, three times ×0.72; more than three passes counts −0.2 instead.
 - an intensity adjustment from a ride setting nudges I by 0.2 × setting × I (or × (10 − I)) while I is 0–10;
 - **intensity punishes excitement** (`0x4ff2f0`): E is halved at intensity 10, 11, 12, 13.2 and 14.5 (each
   threshold again), and × 0.1 at 20;
@@ -440,12 +490,11 @@ uses could do it.
 
 ## Still open
 
-Smaller pieces only:
+Every question from the first three passes is now answered from the code. Details still not pinned down:
 
-- what each ride type returns for the ideal-guests count (virtual function +0x54);
-- the queue-appeal method;
-- the chooser terms weighted 0.03 / 0.025;
-- the two scenery stats (`0x5003f0`, `0x4fefc0`: capped sums of nearby scenery counts);
-- how the caller picks among the scored rides.
+- the flat rides' attractivity (their records are laid out differently and weren't read);
+- which kind of object each of the 26 track-scenery counters stands for;
+- what 0x500780's per-object value is (data +0x3c), and the height test behind AssessedScenery's 0.17;
+- what the chooser's "far search" flag (method +8, up to 1,024 m instead of 80 m) is; perhaps owning a park map.
 
 All of the numbers above are read from the code and not yet checked against a running game.

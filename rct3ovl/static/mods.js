@@ -187,7 +187,7 @@ function build() {
     if (!p) {
       det.innerHTML = `<div class="empty">Pick a package to see what it holds, where its files are, and what its designs and scenarios need.<br><br>
         <b>Installing:</b> ＋ Install content… (or drop files here). Each file goes where the game looks for it: scenery sets into Style\\Themed,
-        paths into Path, custom rides into Tracks and Cars, station platforms into tracks\\Platforms, fireworks, designs, scenarios and structures
+        paths into Path, custom rides into Tracks and Cars, station platforms into tracks\\Platforms, code mods (d3d9.dll and the like) beside RCT3plus.exe, fireworks, designs, scenarios and structures
         into your RCT3 folder, billboards into Pictures\\RCT3 and music into Music\\RCT3.</div>`;
       return;
     }

@@ -30,6 +30,8 @@ It also has a **viewer** that runs in your web browser. You can:
 **Not sure what a `.ric` or `.sid` is?** Click **File types** in the viewer, or run `rct3ovl types` (see below).
 Every file type is explained there: what it is, what it does in the game, and what you get from it.
 
+It's free and open source under the [MIT license](LICENSE).
+
 ## Documentation
 
 | Where | What |
@@ -52,8 +54,9 @@ Every file type is explained there: what it is, what it does in the game, and wh
 - You **don't** need to install Python. The launcher sets everything up.
 
 ### 2. Get the program
-On GitHub, press **Code** → **Download ZIP** (or `git clone` the repository). Unzip it somewhere easy to find,
-e.g. `Documents\rct3ovl`. Keep the files together.
+Download **`rct3ovl.zip`** from the [latest release](https://github.com/K33rn/rct3-ovl-studio/releases/latest)
+(under **Assets**). Unzip it somewhere easy to find, e.g. `Documents`; you get an `rct3ovl` folder. Keep the files
+together.
 
 ### 3. Start the viewer
 1. Double-click **`rct3ovl-viewer.bat`** in the `rct3ovl` folder.

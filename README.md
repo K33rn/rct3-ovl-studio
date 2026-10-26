@@ -38,7 +38,6 @@ It's free and open source under the [MIT license](LICENSE).
 |---|---|
 | This README | Installing and using the extractor and viewer, every viewer tab, the command line |
 | [`rct3ovl/static/filetypes.md`](rct3ovl/static/filetypes.md) | Every OVL resource type and loose firework file (`.frw`, `.fwd`, `.las`, `.wjt`, `.lwr`, `.wma`); also the **File types** tab in the viewer |
-| [`docs/research-physics-and-guests.md`](docs/research-physics-and-guests.md) | How the game's train physics, guest spawning and guest behaviour work, read from the game's code |
 | [`MODLOG.md`](MODLOG.md) | The development journal: file formats, memory offsets, what was tried and how each feature was checked in the game |
 | [`examples/neon_nights/`](examples/neon_nights/apply.py) | Example: applies the Neon Nights front-screen theme through a running viewer |
 

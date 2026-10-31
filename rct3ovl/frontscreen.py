@@ -598,20 +598,7 @@ def reset_pieces(lib) -> dict:
 # ---- themes: whole front screens in one go ---------------------------------------------------------------------
 THEME_TEXTURES = ['FrontEndBG1', 'FrontEndBG1b', 'FrontEndBG2', 'FrontEndBG3', 'FrontEndBG4', 'FrontEndParts',
                   'FrontEndIcons', 'FrontEndLogo', 'GUI2Main2']
-THEMES = {
-    'neon_nights': {
-        'title': 'Neon Nights',
-        'about': 'Night sky with a city and a synthwave sun, pink neon ring, RCT3 NEON NIGHTS logo, neon icons in '
-                 'hexagon badges on cyan bars along the top of the circle, a giant neon ferris wheel and coaster.',
-        'script': 'neon_nights.py',
-        'texts': {'FrontScreen_Play_TT': 'RIDE', 'FrontScreen_Tools_TT': 'BUILD', 'FrontScreen_Options_TT': 'SETUP',
-                  'FrontScreen_MainMenu': 'NEON PARK', 'FrontScreen_Play_Help': 'Ride all night under neon',
-                  'FrontScreen_Tools_Help': 'Build your dreams', 'FrontScreen_Options_Help': 'Tune the lights',
-                  'FrontScreen_PlayMenu': 'RIDE MENU', 'FrontScreen_ToolMenu': 'BUILD MENU', 'FrontScreen_Exit_TT': 'EXIT'},
-        'layout': {'menu_r': 360.0, 'menu_start': 2.7216, 'menu_step': 0.29},
-        'colour': 0xff28f0ff,
-    },
-}
+THEMES: dict = {}   # front-screen themes are a future update
 MAIN = 'Main.common.ovl'
 
 

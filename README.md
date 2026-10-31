@@ -39,7 +39,6 @@ It's free and open source under the [MIT license](LICENSE).
 | This README | Installing and using the extractor and viewer, every viewer tab, the command line |
 | [`rct3ovl/static/filetypes.md`](rct3ovl/static/filetypes.md) | Every OVL resource type and loose firework file (`.frw`, `.fwd`, `.las`, `.wjt`, `.lwr`, `.wma`); also the **File types** tab in the viewer |
 | [`MODLOG.md`](MODLOG.md) | The development journal: file formats, memory offsets, what was tried and how each feature was checked in the game |
-| [`examples/neon_nights/`](examples/neon_nights/apply.py) | Example: applies the Neon Nights front-screen theme through a running viewer |
 
 ## Tutorial: getting it working
 
@@ -231,11 +230,10 @@ The buttons at the top:
     where it goes. **Put the places on an arc** puts them back on the game's kind of arc. Set
     the badge size and the bars' colour. **More numbers** moves the Back / Quit buttons, the scenario lists and the
     tutorial pages. **Menu words**
-    renames the buttons and titles, **Pictures** opens each front-screen picture in the Texture Editor, and **Themes**
-    applies a whole new front screen in one go (**Neon Nights**: night sky, neon ring, hexagon badges on cyan bars
-    along the top of the circle, a giant neon ferris wheel). The layout and colour are numbers in the game's program,
+    renames the buttons and titles, and **Pictures** opens each front-screen picture in the Texture Editor. The
+    layout and colour are numbers in the game's program,
     so they are saved into `RCT3plus.exe` (the original is copied first and **Changed files** puts it back; another
-    version of the program is refused untouched). `examples/neon_nights/apply.py` applies the theme from a script.
+    version of the program is refused untouched).
 - **Walkthrough:** a guided tour starts the first time you open the viewer. It highlights each part of the screen, explains it and opens examples on every tab. The MixMaster has its own tour the first time it opens, and it opens and walks through the Advanced Firework Editor, the laser designer and the water jet designer on the way. **? Tour** (top left in the viewer, next to MixMaster in the MixMaster) replays it; pressed while the firework editor or a designer is open, it explains that editor. ← → or Enter move, Esc stops.
 - **File types** opens the guide to every file type: the OVL resource types and the loose firework files (`.frw`, `.fwd`, `.las`, `.wjt`, `.lwr`, `.wma`). A firework file's summary has a **?** that jumps to its entry.
 - **Mod Loader** lists all the custom content in the game (scenery sets, paths, custom rides and cars, station platforms, fireworks, designs, scenarios, structures, billboards, music) and installs downloads: press **＋ Install content…** or drop a `.zip` / `.rar` / `.7z` (7-Zip needed for .rar / .7z) or loose files on it. It shows where every file will go first, says which custom sets a design or scenario still needs, and can disable, enable and uninstall each package (replaced files are put back).

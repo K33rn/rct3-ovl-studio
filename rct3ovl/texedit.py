@@ -318,7 +318,7 @@ def _exe_offset(exe: bytes, va: int) -> int:
 
 
 def patch_exe(lib, name: str, patches: list[dict], what: str) -> dict:
-    """Values written into the game's program (front-screen layout and colours: see examples/neon_nights).
+    """Values written into the game's program (front-screen layout and colours).
     patches: [{va | off (a file offset: the PE header), f32 | u32 | hex (bytes), old (optional, checked)}]. The
     original is copied first; restore() puts it back."""
     if os.path.basename(name) != name or not name.lower().endswith('.exe'):

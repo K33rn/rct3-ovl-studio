@@ -63,7 +63,9 @@ together.
      answer in `game_folder.txt`; delete that file to choose a different folder later.
    - It installs a small helper called **uv**, which downloads Python and the two libraries the program needs.
      This takes a minute or two.
-   - It scans the game, which takes about a minute.
+   - It indexes the game files, which can take a few minutes (about 3 for a full Gold install). The launcher
+     window shows a progress bar with how many OVL files it has read, so you can tell it is working. Later starts
+     only read files that are new or changed.
 3. Your web browser opens the viewer at http://127.0.0.1:8765. Keep the black launcher window open while you use
    it; closing that window stops the viewer.
 

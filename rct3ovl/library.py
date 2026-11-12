@@ -36,7 +36,10 @@ def _mtime(common: str) -> float:
 class Library:
     """Lazily opens OVLs; resolves 'name:tag' to (Ovl, LoaderRef) across the whole game folder."""
 
-    def __init__(self, root: str, cache_dir: str | None = None, max_open: int = 64):
+    def __init__(self, root: str, cache_dir: str | None = None, max_open: int = 64, progress=None):
+        """progress(done, total, rel) is called while OVLs are read to (re)build the index: on the first start that
+        takes a while, so a front end can show how far it has got (done == total at the end)."""
+        self.progress = progress
         self.root = os.path.abspath(root)
         self.cache_dir = cache_dir or os.path.join(os.path.expanduser('~'), '.rct3ovl')
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -72,8 +75,10 @@ class Library:
             rel = os.path.relpath(p, self.root).lower()
             is_lang = rel.startswith('gui' + os.sep) and rel.count(os.sep) == 1
             return (is_lang and not os.path.basename(rel).startswith(lang), p)
-        for base in sorted(find_pairs(self.root), key=order):
+        bases = sorted(find_pairs(self.root), key=order)
+        for i, base in enumerate(bases):
             rel = os.path.relpath(base, self.root)
+            self._report(i, len(bases), rel)
             try:
                 o = Ovl(base)
             except Exception as e:
@@ -85,9 +90,18 @@ class Library:
                 if r.name:
                     names.setdefault(r.name.lower(), rel)
             ovls.append({'path': rel, 'version': o.version, 'counts': counts, 'mtime': _mtime(base)})
+        self._report(len(bases), len(bases), '')
         idx = {'version': INDEX_VERSION, 'root': self.root, 'language': lang, 'ovls': ovls, 'names': names}
         json.dump(idx, open(self._index_path(), 'w'))
         return idx
+
+    def _report(self, done: int, total: int, rel: str):
+        cb = getattr(self, 'progress', None)
+        if cb:
+            try:
+                cb(done, total, rel)
+            except Exception:
+                pass
 
     def refresh_index(self) -> dict:
         """Catch up with the game folder: OVLs added (new folders, mods) or changed since the index was built are
@@ -107,7 +121,9 @@ class Library:
         gone = set(removed) | set(changed)
         idx['names'] = {n: rel for n, rel in idx['names'].items() if rel not in gone}
         idx['ovls'] = [o for o in idx['ovls'] if o['path'] not in gone]
-        for p in sorted(changed + added):
+        todo = sorted(changed + added)
+        for i, p in enumerate(todo):
+            self._report(i, len(todo), p)
             try:
                 o = Ovl(now[p])
             except Exception as e:
@@ -119,6 +135,7 @@ class Library:
                 if r.name:
                     idx['names'].setdefault(r.name.lower(), p)
             idx['ovls'].append({'path': p, 'version': o.version, 'counts': counts, 'mtime': _mtime(now[p])})
+        self._report(len(todo), len(todo), '')
         idx['ovls'].sort(key=lambda o: o['path'].lower())
         for p in gone:
             self._open.pop(pair_paths(os.path.join(self.root, p))[0], None)

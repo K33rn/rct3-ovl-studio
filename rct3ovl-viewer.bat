@@ -36,6 +36,6 @@ if errorlevel 1 (
 )
 
 echo Starting the viewer for "%GAME%"
-echo (the first start indexes the game, which takes about a minute)
+echo (the first start indexes the game files once, which can take a few minutes; a progress bar shows how far it has got)
 uv run --no-project --with numpy --with pillow --with imageio-ffmpeg python -m rct3ovl view "%GAME%"
 pause

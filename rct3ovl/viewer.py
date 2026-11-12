@@ -29,8 +29,36 @@ from .scenery import build_scenery, list_scenery
 STATIC = os.path.join(os.path.dirname(__file__), 'static')
 
 
+def index_progress():
+    """A console progress line for Library(progress=...): reading the game's OVLs on the first start takes a while
+    and showed nothing, so it looked stuck (GitHub issue #1)."""
+    import sys
+    import time
+    state = {'last': 0.0, 'started': False}
+
+    def show(done, total, rel):
+        if not state['started']:
+            state['started'] = True
+            print(f'Indexing the game files ({total} OVL files). This happens once; later starts only read new or '
+                  f'changed files.', flush=True)
+        now = time.monotonic()
+        if done < total and now - state['last'] < 0.1:
+            return
+        state['last'] = now
+        width = 30
+        bar = '#' * (width * done // max(total, 1))
+        name = rel if len(rel) <= 40 else '...' + rel[-37:]
+        line = f'\r  [{bar:<{width}}] {done}/{total} {100 * done // max(total, 1):3d}%  {name}'
+        sys.stdout.write(line.ljust(100)[:100])
+        if done >= total:
+            sys.stdout.write('\n')
+            state['started'] = False
+        sys.stdout.flush()
+    return show
+
+
 def serve(root: str, port: int = 8765, open_browser: bool = True):
-    lib = Library(root)
+    lib = Library(root, progress=index_progress())
     lock = threading.Lock()                 # Library caches are not thread-safe
 
     class H(BaseHTTPRequestHandler):

@@ -660,7 +660,7 @@ def build_fwd(lib: Library, show: dict) -> bytes:
             rel = names.get(typ.lower() + ':sid', 'Style\\Vanilla\\Style.common.ovl')
             sid_ids[typ] = new()
             objs.append(('SIDDatabaseEntry', sid_ids[typ], dict(D['SIDDatabaseEntry'], SYMBOLNAME=typ,
-                                                                OVERLAYFILENAME=rel.rsplit('.common.ovl', 1)[0])))
+                                                                OVERLAYFILENAME=rel.replace('/', '\\').rsplit('.common.ovl', 1)[0])))
     scen0 = D['SavedFireworkDisplay']['SceneryEntries'][0]
     scen = [dict(scen0, Row=int(l.get('row', 0)), Col=int(l.get('col', 0)), Dir=int(l.get('dir', 0)) & 3,
                  Corner=int(l.get('corner', -1)), SID=sid_ids[l['type']]) for l in show.get('launchers', [])]

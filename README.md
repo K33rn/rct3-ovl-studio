@@ -69,6 +69,11 @@ together.
 3. Your web browser opens the viewer at http://127.0.0.1:8765. Keep the black launcher window open while you use
    it; closing that window stops the viewer.
 
+**On Linux:** run `./rct3ovl-viewer.sh` instead. It asks for the game folder the same way, finds your saved parks
+in Steam's Proton prefix (or set `RCT3_USER_DIR` to your `My Documents/RCT3` folder), and uses `uv` when installed,
+otherwise your Python 3 with numpy and pillow. Open http://127.0.0.1:8765 if no browser opens. The texture, front-screen
+and mod tools write into the game's files and are only tried on Windows so far.
+
 ### 4. Use the viewer
 - **Left column:** every OVL file in the game, in its folders. Each coaster and tracked ride folder (`tracks\coasters\WoodenRC`…) also has a **🛤 … track pieces** entry with exactly that ride's pieces; the game keeps them in shared `TrackNN` files. Type in the box to filter, e.g. `coaster` or
   `chess`.

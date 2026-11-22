@@ -145,8 +145,21 @@ class Library:
         return {'added': added, 'removed': removed, 'changed': changed}
 
     # ---- access --------------------------------------------------------------------------------------------
+    def path(self, rel: str) -> str:
+        """rel ('\\' or '/' separated, any case, as the game writes it) as a path under the game folder, each part
+        spelled as it is on disk, so lookups also work where file names are case-sensitive (Linux)."""
+        cur = self.root
+        for part in rel.replace('\\', '/').split('/'):
+            if not part or part == '.':
+                continue
+            if not os.path.exists(os.path.join(cur, part)) and os.path.isdir(cur):
+                low = part.lower()
+                part = next((n for n in os.listdir(cur) if n.lower() == low), part)
+            cur = os.path.join(cur, part)
+        return cur
+
     def open(self, rel_or_abs: str) -> tuple[Ovl, TextureSet]:
-        path = rel_or_abs if os.path.isabs(rel_or_abs) else os.path.join(self.root, rel_or_abs)
+        path = rel_or_abs if os.path.isabs(rel_or_abs) else self.path(rel_or_abs)
         key = pair_paths(path)[0]
         if key in self._open:
             self._open.move_to_end(key)

@@ -75,23 +75,9 @@ USER_SKIP = {'rct3.fc', 'desktop.ini', 'thumbs.db'}
 
 
 # ---- places -----------------------------------------------------------------------------------------------------
-def _shell_folder(csidl: int, fallback: str) -> str:
-    if os.name == 'nt':
-        try:
-            import ctypes
-            buf = ctypes.create_unicode_buffer(260)
-            if ctypes.windll.shell32.SHGetFolderPathW(None, csidl, None, 0, buf) == 0:
-                return buf.value
-        except Exception:
-            pass
-    return os.path.join(os.path.expanduser('~'), fallback)
-
-
 def areas(lib: Library) -> dict:
     """Where content goes: the game folder, the user folder, and the picture / music folders the game reads."""
-    return {'game': lib.root, 'user': fw.user_dir(),
-            'pictures': os.path.join(_shell_folder(0x27, 'Pictures'), 'RCT3'),     # CSIDL_MYPICTURES
-            'music': os.path.join(_shell_folder(0x0d, 'Music'), 'RCT3')}           # CSIDL_MYMUSIC
+    return {'game': lib.root, 'user': fw.user_dir(), 'pictures': fw.user_dir('Pictures'), 'music': fw.user_dir('Music')}
 
 
 def _store(lib: Library) -> str:
@@ -161,7 +147,7 @@ def _existing_case(root: str, rel: str) -> str:
 
 # ---- archives -----------------------------------------------------------------------------------------------------
 def _seven_zip() -> str | None:
-    for p in (shutil.which('7z'), shutil.which('7za'), r'C:\Program Files\7-Zip\7z.exe', r'C:\Program Files (x86)\7-Zip\7z.exe'):
+    for p in (shutil.which('7z'), shutil.which('7za'), shutil.which('7zz'), r'C:\Program Files\7-Zip\7z.exe', r'C:\Program Files (x86)\7-Zip\7z.exe'):
         if p and os.path.isfile(p):
             return p
     return None
@@ -459,9 +445,10 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
     pics = _picture_refs(src)
 
     planned, fixed = {}, []
+    ar = areas(lib)
 
     def add(path, area, rel, kind, set_):
-        rel = rel.replace('\\', '/')
+        rel = _existing_case(ar[area], rel) if ar[area] else rel.replace('\\', '/')
         key = (area, rel.lower())
         if key in planned:               # the same file twice in the download (packs repeat files across folders)
             first = planned[key]
@@ -586,7 +573,6 @@ def plan_folder(lib: Library, src: str, name: str) -> dict:
                 items.remove(it)
                 planned.pop((it['area'], it['rel'].lower()), None)
                 skip(it['src'], 'the same file is in the download twice')
-    ar = areas(lib)
     for it in items:
         dst = os.path.join(ar[it['area']], *it['rel'].split('/'))
         it['state'] = 'new' if not os.path.exists(dst) else 'same' if _same(dst, it['src']) else 'replace'
@@ -1012,7 +998,7 @@ def additions(lib: Library) -> list:
     """New pieces this program can add to the game's own rides (built from the user's game files)."""
     from . import trackloop
     try:
-        return [trackloop.status(lib)] if os.path.exists(os.path.join(lib.root, trackloop._rel(f'{trackloop.T7}/Track7'))) else []
+        return [trackloop.status(lib)] if os.path.exists(lib.path(trackloop._rel(f'{trackloop.T7}/Track7'))) else []
     except Exception:
         return []
 

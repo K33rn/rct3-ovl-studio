@@ -33,6 +33,7 @@ import struct
 import numpy as np
 
 from .container import Ovl
+from .library import real_path
 from .ovlwrite import Model
 
 T7 = 'tracks/coasters/Track7'
@@ -46,7 +47,7 @@ SLICE = 1.0
 
 
 def _p(lib, rel):
-    return os.path.join(lib.root, *rel.split('/'))
+    return real_path(lib.root, rel)
 
 
 # ---- splines -------------------------------------------------------------------------------------------------
@@ -424,7 +425,7 @@ def _rel(p: str, part: str = 'common') -> str:
 
 
 def installed(lib) -> bool:
-    return all(os.path.exists(os.path.join(lib.root, _rel(p))) for p in ADDED)
+    return all(os.path.exists(lib.path(_rel(p))) for p in ADDED)
 
 
 def install(lib) -> dict:
@@ -437,7 +438,7 @@ def install(lib) -> dict:
     bdir = tx._backup_dir(lib)
     for p in CHANGED:
         for part in ('common', 'unique'):
-            src, dst = os.path.join(lib.root, _rel(p, part)), os.path.join(bdir, _rel(p, part))
+            src, dst = lib.path(_rel(p, part)), os.path.join(bdir, _rel(p, part))
             if not os.path.exists(tx._lp(dst)):
                 os.makedirs(tx._lp(os.path.dirname(dst)), exist_ok=True)
                 shutil.copy2(tx._lp(src), tx._lp(dst))
@@ -448,14 +449,14 @@ def install(lib) -> dict:
         shutil.rmtree(d, ignore_errors=True)
     for p in [f'{T7}/Straight_data', f'{T11}/Track11'] + CHANGED:
         for part in ('common', 'unique'):
-            frm = os.path.join(bdir if p in CHANGED else lib.root, _rel(p, part))
+            frm = os.path.join(bdir, _rel(p, part)) if p in CHANGED else lib.path(_rel(p, part))
             os.makedirs(os.path.dirname(os.path.join(src, _rel(p, part))), exist_ok=True)
             shutil.copy2(tx._lp(frm), os.path.join(src, _rel(p, part)))
     info = build(src, stage)
     for p in CHANGED + ADDED:
         for part in ('common', 'unique'):
             try:
-                shutil.copyfile(os.path.join(stage, _rel(p, part)), os.path.join(lib.root, _rel(p, part)))
+                shutil.copyfile(os.path.join(stage, _rel(p, part)), lib.path(_rel(p, part)))
             except PermissionError:
                 raise PermissionError(f'{os.path.basename(p)} is in use - close RollerCoaster Tycoon 3 and try again')
     for d in (src, stage):

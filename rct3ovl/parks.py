@@ -104,18 +104,18 @@ def list_parks(lib: Library) -> list[dict]:
     keys = _scenario_keys(lib)
     out = []
     for gi, (folder, _, group) in enumerate(GROUPS):
-        for f in sorted(glob.glob(os.path.join(lib.root, folder, '*.dat'))):
+        for f in sorted(glob.glob(os.path.join(lib.path(folder), '*.dat'))):
             base = os.path.basename(f)[:-4]
             k = keys.get(base.lower())
             key = k[2] if k and k[0] == gi else None
             title = (_txt(lib, f'scenario{key}_title') if key else None) or \
                 (_txt(lib, 'sandboxscenario_title') if group == 'Sandbox' else None) or _spaced(base)
-            out.append({'file': os.path.relpath(f, lib.root), 'group': group, 'number': k[1] if key else None,
+            out.append({'file': os.path.relpath(f, lib.root).replace(os.sep, '\\'), 'group': group, 'number': k[1] if key else None,
                         'title': title, 'size': os.path.getsize(f)})
     # yours: the user folder (installed, or made and saved in the game) - file keys 'yours\<folder>\<name>.dat'
     for folder, group in USER_GROUPS:
         for f in sorted(glob.glob(os.path.join(user_dir() or '', folder, '*.dat'))):
-            out.append({'file': os.path.join('yours', folder, os.path.basename(f)), 'group': group, 'number': None,
+            out.append({'file': '\\'.join(('yours', folder, os.path.basename(f))), 'group': group, 'number': None,
                         'title': os.path.basename(f)[:-4], 'size': os.path.getsize(f), 'yours': True})
     order = {g: i for i, g in enumerate([g[2] for g in GROUPS] + [g[1] for g in USER_GROUPS])}
     out.sort(key=lambda p: (order[p['group']], p['number'] is None, p['number'] or 0, p['title'].lower()))
@@ -137,7 +137,7 @@ def park_path(lib: Library, rel: str) -> str | None:
         if p['file'].lower() == rel.lower():
             if p.get('yours'):
                 return os.path.join(user_dir() or '', *p['file'].split('\\')[1:])
-            return os.path.join(lib.root, p['file'])
+            return lib.path(p['file'])
     return None
 
 
@@ -736,7 +736,7 @@ def _sid_hit(lib: Library, name: str, overlay: str):
     prefer = None
     if overlay:
         rel = overlay.replace('/', '\\') + '.common.ovl'
-        if os.path.exists(os.path.join(lib.root, rel)):
+        if os.path.exists(lib.path(rel)):
             try:
                 prefer = lib.open(rel)[0]
             except Exception:
@@ -1190,7 +1190,7 @@ def car_model(lib: Library, rit: str, overlay: str, slot: int, part: str = 'main
     res = None
     prefer = None
     rel = overlay.replace('/', '\\') + '.common.ovl' if overlay else ''
-    if rel and os.path.exists(os.path.join(lib.root, rel)):
+    if rel and os.path.exists(lib.path(rel)):
         try:
             prefer = lib.open(rel)[0]
         except Exception:

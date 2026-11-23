@@ -1541,3 +1541,32 @@ raw blobs) plus a 3D model viewer. Personal tool; game files never shipped.
 - 0x500780: excitement from objects passed in the test (0x5009e0 records count and closest distance):
   5e-6 x object value(+0x3c) x falloff 20-40 m, x1.2 / x0.6 for repeats, -0.2 past three.
 - Not yet checked in a running game.
+
+## 2026-11-23: Linux, the editors that write
+- One place for the user folders: `fireworks.user_dir(folder)` gives My Documents\RCT3 (or My Pictures / My Music
+  \RCT3). Windows asks the shell as before (RCT3_USER_DIR still overrides Documents). Elsewhere it is RCT3_USER_DIR,
+  which `rct3ovl-viewer.sh` sets to the Proton prefix's `users/steamuser/My Documents/RCT3`; Wine keeps Pictures and
+  Music beside that Documents folder. No VirtualStore off Windows. The mod loader's own shell-folder lookup is gone.
+- `library.real_path(root, rel)` (what `Library.path` does, for any root): '\' or '/', any case, each part spelled as
+  on disk. Used for every game-folder path the fireworks files, designs, texture editor (pair, restore, program),
+  front-screen program lookup and the Heartline loop read or write, and for the user subfolders. The mod loader
+  folds every planned file against its destination area, so `fireworks\stratosphere.fwd` replaces
+  `Fireworks\Stratosphere.fwd` instead of landing beside it. `7zz` is looked for too.
+- texgui.js grouped and named OVLs by '\' only: on Linux the index has '/', so every folder showed as "(game folder)".
+  Both separators now. The install plan shows its destination with the OS's separator.
+- Checked on Linux (Arch, Python 3.14, Chromium headless), on a copy of the Steam Complete Edition and of its Proton
+  user folder, launched through `rct3ovl-viewer.sh` (it found the copied prefix):
+  - fireworks: tests/ui_fireworks.py passes (only the favicon 404s); a game show opened, renamed and exported with
+    Save into the game; a firework, laser and water jet saved. All read back (show list, Trk: SID overlay names keep
+    '\'); the firework also landed in the prefix's FireworkEffects.
+  - textures / GUI: a 32-bit Main texture (path sent as `main.common.ovl` with '\') and an ftx written and read back,
+    an icon moved, an English menu text changed; Main's .CHK rewritten; Restore put all three pairs back byte for byte.
+    The tab's folder list and GUI list group by folder.
+  - mod loader: tests/ui_mods.py with a made-up zip (scenery set under `style/themed`, a design, a show replacing one,
+    a billboard, music) and a loose .trk: installed into Style\Themed, Coasters, Fireworks, Pictures\RCT3\Billboards,
+    Music\RCT3; disable / enable, uninstall / install again; designs on the Ride Designs tab. A .7z planned through
+    7-Zip. After uninstalling both, the copies matched the install again. The Heartline loop added and removed.
+    (The test's "no package selected" for the second download is its timing: the screenshot shows it selected.)
+  - front screen: RCT3plus.exe found in any case; the program patch and Restore work (a lower-case copy of RCT3.exe,
+    one byte). The layout itself needs RCT3plus.exe (Platinum): tests/ui_front_pieces.py and ui_front_sim.py not run.
+  - tests/mods_rules.py passes; its `C:\short` check is Windows-only now.

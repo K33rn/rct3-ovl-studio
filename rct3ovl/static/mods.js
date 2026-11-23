@@ -249,7 +249,8 @@ function build() {
     const where = g => {
       const base = plan.areas[g.area], ds = [...g.dirs].sort();
       const top = ds.length > 1 ? ds.reduce((a, b) => { let i = 0; while (i < a.length && a[i] === b[i]) i++; return a.slice(0, a.slice(0, i).lastIndexOf('/') + 1 || i); }) : ds[0];
-      return base + (top ? '\\' + top.replace(/\/$/, '').replace(/\//g, '\\') : '');
+      const sep = base.startsWith('/') ? '/' : '\\';    // the OS's: Linux paths start with /
+      return base + (top ? sep + top.replace(/\/$/, '').replace(/\//g, sep) : '');
     };
     const rows = Object.entries(groups).map(([key, g]) => `<tr><td><input type="checkbox" data-g="${esc(key)}" checked></td>
       <td>${ICON[g.kind] || ''} <b>${esc(g.set)}</b> · ${esc(kindLabel(g.kind))}<br><span class="where">→ ${esc(where(g))}</span></td>

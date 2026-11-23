@@ -28,7 +28,7 @@ import subprocess
 from .anims import load_svd
 from .container import OvlError
 from .gltf import shape_to_glb
-from .library import Library
+from .library import Library, real_path
 from .media import sound_wav, text
 from .meshes import load_shape
 from .trk import Trk
@@ -52,20 +52,25 @@ USER_FOLDERS = {'Fireworks': 'FireworkEffects', 'Lasers': 'LaserEffects', 'Water
                 'FireworkDisplays': 'Fireworks', 'LaserWriting': 'LaserWriting'}
 
 
-def user_dir() -> str | None:
-    """The game's user folder: My Documents\\RCT3 (RCT3_USER_DIR overrides it)."""
-    if os.environ.get('RCT3_USER_DIR'):
-        return os.environ['RCT3_USER_DIR']
+def user_dir(folder: str = 'Documents') -> str | None:
+    """The game's user folder: My Documents\\RCT3 (RCT3_USER_DIR overrides it), or with folder 'Pictures' / 'Music'
+    My Pictures\\RCT3 / My Music\\RCT3. Off Windows the game runs in Wine / Proton: the Linux launcher sets
+    RCT3_USER_DIR to the prefix's My Documents\\RCT3, and Pictures and Music are beside that Documents folder."""
+    env = os.environ.get('RCT3_USER_DIR')
+    if folder == 'Documents' and env:
+        return env
+    if os.name != 'nt':
+        return os.path.join(os.path.dirname(os.path.dirname(env)) if env else os.path.expanduser('~'), folder, 'RCT3')
     docs = None
-    if os.name == 'nt':
-        try:
-            import ctypes
-            buf = ctypes.create_unicode_buffer(260)
-            if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0:   # CSIDL_PERSONAL
-                docs = buf.value
-        except Exception:
-            docs = None
-    docs = docs or os.path.join(os.path.expanduser('~'), 'Documents')
+    try:
+        import ctypes
+        buf = ctypes.create_unicode_buffer(260)
+        csidl = {'Documents': 5, 'Pictures': 0x27, 'Music': 0x0d}[folder]    # CSIDL_PERSONAL, _MYPICTURES, _MYMUSIC
+        if ctypes.windll.shell32.SHGetFolderPathW(None, csidl, None, 0, buf) == 0:
+            docs = buf.value
+    except Exception:
+        docs = None
+    docs = docs or os.path.join(os.path.expanduser('~'), folder)
     return os.path.join(docs, 'RCT3')
 
 
@@ -74,8 +79,8 @@ def game_files(lib: Library, folder: str, ext: str) -> list[str]:
     those you made in the game's designers (its user folder). A later one replaces an earlier file of the same name."""
     found = {}
     ud = user_dir()
-    for d in (os.path.join(lib.root, folder), virtual_store(os.path.join(lib.root, folder)),
-              os.path.join(ud, USER_FOLDERS[folder]) if ud and folder in USER_FOLDERS else None):
+    for d in (lib.path(folder), virtual_store(lib.path(folder)),
+              real_path(ud, USER_FOLDERS[folder]) if ud and folder in USER_FOLDERS else None):
         if d and os.path.isdir(d):
             for f in glob.glob(os.path.join(d, '*.' + ext)):
                 found[os.path.basename(f).lower()] = f
@@ -350,13 +355,13 @@ def sound_names(lib: Library) -> list[str]:
 
 
 def music_list(lib: Library) -> list[str]:
-    return sorted(os.path.basename(f) for f in glob.glob(os.path.join(lib.root, 'Music', '*.wma'))
+    return sorted(os.path.basename(f) for f in glob.glob(os.path.join(lib.path('Music'), '*.wma'))
                   if 'ambient' not in os.path.basename(f).lower())
 
 
 def music(lib: Library, name: str) -> bytes | None:
     """The game's .wma music as Ogg Vorbis (browsers can't play WMA), converted once and cached in ~/.rct3ovl."""
-    src = os.path.join(lib.root, 'Music', os.path.basename(name))
+    src = os.path.join(lib.path('Music'), os.path.basename(name))
     if not os.path.exists(src):
         return None
     dst = os.path.join(lib.cache_dir, 'music', os.path.basename(name)[:-4] + '.ogg')
@@ -485,10 +490,10 @@ def _template(lib: Library, kind: str) -> Trk:
     """The usual game file of this kind, or (if it was removed) any other of the game's files of that kind."""
     folder, name = TEMPLATES[kind]
     made = _created(lib)
-    others = [f for f in sorted(glob.glob(os.path.join(lib.root, folder, '*' + EXT[kind])))
+    others = [f for f in sorted(glob.glob(os.path.join(lib.path(folder), '*' + EXT[kind])))
               if os.path.normcase(os.path.abspath(f)) not in made]
     fallback = None
-    for f in [os.path.join(lib.root, folder, name)] + others:
+    for f in [lib.path(folder + '/' + name)] + others:
         if os.path.exists(f):
             try:
                 t = Trk(open(f, 'rb').read())
@@ -660,7 +665,7 @@ def build_fwd(lib: Library, show: dict) -> bytes:
             rel = names.get(typ.lower() + ':sid', 'Style\\Vanilla\\Style.common.ovl')
             sid_ids[typ] = new()
             objs.append(('SIDDatabaseEntry', sid_ids[typ], dict(D['SIDDatabaseEntry'], SYMBOLNAME=typ,
-                                                                OVERLAYFILENAME=rel.rsplit('.common.ovl', 1)[0])))
+                                                                OVERLAYFILENAME=rel.replace('/', '\\').rsplit('.common.ovl', 1)[0])))
     scen0 = D['SavedFireworkDisplay']['SceneryEntries'][0]
     scen = [dict(scen0, Row=int(l.get('row', 0)), Col=int(l.get('col', 0)), Dir=int(l.get('dir', 0)) & 3,
                  Corner=int(l.get('corner', -1)), SID=sid_ids[l['type']]) for l in show.get('launchers', [])]
@@ -750,7 +755,7 @@ def save_to_game(lib: Library, kind: str, filename: str, data: dict) -> str:
             raise OvlError(f"{os.path.basename(f)} is one of the game's own files: choose another name")
     blob = build(lib, kind, data)
     Trk(blob)                                               # must parse back
-    path = os.path.join(lib.root, FOLDERS[kind], base + EXT[kind])
+    path = lib.path(FOLDERS[kind] + '/' + base + EXT[kind])
     try:
         _write(path, blob)
     except PermissionError:
@@ -764,7 +769,7 @@ def save_to_game(lib: Library, kind: str, filename: str, data: dict) -> str:
     # (its header and checksum), so that editor's Load opens it; one you made there yourself is never overwritten
     ud = user_dir()
     if kind == 'frw' and ud and os.path.isdir(ud):
-        dpath = os.path.join(ud, USER_FOLDERS['Fireworks'], base + EXT[kind])
+        dpath = real_path(ud, USER_FOLDERS['Fireworks'] + '/' + base + EXT[kind])
         if not os.path.exists(dpath) or os.path.normcase(os.path.abspath(dpath)) in made:
             try:
                 _write(dpath, designer_file(blob))

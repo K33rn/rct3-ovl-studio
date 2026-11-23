@@ -48,7 +48,7 @@ SANE = {'r': (-2000.0, 2000.0), 'size': (8.0, 400.0), 'angle': (-50.0, 50.0)}
 
 
 def _exe(lib) -> tuple[str, bytes]:
-    p = os.path.join(lib.root, EXE)
+    p = lib.path(EXE)
     if not os.path.exists(p):
         raise FileNotFoundError(f'{EXE} is not in the game folder')
     return p, open(p, 'rb').read()

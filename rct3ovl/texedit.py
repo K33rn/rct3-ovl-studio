@@ -95,7 +95,7 @@ def _pair_textures(lib, rel: str) -> list[dict]:
 
 def norm(lib, rel: str) -> str:
     """'Main', 'Main.unique.ovl', 'Main.common.ovl' -> 'Main.common.ovl' (the pair, as the index names it)."""
-    return os.path.relpath(pair_paths(os.path.join(lib.root, rel))[0], lib.root)
+    return os.path.relpath(pair_paths(lib.path(rel))[0], lib.root)
 
 
 def _ref(lib, rel: str, name: str, tag: str | None = None):
@@ -219,7 +219,7 @@ def _save_edits(lib, d: dict):
 
 def _reload(lib, rel: str):
     """The pair changed on disk: forget the open copy and everything built from it."""
-    base = pair_paths(os.path.join(lib.root, rel))[0]
+    base = pair_paths(lib.path(rel))[0]
     lib._open.pop(base, None)
     for o in lib.index['ovls']:
         if o['path'] == rel:
@@ -323,7 +323,7 @@ def patch_exe(lib, name: str, patches: list[dict], what: str) -> dict:
     original is copied first; restore() puts it back."""
     if os.path.basename(name) != name or not name.lower().endswith('.exe'):
         raise ValueError('not the game program')
-    p = os.path.join(lib.root, name)
+    p = lib.path(name)
     d = bytearray(open(p, 'rb').read())
     for x in patches:
         o = int(x['off']) if 'off' in x else _exe_offset(d, int(x['va']))
@@ -359,7 +359,7 @@ def patch_exe(lib, name: str, patches: list[dict], what: str) -> dict:
 
 def restore(lib, rel: str) -> None:
     if rel.lower().endswith('.exe'):          # the program (patch_exe)
-        src, p = os.path.join(_backup_dir(lib), rel), os.path.join(lib.root, rel)
+        src, p = os.path.join(_backup_dir(lib), rel), lib.path(rel)
         if os.path.exists(_lp(src)):
             try:
                 shutil.copy2(_lp(src), _lp(p))
@@ -371,7 +371,7 @@ def restore(lib, rel: str) -> None:
     rel = norm(lib, rel)
     e = edits(lib)
     bdir = _backup_dir(lib)
-    for p in [q for p in pair_paths(os.path.join(lib.root, rel)) for q in (p, p + '.CHK')]:
+    for p in [q for p in pair_paths(lib.path(rel)) for q in (p, p + '.CHK')]:
         src = os.path.join(bdir, os.path.relpath(p, lib.root))
         if os.path.exists(_lp(src)):
             try:
@@ -382,7 +382,7 @@ def restore(lib, rel: str) -> None:
     added = e.get(rel, {}).get('added', [])
     for f in added:                                 # files the change put beside it (new track pieces)
         try:
-            os.remove(_lp(os.path.join(lib.root, f)))
+            os.remove(_lp(lib.path(f)))
         except FileNotFoundError:
             pass
         except PermissionError:

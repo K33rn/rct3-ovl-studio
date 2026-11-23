@@ -71,8 +71,10 @@ together.
 
 **On Linux:** run `./rct3ovl-viewer.sh` instead. It asks for the game folder the same way, finds your saved parks
 in Steam's Proton prefix (or set `RCT3_USER_DIR` to your `My Documents/RCT3` folder), and uses `uv` when installed,
-otherwise your Python 3 with numpy and pillow. Open http://127.0.0.1:8765 if no browser opens. The texture, front-screen
-and mod tools write into the game's files and are only tried on Windows so far.
+otherwise your Python 3 with numpy and pillow. Open http://127.0.0.1:8765 if no browser opens. The texture and GUI
+editors, the mod loader and the fireworks tab work there as on Windows: billboards and music go into the prefix's
+Pictures and Music folders, and `.rar` / `.7z` downloads need `7z` on your PATH. The front-screen designer needs the
+Platinum program (`RCT3plus.exe`); the Steam Complete Edition ships `RCT3.exe`, which it does not know (on Windows too).
 
 ### 4. Use the viewer
 - **Left column:** every OVL file in the game, in its folders. Each coaster and tracked ride folder (`tracks\coasters\WoodenRC`…) also has a **🛤 … track pieces** entry with exactly that ride's pieces; the game keeps them in shared `TrackNN` files. Type in the box to filter, e.g. `coaster` or

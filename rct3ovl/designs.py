@@ -18,7 +18,7 @@ import numpy as np
 
 from .container import OvlError
 from .gltf import shape_to_glb
-from .library import Library
+from .library import Library, real_path
 from .meshes import Shape, SubMesh, load_shape
 from .rides import _imports, track_sets
 from .structs import load_spline, spline_points
@@ -30,8 +30,8 @@ def design_files(lib: Library) -> list[dict]:
     Coasters (designs you saved or installed: yours True)."""
     from .fireworks import user_dir
     out = []
-    user = os.path.join(user_dir() or '', 'Coasters')
-    for folder, yours in ((os.path.join(lib.root, 'Coaster Designs'), False), (user, True)):
+    user = real_path(user_dir() or '', 'Coasters')
+    for folder, yours in ((lib.path('Coaster Designs'), False), (user, True)):
         for f in sorted(glob.glob(os.path.join(folder, '*.trk'))):
             base = os.path.basename(f)[:-4]
             m = re.match(r'\[(.*?)\](.*)', base)
@@ -43,8 +43,8 @@ def design_path(lib: Library, key: str) -> str:
     """The .trk for a designs-list key: 'yours/<file>' in the user folder's Coasters, else the game's Coaster Designs."""
     from .fireworks import user_dir
     if key.startswith('yours/'):
-        return os.path.join(user_dir() or '', 'Coasters', os.path.basename(key[6:]))
-    return os.path.join(lib.root, 'Coaster Designs', os.path.basename(key))
+        return os.path.join(real_path(user_dir() or '', 'Coasters'), os.path.basename(key[6:]))
+    return os.path.join(lib.path('Coaster Designs'), os.path.basename(key))
 
 
 def _rail_splines(o, r) -> list:

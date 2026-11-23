@@ -33,6 +33,20 @@ def _mtime(common: str) -> float:
     return max((os.path.getmtime(p) for p in pair_paths(common) if os.path.exists(p)), default=0)
 
 
+def real_path(root: str, rel: str) -> str:
+    """rel ('\\' or '/' separated, any case, as the game writes it) as a path under root, each part spelled as it is
+    on disk, so lookups also work where file names are case-sensitive (Linux). Parts not on disk are kept as given."""
+    cur = root
+    for part in rel.replace('\\', '/').split('/'):
+        if not part or part == '.':
+            continue
+        if not os.path.exists(os.path.join(cur, part)) and os.path.isdir(cur):
+            low = part.lower()
+            part = next((n for n in os.listdir(cur) if n.lower() == low), part)
+        cur = os.path.join(cur, part)
+    return cur
+
+
 class Library:
     """Lazily opens OVLs; resolves 'name:tag' to (Ovl, LoaderRef) across the whole game folder."""
 
@@ -146,17 +160,8 @@ class Library:
 
     # ---- access --------------------------------------------------------------------------------------------
     def path(self, rel: str) -> str:
-        """rel ('\\' or '/' separated, any case, as the game writes it) as a path under the game folder, each part
-        spelled as it is on disk, so lookups also work where file names are case-sensitive (Linux)."""
-        cur = self.root
-        for part in rel.replace('\\', '/').split('/'):
-            if not part or part == '.':
-                continue
-            if not os.path.exists(os.path.join(cur, part)) and os.path.isdir(cur):
-                low = part.lower()
-                part = next((n for n in os.listdir(cur) if n.lower() == low), part)
-            cur = os.path.join(cur, part)
-        return cur
+        """rel as a path under the game folder (see real_path)."""
+        return real_path(self.root, rel)
 
     def open(self, rel_or_abs: str) -> tuple[Ovl, TextureSet]:
         path = rel_or_abs if os.path.isabs(rel_or_abs) else self.path(rel_or_abs)

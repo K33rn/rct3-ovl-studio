@@ -69,6 +69,7 @@ if os.path.exists(twz):
 else:
     print('(VTR Twister.zip not in Downloads: flat ride box check skipped)')
 check('long path form', mods._long('C:\\' + 'a' * 250).startswith('\\\\?\\'), os.name == 'nt')
-check('short path left alone', mods._long('C:\\short'), 'C:\\short')
+if os.name == 'nt':                 # a Windows path; elsewhere it is relative and _long only makes it absolute
+    check('short path left alone', mods._long('C:\\short'), 'C:\\short')
 print('problems:', problems or 'none')
 sys.exit(1 if problems else 0)

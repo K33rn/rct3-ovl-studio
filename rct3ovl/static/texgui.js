@@ -27,7 +27,7 @@ const spaced = s => String(s ?? '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const imgUrl = (path, name, frame = 0, colors) => `/api/tx/image?path=${encodeURIComponent(path)}&name=${encodeURIComponent(name)}&frame=${frame}` +
   (colors ? '&colors=' + colors.map(c => c.slice(1)).join(',') : '');
-const folderOf = p => p.includes('\\') ? p.split('\\')[0] : '(game folder)';
+const folderOf = p => /[\\/]/.test(p) ? p.split(/[\\/]/)[0] : '(game folder)';
 const hex2rgba = (h, a = 255) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), a];
 const rgba2hex = c => '#' + c.slice(0, 3).map(v => v.toString(16).padStart(2, '0')).join('');
 async function post(url, body) {
@@ -393,7 +393,7 @@ function texEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld }) {
   const work = () => cur()?.cv;
 
   // ---- list ------------------------------------------------------------------------------------------------
-  const isUI = t => /^(main\.common|gui\\)/i.test(t.p);
+  const isUI = t => /^(main\.common|gui[\\/])/i.test(t.p);
   function fillFolders() {
     const fs = [...new Set(S.cat.map(t => folderOf(t.p)))].sort();
     $('#tx-folder', P.left).innerHTML = '<option value="">All folders</option>' + fs.map(f => `<option>${esc(f)}</option>`).join('');
@@ -1233,7 +1233,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   async function hudPrepare() {
     const names = new Set([...HUD.flatMap(el => el.icons || []), ...Object.values(FLY).flat().flatMap(([a, , b]) => b ? [a, b] : [a]), ...WIN_ICONS, ...CON_ICONS]);
     if (!HS.texts) {
-      const lang = S.gui?.texts.find(o => /english\.common\.ovl$/i.test(o.path))?.path || S.gui?.texts.find(o => /^gui\\/i.test(o.path))?.path;
+      const lang = S.gui?.texts.find(o => /english\.common\.ovl$/i.test(o.path))?.path || S.gui?.texts.find(o => /^gui[\\/]/i.test(o.path))?.path;
       HS.texts = new Map();
       if (lang) try { for (const t of await fetch('/api/tx/texts?path=' + encodeURIComponent(lang)).then(r => r.json())) HS.texts.set(t.name, t.text); } catch (e) {}
     }
@@ -1535,11 +1535,11 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   const sliced = g => !!g.xs;     // panels, frames and bars: they move with all their cuts, only plain icons resize
 
   // ---- left list --------------------------------------------------------------------------------------------------
-  const ifaceTex = t => /^(FrontEnd|GUI|Loading|Banner|AOP_Glyph|SystemFont|StaffIcons|TerrainIcons|CrossHair|StandardAd)/i.test(t.n) || /^gui\\/i.test(t.p);
+  const ifaceTex = t => /^(FrontEnd|GUI|Loading|Banner|AOP_Glyph|SystemFont|StaffIcons|TerrainIcons|CrossHair|StandardAd)/i.test(t.n) || /^gui[\\/]/i.test(t.p);
   function renderLeft() {
     const q = $('#gu-q', P.left).value.trim().toLowerCase(), cat = S.gui;
     if (!cat) return;
-    const main = cat.icons.filter(o => /^main\.common/i.test(o.path) || /^gui\\/i.test(o.path));
+    const main = cat.icons.filter(o => /^main\.common/i.test(o.path) || /^gui[\\/]/i.test(o.path));
     const objs = cat.icons.filter(o => !main.includes(o));
     const sel = p => G.ovl === p ? ' sel' : '';
     let h = '<div class="grp">Main menus</div>';
@@ -1547,18 +1547,18 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
       h += `<div class="li${G.front ? ' sel' : ''}" data-front="1">🎛 Front screen designer<small>menus</small></div>`;
     h += '<div class="grp">Game interface</div>';
     for (const o of main) if (!q || o.path.toLowerCase().includes(q) || 'interface menus icons'.includes(q))
-      h += `<div class="li${sel(o.path)}" data-ovl="${esc(o.path)}">${o.path.startsWith('Main') ? '🖥 Main interface' : esc(o.path.replace(/^gui\\/, '').replace(/\\[^\\]*\.common\.ovl$/i, '').replace(/\\/g, ' › '))}<small>${o.n} icons</small></div>`;
+      h += `<div class="li${sel(o.path)}" data-ovl="${esc(o.path)}">${o.path.startsWith('Main') ? '🖥 Main interface' : esc(o.path.replace(/^gui[\\/]/, '').replace(/[\\/][^\\/]*\.common\.ovl$/i, '').replace(/[\\/]/g, ' › '))}<small>${o.n} icons</small></div>`;
     const screens = S.cat.filter(t => ifaceTex(t) && (!q || t.n.toLowerCase().includes(q)));
     h += '<div class="grp">Menu screens, sheets &amp; fonts</div>';
     h += screens.slice(0, q ? 200 : 80).map(t => `<div class="li" data-tex="${esc(t.p)}|${esc(t.n + ':' + t.t)}">🖼 ${esc(t.n)}<small>${t.w}×${t.h}</small></div>`).join('');
     h += '<div class="grp">Menu text</div>';
-    h += cat.texts.filter(o => !q || o.path.toLowerCase().includes(q)).map(o => `<div class="li${G.lang === o.path ? ' sel' : ''}" data-lang="${esc(o.path)}">🔤 ${esc(o.path.replace(/^gui\\/, '').replace(/\.common\.ovl$/i, ''))}<small>${o.n.toLocaleString()} texts</small></div>`).join('');
+    h += cat.texts.filter(o => !q || o.path.toLowerCase().includes(q)).map(o => `<div class="li${G.lang === o.path ? ' sel' : ''}" data-lang="${esc(o.path)}">🔤 ${esc(o.path.replace(/^gui[\\/]/, '').replace(/\.common\.ovl$/i, ''))}<small>${o.n.toLocaleString()} texts</small></div>`).join('');
     h += `<div class="grp">Object icons <span style="text-transform:none;color:var(--dim)">(${objs.length.toLocaleString()} files)</span></div>`;
     const shownObjs = objs.filter(o => !q || o.path.toLowerCase().includes(q));
     let folder = '';
     for (const o of shownObjs.slice(0, q ? 400 : 250)) {
       const f = folderOf(o.path); if (f !== folder) { folder = f; h += `<div style="padding:6px 12px 2px;color:var(--dim);font-size:11px">${esc(f)}</div>`; }
-      h += `<div class="li${sel(o.path)}" data-ovl="${esc(o.path)}">${esc(o.path.replace(/\.common\.ovl$/i, '').split('\\').slice(1).join(' › ') || o.path)}<small>${o.n}</small></div>`;
+      h += `<div class="li${sel(o.path)}" data-ovl="${esc(o.path)}">${esc(o.path.replace(/\.common\.ovl$/i, '').split(/[\\/]/).slice(1).join(' › ') || o.path)}<small>${o.n}</small></div>`;
     }
     if (shownObjs.length > (q ? 400 : 250)) h += `<div class="note" style="padding:6px 12px;color:var(--dim)">${shownObjs.length - (q ? 400 : 250)} more - search to narrow</div>`;
     $('#gu-list', P.left).innerHTML = h;
@@ -1606,7 +1606,7 @@ function guiEditor({ root, panes, S, toast, confirmBox, setEdits, spaceHeld, ope
   const isMain = () => /^main\.common\.ovl$/i.test(G.ovl || '');
   function renderTabs() {
     const t = $('#gu-tabs', P.centre);
-    if (G.lang) { t.innerHTML = `<span class="title">Menu text · ${esc(G.lang.replace(/^gui\\/, '').replace(/\.common\.ovl$/i, ''))}</span>`; return; }
+    if (G.lang) { t.innerHTML = `<span class="title">Menu text · ${esc(G.lang.replace(/^gui[\\/]/, '').replace(/\.common\.ovl$/i, ''))}</span>`; return; }
     if (G.front || !G.ovl) { t.innerHTML = ''; t.style.display = G.front ? 'none' : ''; return; }
     t.style.display = '';
     const g = G.groups, b = (v, label, n) => `<button data-v="${v}" class="${G.view === v ? 'on' : ''}" ${n === 0 ? 'disabled' : ''}>${label}${n != null ? ` <small>${n}</small>` : ''}</button>`;
